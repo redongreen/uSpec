@@ -47,7 +47,7 @@ Read the file `uspecs.config.json` and extract:
 - The `fontFamily` value → save as `FONT_FAMILY` (default to `Inter` if not set)
 
 If the template key is empty, tell the user:
-> The anatomy template key is not configured. Run `@setup-library` with your Figma template library link first.
+> The anatomy template key is not configured. Run `@firstrun` with your Figma template library link first.
 
 ### Step 3: Extract Anatomy Data
 
@@ -55,14 +55,61 @@ Navigate to the component file and run the extraction script via `figma_execute`
 
 **Extract the node ID from the URL:** Figma URLs contain `node-id=123-456` → use `123:456`.
 
-This produces a two-level hierarchy:
-- **Level 1 — Composition**: Direct children of the component's default variant.
-- **Level 2 — Sub-component internals**: For each INSTANCE child at Level 1, resolve its main component set, instantiate the default variant with all hidden descendants visible, and extract all direct children.
+This produces a **pre-classified element array** with deterministic element types, resolved prop bindings, and unwrapped slot wrappers — no AI reasoning needed for classification.
+
+**Classification enum** (closed set on each element's `classification` field):
+- `instance` — direct INSTANCE child
+- `instance-unwrapped` — FRAME/GROUP that wraps a single INSTANCE descendant (slot wrapper); displayed as the inner sub-component
+- `text` — TEXT node
+- `container` — FRAME/GROUP with multiple children (genuine layout container)
+- `structural` — RECTANGLE, VECTOR, ELLIPSE, LINE, POLYGON, STAR, BOOLEAN_OPERATION, or empty FRAME
+
+**Prop binding resolution:** Boolean properties are resolved to their controlling element by index (`boundElementIndex`), not by name matching. Each element carries `controlledByBoolean: { propName, rawKey, defaultValue }` when a boolean controls it, or `null` otherwise.
+
+**Slot-wrapper unwrapping:** FRAMEs that wrap a single INSTANCE descendant (through single-child nesting) are automatically unwrapped: `name` is replaced with the inner sub-component's `componentSetName`, `nodeType` is set to `'INSTANCE'`, and `originalName` preserves the FRAME name. The `bbox` stays on the wrapper for marker positioning.
+
+**Section eligibility:** `shouldCreateSection` is set to `true` for all `instance` and `instance-unwrapped` elements, except those matching utility names (Spacer, Divider, etc.).
 
 Run this extraction script, replacing `TARGET_NODE_ID` with the actual node ID:
 
 ```javascript
 const TARGET_NODE_ID = '__NODE_ID__';
+const STRUCTURAL_TYPES = ['RECTANGLE', 'VECTOR', 'ELLIPSE', 'LINE', 'POLYGON', 'STAR', 'BOOLEAN_OPERATION'];
+
+async function resolveInstanceInfo(instNode) {
+  try {
+    const mc = await instNode.getMainComponentAsync();
+    if (!mc) return null;
+    const isSet = mc.parent && mc.parent.type === 'COMPONENT_SET';
+    const cs = isSet ? mc.parent : null;
+    const info = {
+      mainComponentId: mc.id,
+      mainComponentSetId: cs ? cs.id : null,
+      childIsComponentSet: !!cs,
+      componentSetName: cs ? cs.name : mc.name,
+      childVariantCount: cs ? cs.children.length : 1,
+      childVariantAxes: []
+    };
+    if (cs) {
+      const csPropDefs = cs.componentPropertyDefinitions || {};
+      for (const [ck, cd] of Object.entries(csPropDefs)) {
+        if (cd.type === 'VARIANT') {
+          info.childVariantAxes.push({ name: ck.split('#')[0], options: cd.variantOptions || [], defaultValue: cd.defaultValue });
+        }
+      }
+    }
+    return info;
+  } catch { return null; }
+}
+
+async function walkToInnerInstance(node, depth) {
+  if (depth > 8) return null;
+  if (node.type === 'INSTANCE') return node;
+  if ((node.type === 'FRAME' || node.type === 'GROUP') && 'children' in node && node.children.length === 1) {
+    return walkToInnerInstance(node.children[0], depth + 1);
+  }
+  return null;
+}
 
 async function extractElement(node, index, artworkAbsX, artworkAbsY) {
   const absX = node.absoluteTransform[0][2];
@@ -70,7 +117,9 @@ async function extractElement(node, index, artworkAbsX, artworkAbsY) {
   const element = {
     index,
     name: node.name,
+    originalName: null,
     nodeType: node.type,
+    classification: null,
     visible: node.visible,
     bbox: {
       x: Math.round(absX - artworkAbsX),
@@ -78,37 +127,66 @@ async function extractElement(node, index, artworkAbsX, artworkAbsY) {
       w: Math.round(node.width),
       h: Math.round(node.height)
     },
-    notes: ''
+    notes: '',
+    controlledByBoolean: null,
+    wrappedInstance: null,
+    mainComponentId: null,
+    mainComponentSetId: null,
+    childIsComponentSet: false,
+    childVariantAxes: [],
+    childVariantCount: 1,
+    shouldCreateSection: false
   };
 
   if (node.type === 'INSTANCE') {
-    try {
-      const mc = await node.getMainComponentAsync();
-      if (mc) {
-        element.mainComponentId = mc.id;
-        if (mc.parent && mc.parent.type === 'COMPONENT_SET') {
-          element.mainComponentSetId = mc.parent.id;
-          element.childIsComponentSet = true;
-          element.notes = mc.parent.name + ' instance';
-        } else {
-          element.mainComponentSetId = null;
-          element.childIsComponentSet = false;
-          element.notes = mc.name + ' instance';
-        }
-      }
-    } catch {}
+    const info = await resolveInstanceInfo(node);
+    if (info) {
+      Object.assign(element, info);
+      element.notes = info.componentSetName + ' instance';
+    }
+    element.classification = 'instance';
   } else if (node.type === 'TEXT') {
+    element.classification = 'text';
     const content = node.characters || '';
     if (content.length > 0 && content.length <= 30) {
-      element.notes = 'Text element — "' + content + '"';
+      element.notes = 'Text element \u2014 "' + content + '"';
     } else {
       element.notes = 'Text element';
     }
   } else if (node.type === 'FRAME' || node.type === 'GROUP') {
-    const childCount = ('children' in node) ? node.children.length : 0;
-    element.notes = childCount > 0 ? 'Contains ' + childCount + ' elements' : 'Empty container';
-  } else if (['VECTOR', 'RECTANGLE', 'ELLIPSE', 'LINE', 'POLYGON', 'STAR', 'BOOLEAN_OPERATION'].includes(node.type)) {
-    element.notes = 'Illustration';
+    const innerInst = await walkToInnerInstance(node, 0);
+    if (innerInst && innerInst !== node) {
+      const info = await resolveInstanceInfo(innerInst);
+      if (info) {
+        element.wrappedInstance = info;
+        element.originalName = element.name;
+        element.name = info.componentSetName;
+        element.nodeType = 'INSTANCE';
+        element.classification = 'instance-unwrapped';
+        Object.assign(element, {
+          mainComponentId: info.mainComponentId,
+          mainComponentSetId: info.mainComponentSetId,
+          childIsComponentSet: info.childIsComponentSet,
+          childVariantAxes: info.childVariantAxes,
+          childVariantCount: info.childVariantCount
+        });
+        element.notes = info.componentSetName + ' instance';
+      } else {
+        element.classification = 'container';
+        const childCount = ('children' in node) ? node.children.length : 0;
+        element.notes = 'Container with ' + childCount + ' children';
+      }
+    } else {
+      const childCount = ('children' in node) ? node.children.length : 0;
+      element.classification = childCount > 0 ? 'container' : 'structural';
+      element.notes = childCount > 0 ? 'Container with ' + childCount + ' children' : 'Empty container';
+    }
+  } else if (STRUCTURAL_TYPES.includes(node.type)) {
+    element.classification = 'structural';
+    element.notes = node.type;
+  } else {
+    element.classification = 'structural';
+    element.notes = node.type;
   }
 
   return element;
@@ -124,23 +202,21 @@ const variant = isComponentSet ? (node.defaultVariant || node.children[0]) : nod
 const absX = variant.absoluteTransform[0][2];
 const absY = variant.absoluteTransform[1][2];
 
-const elements = [];
-let idx = 1;
-
 let childContainer = variant;
 while (childContainer.children.length === 1 && childContainer.children[0].type === 'FRAME' && childContainer.children[0].layoutMode !== 'NONE') {
   childContainer = childContainer.children[0];
 }
 
 if (childContainer === variant && childContainer.children.length > 1) {
-  const LEAF_STRUCTURAL = ['RECTANGLE', 'VECTOR', 'ELLIPSE', 'LINE', 'POLYGON', 'STAR', 'BOOLEAN_OPERATION'];
   const autoLayoutFrames = childContainer.children.filter(c => c.type === 'FRAME' && c.layoutMode !== 'NONE' && ('children' in c) && c.children.length >= 2);
-  const structuralOnly = childContainer.children.filter(c => LEAF_STRUCTURAL.includes(c.type));
+  const structuralOnly = childContainer.children.filter(c => STRUCTURAL_TYPES.includes(c.type));
   if (autoLayoutFrames.length === 1 && structuralOnly.length === childContainer.children.length - 1) {
     childContainer = autoLayoutFrames[0];
   }
 }
 
+const elements = [];
+let idx = 1;
 for (const child of childContainer.children) {
   elements.push(await extractElement(child, idx++, absX, absY));
 }
@@ -156,6 +232,7 @@ for (const [rawKey, def] of Object.entries(propDefs)) {
     variantAxes.push({ name: cleanKey, options: def.variantOptions || [], defaultValue: def.defaultValue });
   } else if (def.type === 'BOOLEAN') {
     let associatedLayer = null;
+    let boundElementIndex = null;
     const defaultVariantProps = variant.componentProperties;
     if (defaultVariantProps) {
       for (const [k, v] of Object.entries(defaultVariantProps)) {
@@ -165,13 +242,32 @@ for (const [rawKey, def] of Object.entries(propDefs)) {
             try {
               const lid = variant.id.split(';')[0] + ';' + nodeIdSuffix;
               const layerNode = await figma.getNodeByIdAsync(lid);
-              if (layerNode) associatedLayer = layerNode.name;
+              if (layerNode) {
+                associatedLayer = layerNode.name;
+                for (const el of elements) {
+                  const matchName = el.originalName || el.name;
+                  if (matchName === layerNode.name) {
+                    boundElementIndex = el.index;
+                    break;
+                  }
+                }
+              }
             } catch {}
           }
         }
       }
     }
-    booleanProps.push({ name: cleanKey, defaultValue: def.defaultValue, associatedLayer, rawKey });
+    if (boundElementIndex === null) {
+      for (const el of elements) {
+        const matchName = el.originalName || el.name;
+        if (matchName.toLowerCase() === cleanKey.toLowerCase()) {
+          boundElementIndex = el.index;
+          if (!associatedLayer) associatedLayer = matchName;
+          break;
+        }
+      }
+    }
+    booleanProps.push({ name: cleanKey, defaultValue: def.defaultValue, associatedLayer, rawKey, boundElementIndex });
   } else if (def.type === 'INSTANCE_SWAP') {
     let swapTargetName = def.defaultValue;
     try {
@@ -179,6 +275,25 @@ for (const [rawKey, def] of Object.entries(propDefs)) {
       if (swapNode) swapTargetName = swapNode.name;
     } catch {}
     instanceSwapProps.push({ name: cleanKey, defaultValue: swapTargetName, rawKey });
+  }
+}
+
+for (const bp of booleanProps) {
+  if (bp.boundElementIndex !== null) {
+    const el = elements.find(e => e.index === bp.boundElementIndex);
+    if (el) {
+      el.controlledByBoolean = { propName: bp.name, rawKey: bp.rawKey, defaultValue: bp.defaultValue };
+    }
+  }
+}
+
+for (const el of elements) {
+  if (el.classification === 'instance' || el.classification === 'instance-unwrapped') {
+    el.shouldCreateSection = true;
+    const UTILITY_NAMES = ['spacer', 'divider', 'separator', 'divider line', 'gap', 'padding', 'filler'];
+    if (UTILITY_NAMES.includes(el.name.toLowerCase())) {
+      el.shouldCreateSection = false;
+    }
   }
 }
 
@@ -197,31 +312,41 @@ return {
 
 Save the returned JSON — you will use `componentName`, `compSetNodeId`, `isComponentSet`, `rootSize`, `elements`, `booleanProps`, `variantAxes`, and `instanceSwapProps` in subsequent steps.
 
-### Step 4: Classify Elements and Enrich Notes (AI Reasoning)
+Each element carries pre-resolved fields:
+- `classification` — closed enum: `instance`, `instance-unwrapped`, `text`, `container`, `structural`
+- `controlledByBoolean` — `{ propName, rawKey, defaultValue }` or `null` (resolved by element index, not name matching)
+- `wrappedInstance` — component info for the inner INSTANCE (only on `instance-unwrapped` elements)
+- `originalName` — the FRAME name before unwrapping (only on `instance-unwrapped` elements)
+- `shouldCreateSection` — `true` for `instance`/`instance-unwrapped`, `false` for utility names and other types
+- `childVariantAxes`, `childVariantCount` — variant data from the child component set
 
-This is a pure reasoning step — no `figma_execute` calls. Read the instruction file `anatomy/agent-anatomy-instruction.md`, then enrich the extraction data in-memory before proceeding to rendering.
+The `fullTree` field has been removed. Classification, slot-wrapper detection, and prop binding are now handled deterministically in the extraction script itself.
+
+### Step 4: Validate Extraction and Enrich Notes (AI Reasoning)
+
+This is a pure reasoning step — no `figma_execute` calls. The extraction script (Step 3) has already performed classification, slot-wrapper unwrapping, boolean binding, and section eligibility. Step 4 focuses on **validation** and **semantic note-writing**.
+
+Read the instruction file `anatomy/agent-anatomy-instruction.md`, then enrich the extraction data in-memory before proceeding to rendering.
 
 **Process:**
 
-1. **Read** `anatomy/agent-anatomy-instruction.md` for classification rules, note-writing guidelines, and validation checklist.
+1. **Read** `anatomy/agent-anatomy-instruction.md` for note-writing guidelines and validation checklist.
 
-2. **Cross-reference** each element against `booleanProps`:
-   - For each element, check if its `name` matches any `booleanProps[].associatedLayer`.
-   - If a match is found, record the controlling boolean's `name` and `rawKey` on the element.
-   - For hidden elements (`visible === false`), set `unhideStrategy: { method: 'boolean', booleanName, booleanRawKey }`.
-   - For hidden elements with no matching boolean, set `unhideStrategy: { method: 'direct' }`.
+2. **Validate** the pre-classified extraction data:
+   - Every element has a `classification` from the closed set: `instance`, `instance-unwrapped`, `text`, `container`, `structural`.
+   - Every `instance-unwrapped` element has `wrappedInstance`, `originalName`, and `nodeType === 'INSTANCE'`.
+   - Boolean bindings are resolved: check that `controlledByBoolean` is set on elements that should be boolean-controlled. If the extraction script missed a binding (e.g., `controlledByBoolean` is `null` on an element whose name matches a `booleanProps[].name`), flag it but do not re-run classification — note it in the element's notes.
+   - `shouldCreateSection` is set on every `instance` and `instance-unwrapped` element.
 
-3. **Classify** each element's role using the rules from the instruction file (optional slot, instance-swap slot, fixed sub-component, content element, structural/decorative).
+3. **Set unhide strategy** for hidden elements (`visible === false`):
+   - If `controlledByBoolean` is set: `unhideStrategy: { method: 'boolean', booleanName: controlledByBoolean.propName, booleanRawKey: controlledByBoolean.rawKey }`.
+   - If `controlledByBoolean` is `null`: `unhideStrategy: { method: 'direct' }`.
 
-4. **Evaluate child section eligibility** for each INSTANCE element using the "Child Section Eligibility" rules from the instruction file. Set `shouldCreateSection: true` or `shouldCreateSection: false` on each INSTANCE element. Confidently skip utility components by name (Spacer, Divider, etc.). For structural-leaf and trivial-leaf conditions, use best judgment from naming conventions and component purpose since sub-component internals are not yet extracted — when uncertain, default to `true` and let the runtime safety net handle it. Record the decision on each element so Step 8b can check it before running `figma_execute`.
+4. **Rewrite** the `notes` field for each element with semantic descriptions following the instruction file's note-writing guidelines. The extraction script produces generic notes (`"X instance"`, `"Container with N children"`, etc.) — replace these with role-based descriptions that explain each element's purpose. Use `controlledByBoolean.propName` for boolean-controlled notes, `classification` for role identification, and `childVariantCount` / `childVariantAxes` for variant context.
 
-5. **Rewrite** the `notes` field for each element with semantic descriptions following the instruction file's note-writing guidelines. Replace generic notes like `"X instance"` or `"Contains N elements"` with role-based descriptions.
+5. **Validate** using the instruction file's checklist — ensure no generic notes remain, all hidden elements have unhide strategies, and all `instance`/`instance-unwrapped` elements have `shouldCreateSection` set. Do NOT add cross-references ("See X anatomy section") yet — those are appended after Step 8b confirms which sections were actually created.
 
-6. **Decide** per-child section unhide strategy: for each INSTANCE child that will get a Step 8b section (i.e., `shouldCreateSection: true`), note whether to use property-aware unhide (toggle booleans individually) or direct unhide (fallback).
-
-7. **Validate** using the instruction file's checklist — ensure no generic notes remain, all hidden elements explain their controlling property, and `shouldCreateSection` is set on every INSTANCE element. Do NOT add cross-references ("See X anatomy section") yet — those are appended after Step 8b confirms which sections were actually created.
-
-The enriched `elements` array (with updated `notes`, `unhideStrategy`, and `shouldCreateSection` fields) is used by all subsequent rendering steps.
+The enriched `elements` array (with updated `notes` and `unhideStrategy` fields — all other fields come from extraction) is used by all subsequent rendering steps.
 
 ### Step 5: Navigate to Destination
 
@@ -579,11 +704,11 @@ return { success: true };
 
 ### Step 8b: Per-Sub-Component Child Sections
 
-For each direct child that is an `INSTANCE` node (has `mainComponentId` or `mainComponentSetId` in the extraction data), create a standalone anatomy section showing that child's internal structure using **only the default variant** with all hidden descendants made visible.
+For each direct child that is an `INSTANCE` node (has `mainComponentId` or `mainComponentSetId` in the extraction data) **or a slot-wrapper FRAME** (has `wrappedInstance` set during Step 4 reasoning), create a standalone anatomy section showing that child's internal structure. The script starts with the default variant but **falls back to the richest variant** (most direct children) when the default has 1 or fewer children and the component set has multiple variants. All hidden descendants are made visible.
 
-Skip this step entirely if no child elements have `nodeType === 'INSTANCE'`. Additionally, **check `shouldCreateSection`** on each INSTANCE child (set during Step 4 reasoning) — skip the `figma_execute` call entirely for any child where `shouldCreateSection === false`. These are utility or trivially simple sub-components (Spacer, Divider, structural-only, etc.) that don't warrant a dedicated section. The `gcElements.length <= 1` guard in the JavaScript remains as a runtime safety net, but the agent should avoid even calling `figma_execute` for ineligible children.
+Skip this step entirely if no child elements have `nodeType === 'INSTANCE'` and no slot-wrapper FRAMEs were identified in Step 4. Additionally, **check `shouldCreateSection`** on each eligible child (set during Step 4 reasoning) — skip the `figma_execute` call entirely for any child where `shouldCreateSection === false`. These are utility or trivially simple sub-components (Spacer, Divider, structural-only, etc.) that don't warrant a dedicated section. The `gcElements.length <= 1` guard in the JavaScript remains as a runtime safety net, but the agent should avoid even calling `figma_execute` for ineligible children.
 
-For **each** eligible INSTANCE child element (`shouldCreateSection === true`), run via `figma_execute` (replace `__FRAME_ID__`, `__CHILD_NAME__`, `__CHILD_COMP_ID__`, `__CHILD_IS_COMP_SET__` with values from the extraction data — use `mainComponentSetId` if `childIsComponentSet` is true, otherwise use `mainComponentId`). Replace `__CHILD_BOOLEAN_PROPS_JSON__` with the child sub-component's boolean properties (extracted from its `componentPropertyDefinitions` during Step 4 reasoning). If the child has no boolean properties, pass `[]`:
+For **each** eligible child element (`shouldCreateSection === true`), run via `figma_execute` (replace `__FRAME_ID__`, `__CHILD_NAME__`, `__CHILD_COMP_ID__`, `__CHILD_IS_COMP_SET__` with values from the extraction data). For direct INSTANCE children, use `mainComponentSetId` if `childIsComponentSet` is true, otherwise use `mainComponentId`. For **slot-wrapper FRAMEs**, use `wrappedInstance.mainComponentSetId` if `wrappedInstance.childIsComponentSet` is true, otherwise use `wrappedInstance.mainComponentId`. Replace `__CHILD_BOOLEAN_PROPS_JSON__` with the child sub-component's boolean properties (extracted from its `componentPropertyDefinitions` during Step 4 reasoning). If the child has no boolean properties, pass `[]`:
 
 ```javascript
 const FRAME_ID = '__FRAME_ID__';
@@ -635,9 +760,23 @@ function directUnhide(node) {
   if ('children' in node) { for (const c of node.children) directUnhide(c); }
 }
 
-const singleVariant = CHILD_IS_COMP_SET
+let singleVariant = CHILD_IS_COMP_SET
   ? (childCompNode.defaultVariant || childCompNode.children[0])
   : childCompNode;
+
+if (CHILD_IS_COMP_SET && childCompNode.children.length > 1) {
+  const defChildren = singleVariant.children ? singleVariant.children.length : 0;
+  if (defChildren <= 1) {
+    let bestVariant = singleVariant;
+    let bestCount = defChildren;
+    for (const v of childCompNode.children) {
+      const cnt = v.children ? v.children.length : 0;
+      if (cnt > bestCount) { bestCount = cnt; bestVariant = v; }
+    }
+    if (bestCount > defChildren) singleVariant = bestVariant;
+  }
+}
+
 const compInstance = singleVariant.createInstance();
 
 if (CHILD_BOOLEAN_PROPS.length > 0) {
@@ -997,9 +1136,9 @@ return { success: true };
 
 Replace `__CHILD_SECTION_ID__` with the returned `childSectionId` and `__ENRICHED_ELEMENTS_JSON__` with the enriched elements array (only `index` and `notes` fields are needed).
 
-Repeat for every eligible INSTANCE child element (`shouldCreateSection === true`) from the Step 3 extraction data. Skip any child where `shouldCreateSection === false` — do not call `figma_execute` for it.
+Repeat for every eligible child element (`shouldCreateSection === true`) from the Step 3 extraction data — this includes both direct INSTANCE children and slot-wrapper FRAMEs with `wrappedInstance`. Skip any child where `shouldCreateSection === false` — do not call `figma_execute` for it.
 
-After all per-child sections are processed, update the composition table's `#notes` cells: for each INSTANCE child that was **not** skipped (i.e., a section was created and `shouldCreateSection === true`), append ` — See <child name> anatomy section` to the existing notes text in the corresponding row. Do not add cross-references for skipped or ineligible children.
+After all per-child sections are processed, update the composition table's `#notes` cells: for each child (INSTANCE or slot-wrapper FRAME) that was **not** skipped (i.e., a section was created and `shouldCreateSection === true`), append ` — See <child name> anatomy section` to the existing notes text in the corresponding row. Do not add cross-references for skipped or ineligible children.
 
 ### Step 10: Visual Validation
 
@@ -1031,7 +1170,11 @@ These notes document non-obvious behaviors, gotchas, and cross-step coordination
 - **Marker visibility gotcha**: Step 8 sets `markerExample.visible = false` after composition markers. Step 8b clones from the same `#marker-example`, so each clone must explicitly set `dot.visible = true`.
 - **Simplified notes**: The anatomy skill produces semantic role-based descriptions only — no colors, tokens, typography, or dimensions. Those are handled by the dedicated color, structure, and API skills.
 - **Deep leaf resolution** (Step 8b): `resolveLeafElements` walks past wrapper FRAMEs (up to 4 levels) to annotate meaningful leaves. Single-child wrappers inherit the parent FRAME's name; multi-child wrappers extract each child separately.
-- **Child section eligibility** (Step 4 → Step 8b): The agent sets `shouldCreateSection` on each INSTANCE element at Step 4. Utility names (Spacer, Divider, etc.) are confidently skipped; structural-leaf heuristics are best-effort with a default-to-true policy. The runtime `gcElementsGrouped.length <= 1` guard is the final safety net.
+- **Deterministic classification** (Step 3): The extraction script classifies every element into a closed enum (`instance`, `instance-unwrapped`, `text`, `container`, `structural`) at extraction time. The AI does not reclassify — it validates and writes notes. This follows the principle: classify structurally at extraction time, not heuristically at consumption time.
+- **Slot-wrapper FRAME unwrapping** (Step 3): A FRAME/GROUP whose subtree resolves to exactly one INSTANCE descendant (through single-child wrapper nesting, via `walkToInnerInstance`) is classified as `instance-unwrapped` and unwrapped in the extraction script itself — `name` is replaced with the inner sub-component's `componentSetName`, `nodeType` is set to `'INSTANCE'`, and `originalName` preserves the FRAME name. The `wrappedInstance` field is retained so Step 8b can use `wrappedInstance.mainComponentSetId` / `wrappedInstance.mainComponentId` as `CHILD_COMP_ID`. The `bbox` stays unchanged so the marker points to the FRAME's visible area.
+- **Boolean binding by index** (Step 3): Boolean properties are resolved to their controlling element by walking `variant.componentProperties`, extracting the node ID suffix, looking up the layer node, and matching it to elements by name (with `originalName` fallback for unwrapped elements). A name-matching fallback (`booleanProps[].name` vs `element.originalName || element.name`, case-insensitive) catches cases where node ID resolution fails. The result is `controlledByBoolean: { propName, rawKey, defaultValue }` on each bound element — no AI name-matching needed.
+- **Child section eligibility** (Step 3 → Step 8b): The extraction script sets `shouldCreateSection: true` on every `instance` and `instance-unwrapped` element, except those matching utility names (Spacer, Divider, etc.). The runtime `gcElementsGrouped.length <= 1` guard in Step 8b is the final safety net.
+- **Richest-variant fallback** (Step 8b): When a child component set's default variant has 1 or fewer direct children, the script iterates all variants and picks the one with the most direct children. This ensures variant-rich slot components get a meaningful anatomy section rather than being trivially skipped.
 - **Repeated sibling grouping** (Step 8b): Consecutive elements with the same `name`, `nodeType`, and `resolvedCompKey` (component set/component ID for INSTANCEs, element name for other types) are collapsed into one entry with a `count` field — one outline, one marker, one table row per group, with `(xN)` suffix in the name column.
 - **Cross-reference timing**: Cross-refs ("See X anatomy section") are NOT written during Step 4 note enrichment. They are appended to the composition table after all Step 8b sections are processed, once the agent knows which sections were actually created vs. skipped.
 - **Pink dashed outlines**: Both composition (Step 8) and per-child (Step 8b) sections draw dashed pink rectangles (`dashPattern = [4, 4]`, `MARKER_COLOR`) around each annotated element.

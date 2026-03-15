@@ -54,7 +54,7 @@ Read the file `uspecs.config.json` and extract:
 - The `fontFamily` value → save as `FONT_FAMILY` (default to `Inter` if not set)
 
 If the template key is empty, tell the user:
-> The structure template key is not configured. Run `@setup-library` with your Figma template library link first.
+> The structure template key is not configured. Run `@firstrun` with your Figma template library link first.
 
 ### Step 4: Gather Context
 
@@ -990,7 +990,7 @@ return { success: true };
 
 ## Notes
 
-- The structure template key is stored in `uspecs.config.json` under `templateKeys.structureSpec` and is configured via `@setup-library`.
+- The structure template key is stored in `uspecs.config.json` under `templateKeys.structureSpec` and is configured via `@firstrun`.
 - The target node can be either a `COMPONENT_SET` (multi-variant) or a standalone `COMPONENT` (single variant). The extraction script detects the type and returns `isComponentSet` accordingly. When the node is a standalone component, it is treated as a single-entry variants array and there are no variant axes. Preview instance creation in Step 12c uses `compNode.createInstance()` directly for standalone components.
 - **Behavior/Configuration variant previews**: When a variant axis controls visual configuration (e.g., Static vs Interactive), the preview shows only the **default configuration** (e.g., Static) — one row of instances at each size is sufficient to illustrate dimensional properties. There is no need to duplicate instances for each configuration. If dimensional values are identical across configurations, document them once with a note. If a property like `borderWidth` differs, add it as a row in the table.
 - **Hybrid exploration model**: The extraction script (Step 4b) provides a fast structured baseline — variant axes, dimensions, token bindings, and property definitions. Step 4d then adds free-form agent exploration to discover hidden sub-components, enable boolean toggles, and extract deeper internal structure. This combines deterministic extraction with the exploratory freedom needed for thorough sub-component analysis.

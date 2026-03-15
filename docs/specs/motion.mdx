@@ -54,19 +54,35 @@ Bar labels show value transitions (e.g., "0% -> 115%") while easing type is comm
     </Note>
   </Step>
   <Step title="Run the skill">
-    In Cursor's chat, reference the skill, provide the JSON data (pasted directly or as a file reference), and include a Figma link to the destination page where the spec should be created:
+    Reference the `create-motion` skill, provide the JSON data (pasted directly or as a file reference), and include a Figma link to the destination page:
 
-    ```
-    @create-motion <paste JSON here>
-    https://www.figma.com/design/abc123/Specs?node-id=0-1
-    ```
+    <Tabs>
+      <Tab title="Cursor">
+        ```
+        @create-motion <paste JSON here>
+        https://www.figma.com/design/abc123/Specs?node-id=0-1
+        ```
 
-    Or with a file reference:
+        Or with a file reference:
 
-    ```
-    @create-motion @motion-data.json
-    https://www.figma.com/design/abc123/Specs?node-id=0-1
-    ```
+        ```
+        @create-motion @motion-data.json
+        https://www.figma.com/design/abc123/Specs?node-id=0-1
+        ```
+      </Tab>
+      <Tab title="Claude Code">
+        ```
+        /create-motion <paste JSON here>
+        https://www.figma.com/design/abc123/Specs?node-id=0-1
+        ```
+      </Tab>
+      <Tab title="Codex">
+        ```
+        $create-motion <paste JSON here>
+        https://www.figma.com/design/abc123/Specs?node-id=0-1
+        ```
+      </Tab>
+    </Tabs>
   </Step>
 </Steps>
 

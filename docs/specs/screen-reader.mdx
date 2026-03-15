@@ -3,11 +3,11 @@ title: "Screen Reader"
 description: "Generate accessibility specifications for VoiceOver, TalkBack, and ARIA"
 ---
 
-Screen reader specs document how assistive technologies should announce and interact with your component across iOS (VoiceOver), Android (TalkBack), and Web (ARIA).
-
 <Frame>
   <video src="/images/specs/screen-reader-output.mp4" autoPlay muted loop playsInline alt="Example screen reader spec output in Figma" />
 </Frame>
+
+Screen reader specs document how assistive technologies should announce and interact with your component across iOS (VoiceOver), Android (TalkBack), and Web (ARIA).
 
 ## What you need
 
@@ -19,16 +19,41 @@ Screen reader specs document how assistive technologies should announce and inte
   Describe all interactive parts and how they relate. For example: "The label and hint merge into the input's announcement, but the trailing clear button is a separate focus stop." This helps the agent determine focus order accurately.
 </Tip>
 
-## When to use
+## How to use
 
-Create a screen reader spec when you need to document:
+Reference the skill and paste your Figma link. Include context about interactive parts, states, and merge behavior for a more accurate spec:
 
-- How a component should be announced by screen readers
-- Focus order for components with multiple interactive parts
-- Platform-specific accessibility properties
-- How announcements change across states (enabled, disabled, selected)
+<Tabs>
+  <Tab title="Cursor">
+    ```
+    @create-voice https://www.figma.com/design/abc123/Components?node-id=100:200
 
-## What the agent generates
+    This is a search text field with a trailing clear button. The field has placeholder
+    text "Search" and the clear button appears when text is entered. States: enabled,
+    focused, filled, disabled, and error.
+    ```
+  </Tab>
+  <Tab title="Claude Code">
+    ```
+    /create-voice https://www.figma.com/design/abc123/Components?node-id=100:200
+
+    This is a search text field with a trailing clear button. The field has placeholder
+    text "Search" and the clear button appears when text is entered. States: enabled,
+    focused, filled, disabled, and error.
+    ```
+  </Tab>
+  <Tab title="Codex">
+    ```
+    $create-voice https://www.figma.com/design/abc123/Components?node-id=100:200
+
+    This is a search text field with a trailing clear button. The field has placeholder
+    text "Search" and the clear button appears when text is entered. States: enabled,
+    focused, filled, disabled, and error.
+    ```
+  </Tab>
+</Tabs>
+
+## What it generates
 
 The agent analyzes your component's visual parts, determines which are independent focus stops vs. merged into another element's announcement, and renders per-platform documentation directly in your Figma file.
 
@@ -73,33 +98,41 @@ The agent determines how visual parts combine for accessibility:
 | Functional icons (e.g., clear button) | Separate focus stop |
 | Action buttons | Separate focus stop |
 
-## Example prompts
+## How it works
 
-<Tabs>
-  <Tab title="Simple button">
+```mermaid
+flowchart LR
+    A[You] -->|Figma link| B[Agent Skill]
+    B -->|Extract data| C[Console MCP]
+    C -->|Component data| B
+    B -->|Render| C
+    C -->|Annotation frame| D[Figma Output]
 ```
-@create-voice https://www.figma.com/design/abc123/Components?node-id=100:200
 
-This is a primary action button with enabled, hover, pressed, and disabled states.
-```
-  </Tab>
-  <Tab title="Text field">
-```
-@create-voice https://www.figma.com/design/abc123/Components?node-id=200:300
+<Steps>
+  <Step title="Extract">
+    The skill reads child layers, element types, and interactive properties from the component via the Console MCP.
+  </Step>
+  <Step title="Analyze merge behavior">
+    The agent determines which visual parts are independent focus stops, which merge into another element's announcement, and which are hidden from screen readers.
+  </Step>
+  <Step title="Generate per-platform properties">
+    Platform-specific accessibility properties are generated for iOS (VoiceOver), Android (TalkBack), and Web (ARIA) across all states.
+  </Step>
+  <Step title="Import template">
+    The screen reader documentation template is imported from the library, instantiated, and detached into an editable frame.
+  </Step>
+  <Step title="Render">
+    The skill fills header fields, builds focus order diagrams, state tables, and per-platform property sections.
+  </Step>
+  <Step title="Validate">
+    A screenshot is captured and checked for completeness. Issues are fixed automatically for up to 3 iterations.
+  </Step>
+</Steps>
 
-This is a search text field with a trailing clear button. The field has placeholder
-text "Search" and the clear button appears when text is entered.
-```
-  </Tab>
-  <Tab title="Tab bar">
-```
-@create-voice https://www.figma.com/design/abc123/Components?node-id=300:400
-
-This is a tab bar with 3 tabs: Home, Search, and Profile. Home is currently
-selected. Each tab has an icon and label.
-```
-  </Tab>
-</Tabs>
+<Tip>
+The skill renders programmatically, so the output is consistent and repeatable. Running it on the same component produces identical results.
+</Tip>
 
 ## Tips for better output
 

@@ -61,7 +61,7 @@ Read the file `uspecs.config.json` and extract:
 - The `motionSpec` value from the `templateKeys` object → save as `MOTION_TEMPLATE_KEY`
 
 If the template key is empty, tell the user:
-> The motion spec template key is not configured. Run `@setup-library` with your Figma template library link first.
+> The motion spec template key is not configured. Run `@firstrun` with your Figma template library link first.
 
 ### Step 4: Gather Context
 
@@ -464,7 +464,7 @@ return { success: true, rowCount: ROWS.length };
 
 ## Notes
 
-- The motion spec template key is stored in `uspecs.config.json` under `templateKeys.motionSpec` and is configured via `@setup-library`.
+- The motion spec template key is stored in `uspecs.config.json` under `templateKeys.motionSpec` and is configured via `@firstrun`.
 - Unlike other skills, motion spec data comes from the clipboard (After Effects export), not from Figma MCP extraction. There is no component to inspect in Figma.
 - The template uses absolute positioning for timeline bars within `#track-area` (`layoutMode: NONE`).
 - **Track width is dynamic**: computed as `max(composition.durationMs * 0.64 + 50, 1600)` (fixed 0.64 px/ms rate + 50px right padding for tick labels, min 1600px). Both `#track-area` and `#ruler-track` are resized to this width. Parent containers use HUG sizing and expand automatically. Bar positions are computed inside the Figma code using the fixed `pxPerMs` (0.64).

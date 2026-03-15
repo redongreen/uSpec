@@ -29,21 +29,36 @@ The skill also generates per-child sections for nested component instances, anno
 
 ## How to use
 
-Reference the skill and paste your Figma link:
+Reference the skill and paste your Figma link. Add any context about the component to get richer semantic notes:
 
-```
-@create-anatomy https://www.figma.com/design/abc123/Components?node-id=100:200
-```
+<Tabs>
+  <Tab title="Cursor">
+    ```
+    @create-anatomy https://www.figma.com/design/abc123/Components?node-id=100:200
 
-### Custom destination
+    This is a text field with a leading icon, label, placeholder text, and a trailing clear button.
+    ```
+  </Tab>
+  <Tab title="Claude Code">
+    ```
+    /create-anatomy https://www.figma.com/design/abc123/Components?node-id=100:200
 
-Place the annotation in a different file or page by adding a destination link:
+    This is a text field with a leading icon, label, placeholder text, and a trailing clear button.
+    ```
+  </Tab>
+  <Tab title="Codex">
+    ```
+    $create-anatomy https://www.figma.com/design/abc123/Components?node-id=100:200
 
-```
-@create-anatomy https://www.figma.com/design/abc123/Components?node-id=100:200
+    This is a text field with a leading icon, label, placeholder text, and a trailing clear button.
+    ```
+  </Tab>
+</Tabs>
 
-Destination: https://www.figma.com/design/xyz789/Docs?node-id=0-1
-```
+<Tip>
+  To place the annotation in a different file or page, add a destination link to your prompt:
+  `Destination: https://www.figma.com/design/xyz789/Docs?node-id=0-1`
+</Tip>
 
 ## What it generates
 

@@ -1,0 +1,9 @@
+# Codex MCP configuration for uSpec
+# Replace figd_YOUR_TOKEN_HERE with your Figma personal access token.
+
+[mcp_servers.figma-console]
+command = "npx"
+args = ["-y", "figma-console-mcp@latest"]
+
+[mcp_servers.figma-console.env]
+FIGMA_ACCESS_TOKEN = "figd_YOUR_TOKEN_HERE"

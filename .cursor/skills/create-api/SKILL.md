@@ -51,7 +51,7 @@ If connection fails, guide user through setup before proceeding.
 Read the file `uspecs.config.json` and extract the `apiOverview` value from the `templateKeys` object.
 
 Save this key as `API_TEMPLATE_KEY`. If the key is empty, tell the user:
-> The API overview template key is not configured. Run `@setup-library` with your Figma template library link first.
+> The API overview template key is not configured. Run `@firstrun` with your Figma template library link first.
 
 ### Step 4: Gather Context
 
@@ -578,7 +578,7 @@ return { success: true };
 
 ## Notes
 
-- The API overview template key is stored in `uspecs.config.json` under `templateKeys.apiOverview` and is configured via `@setup-library`.
+- The API overview template key is stored in `uspecs.config.json` under `templateKeys.apiOverview` and is configured via `@firstrun`.
 - Conditional sub-components: If `subComponentTables` is empty or absent, the `#subcomponent-chapter-template` is hidden. If present, each sub-component gets its own cloned section with its own property table.
 - Hierarchy indicators: Both the main table (`#hierarchy-indicator`) and sub-component tables (`#subprop-hierarchy-indicator`) support `isSubProperty` for indented child rows.
 - Configuration examples: Each example has a title, a Preview frame containing a live component instance configured with the example's variant/boolean properties, and a property/value table. The `#example-asset-description` text placeholder is removed and replaced by the actual component instance. Examples are rendered as separate cloned sections from `#config-example-chapter-template`.

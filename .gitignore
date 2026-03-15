@@ -16,3 +16,13 @@ node_modules/
 .env
 .env.*
 *.pem
+
+# MCP config contains access tokens — template is checked in as .mcp.json
+# Users should copy .mcp.json and replace the placeholder token
+
+# Generated skills (created by sync-skills.sh via firstrun)
+# Only firstrun is committed — other skills are synced on demand
+.claude/skills/*/
+!.claude/skills/firstrun/
+.agents/skills/*/
+!.agents/skills/firstrun/

@@ -33,21 +33,39 @@ The property skill documents every configurable property of a component — vari
 
 ## How to use
 
-Reference the skill and paste your Figma link:
+Reference the skill and paste your Figma link. Add any context about the component to help the agent label properties correctly:
 
-```
-@create-property https://www.figma.com/design/abc123/Components?node-id=100:200
-```
+<Tabs>
+  <Tab title="Cursor">
+    ```
+    @create-property https://www.figma.com/design/abc123/Components?node-id=100:200
 
-### Custom destination
+    This is a button with Size (Large, Medium, Small), Hierarchy (Primary, Secondary, Tertiary),
+    and optional leading/trailing icons.
+    ```
+  </Tab>
+  <Tab title="Claude Code">
+    ```
+    /create-property https://www.figma.com/design/abc123/Components?node-id=100:200
 
-Place the annotation in a different file or page by adding a destination link:
+    This is a button with Size (Large, Medium, Small), Hierarchy (Primary, Secondary, Tertiary),
+    and optional leading/trailing icons.
+    ```
+  </Tab>
+  <Tab title="Codex">
+    ```
+    $create-property https://www.figma.com/design/abc123/Components?node-id=100:200
 
-```
-@create-property https://www.figma.com/design/abc123/Components?node-id=100:200
+    This is a button with Size (Large, Medium, Small), Hierarchy (Primary, Secondary, Tertiary),
+    and optional leading/trailing icons.
+    ```
+  </Tab>
+</Tabs>
 
-Destination: https://www.figma.com/design/xyz789/Docs?node-id=0-1
-```
+<Tip>
+  To place the annotation in a different file or page, add a destination link to your prompt:
+  `Destination: https://www.figma.com/design/xyz789/Docs?node-id=0-1`
+</Tip>
 
 ## What it generates
 

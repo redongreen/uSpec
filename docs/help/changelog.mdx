@@ -3,6 +3,30 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V1.1.0 — March 2026" description="Multi-platform support and improved layer detection">
+  ## uSpec V1.1.0
+
+  Added support for Claude Code CLI and Codex CLI alongside Cursor, and improved anatomy and property skills for complex components.
+
+  ### Multi-platform support
+
+  - **Claude Code CLI** and **Codex CLI** are now supported as agent hosts alongside Cursor
+  - New `firstrun` skill handles environment setup — run `/firstrun` in Claude Code or `$firstrun` in Codex to get started
+  - Skills are deployed to the chosen platform on demand, keeping each environment clean
+  - `CLAUDE.md` and `AGENTS.md` provide platform-specific project instructions
+
+  ### Improved layer detection
+
+  - **Anatomy** and **Property** skills now handle complex component structures with better layer detection and classification
+  - More accurate marker placement for deeply nested or auto-layout-heavy components
+
+  ### Infrastructure
+
+  - `sync-skills.sh` supports `--target` flag for platform-specific skill deployment
+  - `uspecs.config.json` now stores the active environment alongside template keys
+  - `.gitignore` updated to keep generated skill copies out of version control
+</Update>
+
 <Update label="V1 — March 2026" description="Initial open-source release">
   ## uSpec V1
 
@@ -22,6 +46,6 @@ description: "Product updates and release history"
 
   - Agent skills architecture running in Cursor via `.cursor/skills/`
   - Figma Console MCP integration for real-time component data extraction
-  - Template library system with one-time `@setup-library` configuration
+  - Template library system with one-time `@firstrun` configuration
   - Documentation site at [docs.uspec.design](https://docs.uspec.design)
 </Update>

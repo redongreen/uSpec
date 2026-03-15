@@ -3,11 +3,11 @@ title: "Color Annotation"
 description: "Generate design token specifications mapping UI elements to color tokens"
 ---
 
-Color annotation specs document which design tokens are used for backgrounds, text, icons, and state layers across different component states and variants.
-
 <Frame>
   <video src="/images/specs/color-output.mp4" autoPlay muted loop playsInline alt="Example color annotation output in Figma" />
 </Frame>
+
+Color annotation specs document which design tokens are used for backgrounds, text, icons, and state layers across different component states and variants.
 
 ## What you need
 
@@ -19,16 +19,38 @@ Color annotation specs document which design tokens are used for backgrounds, te
   If your component uses Figma variable modes for color variants (e.g., a "Tag color" collection with Default, Success, Warning modes), mention it in your prompt. The agent checks for these automatically, but calling them out helps.
 </Tip>
 
-## When to use
+## How to use
 
-Create a color annotation when you need to document:
+Reference the skill and paste your Figma link. Include context about states, variants, and variable mode collections for a more complete spec:
 
-- Which color tokens each UI element uses
-- How colors change across states (enabled, hover, pressed, disabled)
-- Token usage for different variants (default, danger, etc.)
-- Color tokens for variable-mode-controlled variants (like tag colors or badge styles)
+<Tabs>
+  <Tab title="Cursor">
+    ```
+    @create-color https://www.figma.com/design/abc123/Components?node-id=100:200
 
-## What the agent generates
+    This is a button with enabled, hover, pressed, and disabled states.
+    Include both Default and Danger variants.
+    ```
+  </Tab>
+  <Tab title="Claude Code">
+    ```
+    /create-color https://www.figma.com/design/abc123/Components?node-id=100:200
+
+    This is a button with enabled, hover, pressed, and disabled states.
+    Include both Default and Danger variants.
+    ```
+  </Tab>
+  <Tab title="Codex">
+    ```
+    $create-color https://www.figma.com/design/abc123/Components?node-id=100:200
+
+    This is a button with enabled, hover, pressed, and disabled states.
+    Include both Default and Danger variants.
+    ```
+  </Tab>
+</Tabs>
+
+## What it generates
 
 The agent inspects your component's fills, strokes, and variables, then maps every color-bearing element to its design token and renders the documentation directly in your Figma file.
 
@@ -55,33 +77,41 @@ Components where color is controlled by a Figma variable collection (tag colors,
   Light and dark themes don't need separate documentation. Semantic tokens handle theme switching automatically.
 </Note>
 
-## Example prompts
+## How it works
 
-<Tabs>
-  <Tab title="Static component">
+```mermaid
+flowchart LR
+    A[You] -->|Figma link| B[Agent Skill]
+    B -->|Extract data| C[Console MCP]
+    C -->|Component data| B
+    B -->|Render| C
+    C -->|Annotation frame| D[Figma Output]
 ```
-@create-color https://www.figma.com/design/abc123/Components?node-id=100:200
 
-This is a section heading with a title, subtitle, and optional trailing action.
-```
-  </Tab>
-  <Tab title="Interactive component">
-```
-@create-color https://www.figma.com/design/abc123/Components?node-id=200:300
+<Steps>
+  <Step title="Extract">
+    The skill reads fills, strokes, and variable bindings from the component via the Console MCP.
+  </Step>
+  <Step title="Map tokens">
+    Each color-bearing element is matched to its design token, across all states and variants.
+  </Step>
+  <Step title="Detect variable modes">
+    Variable collections (tag color, badge style) are identified and each mode gets its own section.
+  </Step>
+  <Step title="Import template">
+    The color documentation template is imported from the library, instantiated, and detached into an editable frame.
+  </Step>
+  <Step title="Render">
+    The skill fills header fields, builds state tables, variant sections, and variable mode sections.
+  </Step>
+  <Step title="Validate">
+    A screenshot is captured and checked for completeness. Issues are fixed automatically for up to 3 iterations.
+  </Step>
+</Steps>
 
-This is a button with enabled, hover, pressed, and disabled states.
-Include both Default and Danger variants.
-```
-  </Tab>
-  <Tab title="Variable mode component">
-```
-@create-color https://www.figma.com/design/abc123/Components?node-id=300:400
-
-This is a tag component. Color is controlled by a "Tag color" variable
-collection with modes: Default, Success, Warning, and Error.
-```
-  </Tab>
-</Tabs>
+<Tip>
+The skill renders programmatically, so the output is consistent and repeatable. Running it on the same component produces identical results.
+</Tip>
 
 ## Tips for better output
 

@@ -3,7 +3,7 @@ title: "How It Works"
 description: "Understand the pipeline that turns a Figma link into structured documentation"
 ---
 
-uSpec connects Cursor and Figma into a single pipeline. You provide a component link and context, and the system produces formatted documentation directly in your Figma file.
+uSpec connects your AI agent and Figma into a single pipeline. You provide a component link and context, and the system produces formatted documentation directly in your Figma file.
 
 ## The pipeline at a glance
 
@@ -20,23 +20,61 @@ Every skill extracts component data and renders documentation directly in Figma 
 
 ## Triggering a skill
 
-Skills are triggered by typing `@` followed by the skill name in Cursor's chat.
+<Tabs>
+  <Tab title="Cursor">
+    Skills are triggered by typing `@` followed by the skill name in Cursor's chat.
 
-<Steps>
-  <Step title="Type @">
-    In Cursor's chat, type `@`. Cursor shows an autocomplete menu of available skills.
-  </Step>
-  <Step title="Select a skill">
-    Continue typing to filter (e.g., `@create-v`) or use arrow keys to select. The skill name must match exactly: `@create-voice`, not `create voice` or `voice spec`.
-  </Step>
-  <Step title="Add your prompt">
-    After the skill name, paste a Figma link and add any context about states, variants, or behaviors.
-  </Step>
-</Steps>
+    <Steps>
+      <Step title="Type @">
+        In Cursor's chat, type `@`. Cursor shows an autocomplete menu of available skills.
+      </Step>
+      <Step title="Select a skill">
+        Continue typing to filter (e.g., `@create-v`) or use arrow keys to select. The skill name must match exactly: `@create-voice`, not `create voice` or `voice spec`.
+      </Step>
+      <Step title="Add your prompt">
+        After the skill name, paste a Figma link and add any context about states, variants, or behaviors.
+      </Step>
+    </Steps>
 
-<Tip>
-  If autocomplete doesn't show the skill, verify the uSpec project is open in Cursor. Skills load from the `.cursor/skills/` folder.
-</Tip>
+    <Tip>
+      If autocomplete doesn't show the skill, verify the uSpec project is open in Cursor. Skills load from the `.cursor/skills/` folder.
+    </Tip>
+  </Tab>
+
+  <Tab title="Claude Code">
+    Skills are triggered with `/skill-name` or by asking naturally — Claude auto-discovers skills from their description.
+
+    <Steps>
+      <Step title="Invoke a skill">
+        Type `/create-voice` to invoke directly, or just describe what you need (e.g., "create a screen reader spec"). Claude matches skills from `.claude/skills/` by their description.
+      </Step>
+      <Step title="Add your Figma link">
+        Paste the Figma component URL and describe the states, variants, or behaviors you want documented.
+      </Step>
+    </Steps>
+
+    <Tip>
+      Claude Code reads `CLAUDE.md` at the project root for context. Make sure you're running from the uSpec directory.
+    </Tip>
+  </Tab>
+
+  <Tab title="Codex">
+    Skills are triggered with `$skill-name` or matched implicitly from their description.
+
+    <Steps>
+      <Step title="Invoke a skill">
+        Type `$` to mention a skill explicitly (e.g., `$create-voice`), or describe what you need and Codex matches skills from `.agents/skills/` by their `description` frontmatter. Use `/skills` to browse available skills.
+      </Step>
+      <Step title="Add your Figma link">
+        Paste the Figma component URL and describe the states, variants, or behaviors you want documented.
+      </Step>
+    </Steps>
+
+    <Tip>
+      Codex reads `AGENTS.md` at the project root. Make sure you're in the uSpec directory.
+    </Tip>
+  </Tab>
+</Tabs>
 
 ---
 
@@ -231,7 +269,7 @@ flowchart TB
     Table --> Validate[Screenshot validation]
 ```
 
-  This is a two-step process: first run the export script in After Effects to get the JSON, then run `@create-motion` with that output. The JSON contains composition metadata (name, duration, fps, dimensions) and a flat array of layers, each with pre-computed segments containing timing, values, bar labels, and easing data. The agent computes only layout values (track width, pixels per millisecond) and passes everything else through to Figma.
+  This is a two-step process: first run the export script in After Effects to get the JSON, then run the `create-motion` skill with that output. The JSON contains composition metadata (name, duration, fps, dimensions) and a flat array of layers, each with pre-computed segments containing timing, values, bar labels, and easing data. The agent computes only layout values (track width, pixels per millisecond) and passes everything else through to Figma.
   </Tab>
 </Tabs>
 
@@ -259,7 +297,7 @@ The agent can extract structure, tokens, and styles from Figma automatically. Bu
 
 ```mermaid
 flowchart TB
-    subgraph Cursor["Cursor IDE"]
+    subgraph Host["Agent Host (Cursor / Claude Code / Codex)"]
         direction TB
         Prompt[Your prompt]
         Skill[Agent skill + reference files]
@@ -283,4 +321,4 @@ flowchart TB
     File --> Output
 ```
 
-The Figma Console MCP acts as the bridge between Cursor and Figma Desktop. It connects via WebSocket through the Desktop Bridge plugin, giving the agent real-time access to your file data without requiring manual export. Every skill renders through the MCP bridge.
+The Figma Console MCP acts as the bridge between your agent and Figma Desktop. It connects via WebSocket through the Desktop Bridge plugin, giving the agent real-time access to your file data without requiring manual export. Every skill renders through the MCP bridge, regardless of which host you use.

@@ -1,8 +1,10 @@
 # uSpec
 
-Automate design system documentation — from Figma to finished specs, powered by AI agent skills in Cursor.
+Automate design system documentation — from Figma to finished specs, powered by AI agent skills.
 
-uSpec connects Cursor to your Figma files through the Figma Console MCP. Agent skills extract component structure, design tokens, variables, and styles directly from your file and render structured documentation right in Figma. No manual spec writing required.
+uSpec connects your AI coding agent to Figma through the Figma Console MCP. Agent skills extract component structure, design tokens, variables, and styles directly from your file and render structured documentation right in Figma. No manual spec writing required.
+
+Works with **Cursor**, **Claude Code**, and **Codex**.
 
 ## What you can generate
 

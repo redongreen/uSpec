@@ -54,7 +54,7 @@ Read the file `uspecs.config.json` and extract:
 - The `fontFamily` value → save as `FONT_FAMILY` (default to `Inter` if not set)
 
 If the template key is empty, tell the user:
-> The screen reader template key is not configured. Run `@setup-library` with your Figma template library link first.
+> The screen reader template key is not configured. Run `@firstrun` with your Figma template library link first.
 
 ### Step 4: Gather Context
 
@@ -542,7 +542,7 @@ For each state:
 
 ## Notes
 
-- The screen reader template key is stored in `uspecs.config.json` under `templateKeys.screenReader` and is configured via `@setup-library`.
+- The screen reader template key is stored in `uspecs.config.json` under `templateKeys.screenReader` and is configured via `@firstrun`.
 - The target node can be either a `COMPONENT_SET` (multi-variant) or a standalone `COMPONENT` (single variant). The extraction script detects the type and returns `isComponentSet` accordingly. When the node is a standalone component, it is used directly for element extraction and artwork rendering.
 - Four-level cloning: state → platform section → table → property row. Each level is cloned from its respective template (`#state-template` → `#section` → `#state-table` → `#prop-row-template`), filled, and the original template removed.
 - The guidelines frame is found by name (`{screen-reader-general-guidelines}`), not by content search. This is handled in Step 9.

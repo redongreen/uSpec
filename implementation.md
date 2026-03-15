@@ -11,7 +11,7 @@
 >
 > **What does NOT belong here:**
 > - Per-spec-type JSON schemas and examples — those live in each skill's instruction file (e.g., `screen-reader/agent-screenreader-instruction.md`)
-> - Hardcoded template component keys — those are configured via `@setup-library` and stored in `uspecs.config.json`
+> - Hardcoded template component keys — those are configured via the `firstrun` skill and stored in `uspecs.config.json`
 >
 > **Adding a new spec type:** Update the skills table, template type table, and reference files table below. Document the spec's schema, examples, and template structure in its own instruction file.
 
@@ -30,9 +30,19 @@ uSpec generates documentation specifications for UI components. Most skills extr
 9. **Changelog (convert)** - Extract and convert an existing Figma changelog to structured JSON
 10. **Motion Specification** - Animation timeline documentation from After Effects export data (pre-computed segments, no raw keyframes)
 
-## Cursor Skills
+## Skills
 
-Agent workflows can be triggered via Cursor skills in `.cursor/skills/`:
+Agent workflows are defined as skills. Each skill has a `SKILL.md` with frontmatter (`name`, `description`), inputs, a step-by-step workflow, and `figma_execute` code blocks. The skill content is identical across hosts — only the directory location and invocation syntax differ.
+
+### Skill locations by host
+
+| Host | Skill directory | Invocation |
+|------|----------------|------------|
+| Cursor | `.cursor/skills/` | `@skill-name` in chat |
+| Claude Code | `.claude/skills/` | `/skill-name` or natural language (auto-discovered by description) |
+| Codex | `.agents/skills/` | `$skill-name` to invoke explicitly, or natural language (matched by description) |
+
+### Available skills
 
 | Skill | Trigger Keywords | Purpose |
 |-------|------------------|---------|
@@ -46,9 +56,11 @@ Agent workflows can be triggered via Cursor skills in `.cursor/skills/`:
 | `update-changelog` | update changelog, add to changelog, changelog entry, log this change | Add entries to existing changelog |
 | `convert-changelog` | convert changelog, import changelog, migrate changelog | Convert existing Figma changelog to JSON format |
 | `create-motion` | motion, motion spec, animation spec, timeline | Motion specification from AE export (JSON paste, file ref, or Figma destination link) |
-| `setup-library` | setup library, configure templates, link templates | Configure uSpec with your Figma template library |
+| `firstrun` | firstrun, first run, setup, setup library, configure templates | First-time environment setup and template library configuration |
 
-**Usage:** Mention trigger keywords in your prompt (e.g., "Create voice spec for this button") or reference directly with `@create-voice`.
+**Usage:** Mention trigger keywords in your prompt (e.g., "Create voice spec for this button"). In Cursor, you can also reference directly with `@create-voice`.
+
+`.cursor/skills/` is the source of truth for all skills. Only the `firstrun` skill is committed in `.claude/skills/` and `.agents/skills/` (for bootstrapping). When a user runs `firstrun` and selects Claude Code or Codex, the sync script deploys all other skills to the chosen platform. Run `./utils/sync-skills.sh` after editing any skill to update the copies. Use `--target claude` or `--target codex` to sync to one platform only.
 
 ## Figma Console MCP Tools
 
@@ -90,11 +102,11 @@ Before using MCP tools, verify the connection:
 ## Architecture
 
 ```
-Cursor Agent Skill  ──>  Figma Console MCP  ──>  Figma (via figma_execute)
+AI Agent (Cursor / Claude Code / Codex)  ──>  Figma Console MCP  ──>  Figma (via figma_execute)
 ```
 
 ```
-Cursor              Figma MCP           Figma
+Agent Host          Figma MCP           Figma
    |                    |                  |
    |-- get context ---->|                  |
    |<-- component data -|                  |
@@ -105,13 +117,21 @@ Cursor              Figma MCP           Figma
    |   fill tables)     |                  |-- build exhibits
 ```
 
+### Host-specific configuration
+
+| Host | Project instructions | MCP config | Skill directory |
+|------|---------------------|------------|-----------------|
+| Cursor | `.cursor/rules/` | `.cursor/mcp.json` (user-level) | `.cursor/skills/` (all skills) |
+| Claude Code | `CLAUDE.md` | `.mcp.json` (project root) | `.claude/skills/` (only `firstrun` until user runs it) |
+| Codex | `AGENTS.md` | `.codex/config.toml` | `.agents/skills/` (only `firstrun` until user runs it) |
+
 Most skills extract component data via MCP, then render annotations directly in Figma using `figma_execute`. Each skill imports its documentation template (by component key from `uspecs.config.json`), detaches it, and fills text fields, clones sections, and builds tables programmatically. The motion skill is different: its data comes from an After Effects export script (`motion/export-timeline.jsx`) that pre-computes segments, easing values, formatted labels, and `composition.durationMs`. Raw keyframes are stripped from the output — the JSON contains only segments. The agent passes segment data and `pxPerMs` to the Figma code, which computes bar positions at render time.
 
 The anatomy and property skills share a single template (`anatomyOverview`); anatomy clones and fills its sections first, then property re-uses the same detached frame to build its own chapters. The voice, color, API, structure, changelog, and motion skills each have their own template and render independently.
 
 ### Template Keys
 
-Template component keys are stored in `uspecs.config.json` and configured via `@setup-library`. Skills read the key for their template type and import it via `figma.importComponentByKeyAsync`:
+Template component keys are stored in `uspecs.config.json` and configured via the `firstrun` skill. Skills read the key for their template type and import it via `figma.importComponentByKeyAsync`:
 
 | Config key | Template |
 |------------|----------|
@@ -136,13 +156,13 @@ All skills render directly in Figma via `figma_execute`, following a shared patt
 4. **Build content** — Clone template sections, fill text fields, build tables, create component instances where needed
 5. **Validate** — `figma_take_screenshot` to verify output
 
-**Template keys:** All template keys are stored in `uspecs.config.json` under the `templateKeys` object and configured via `@setup-library`. Each skill has its own template key.
+**Template keys:** All template keys are stored in `uspecs.config.json` under the `templateKeys` object and configured via the `firstrun` skill. Each skill has its own template key.
 
 **Variant matching (Anatomy/Property):** When creating component instances for a specific property value, the skill first attempts an exact match across all variant axes. If no exact match exists, it falls back to the best partial match.
 
 **Marker positioning (Anatomy):** After placing the component instance in the artwork, the skill re-reads actual child positions from the instance using `absoluteTransform` rather than relying on extraction-time positions.
 
-**Property normalization (Property):** Before rendering, `create-property` runs a 4-step pipeline to normalize raw Figma property definitions — resolving variant options, boolean toggles, instance-swap slots, and nested component properties into a uniform list of property axes.
+**Property extraction (Property):** `create-property` uses a two-tier extraction model. **Tier 1 (deterministic scripts):** Steps 3, 3a, 3c, and 3d are `figma_execute` scripts that extract properties, resolve variant-gated booleans, link controlling booleans to child components by node ID, and normalize the data (coupled axes, unified slot chapters, sibling boolean collapsing). **Tier 2 (AI reasoning):** Step 3b (variable mode search) requires AI judgment for collection matching, and Step 3e is a validation layer that cross-checks the deterministic output for semantic mismatches, structural anomalies, and combination count sanity before rendering.
 
 **Clone visibility:** All cloned sections explicitly set `visible = true` after cloning, since template sources are hidden.
 
@@ -165,7 +185,7 @@ Each spec type has its own instruction file that defines the agent's behavior, d
 
 ### Template Infrastructure
 
-Template component keys are stored in `uspecs.config.json` at the project root and configured via `@setup-library`. Each skill reads its key from this file and imports the template directly via `figma_execute` calling `figma.importComponentByKeyAsync`.
+Template component keys are stored in `uspecs.config.json` at the project root and configured via the `firstrun` skill. Each skill reads its key from this file and imports the template directly via `figma_execute` calling `figma.importComponentByKeyAsync`.
 
 ### Template Key Config
 
@@ -175,15 +195,17 @@ The template infrastructure uses a config file for extensibility:
 
 ```json
 {
+  "environment": "cursor",
+  "fontFamily": "Inter",
   "templateKeys": {
-    "screenReader": "key-from-setup-library",
-    "colorAnnotation": "key-from-setup-library",
-    "anatomyOverview": "key-from-setup-library",
-    "apiOverview": "key-from-setup-library",
-    "propertyOverview": "key-from-setup-library",
-    "structureSpec": "key-from-setup-library",
-    "changelog": "key-from-setup-library",
-    "motionSpec": "key-from-setup-library"
+    "screenReader": "key-from-firstrun",
+    "colorAnnotation": "key-from-firstrun",
+    "anatomyOverview": "key-from-firstrun",
+    "apiOverview": "key-from-firstrun",
+    "propertyOverview": "key-from-firstrun",
+    "structureSpec": "key-from-firstrun",
+    "changelog": "key-from-firstrun",
+    "motionSpec": "key-from-firstrun"
   }
 }
 ```
@@ -191,8 +213,10 @@ The template infrastructure uses a config file for extensibility:
 **Adding a new template type requires:**
 
 1. Add a new key to `uspecs.config.json` under `templateKeys`
-2. Create a new SKILL.md that reads the key and uses `figma.importComponentByKeyAsync` to import the template
-3. Update `@setup-library` to search for and extract the new template's component key
+2. Create a new SKILL.md in `.cursor/skills/<name>/` that reads the key and uses `figma.importComponentByKeyAsync` to import the template
+3. Update the `firstrun` skill to search for and extract the new template's component key
+4. Run `./utils/sync-skills.sh` to sync the new skill (and updated `firstrun`) to `.claude/skills/` and `.agents/skills/`
+5. Add the new skill to the tables in `CLAUDE.md`, `AGENTS.md`, and this file
 
 ## Cloning Logic
 
@@ -216,7 +240,7 @@ The uSpec docs are hosted at **https://docs.uspec.design** using [Mintlify](http
 
 ### Updating docs
 
-1. Reference `@mintlify.mdc` in your Cursor prompt so the agent uses the correct writing style and Mintlify components
+1. Reference the Mintlify writing rule (`.cursor/rules/mintlify.mdc` in Cursor, or read it directly in other hosts) so the agent uses the correct writing style and Mintlify components
 2. Edit the MDX files in `docs/` (and update `docs/docs.json` if adding or removing pages)
 3. Push to `main` — Mintlify auto-deploys within 1–2 minutes
 
@@ -244,7 +268,7 @@ docs/
 
 ## Reference Files
 
-### Skills
+### Skills (Cursor — full set)
 
 | File | Content |
 |------|---------|
@@ -258,7 +282,22 @@ docs/
 | `.cursor/skills/update-changelog/SKILL.md` | Changelog update: clone entry into existing frame |
 | `.cursor/skills/convert-changelog/SKILL.md` | Changelog convert: extract existing Figma changelog to JSON |
 | `.cursor/skills/create-motion/SKILL.md` | Motion: timeline bars, pre-computed easing segments, detail table |
-| `.cursor/skills/setup-library/SKILL.md` | Setup: scan template library, extract component keys |
+| `.cursor/skills/firstrun/SKILL.md` | First run: environment selection, skill sync, template library configuration |
+
+### Skills (Claude Code and Codex)
+
+Only the `firstrun` skill is committed in `.claude/skills/` and `.agents/skills/` (for bootstrapping). When the user runs `firstrun` and selects their environment, the sync script deploys all other skills to the chosen platform. The synced copies have adjusted relative paths and generic invocation references. Do not edit them directly — edit the Cursor source and re-run the sync script.
+
+### Host configuration and utilities
+
+| File | Content |
+|------|---------|
+| `CLAUDE.md` | Claude Code project instructions and skill index |
+| `AGENTS.md` | Codex agent instructions and skill index |
+| `.mcp.json` | Shared MCP config (Claude Code reads this by default) |
+| `.codex/config.toml` | Codex MCP config |
+| `.cursor/mcp.json` | Cursor MCP config (gitignored — user configures locally) |
+| `utils/sync-skills.sh` | Syncs skills from `.cursor/skills/` to `.claude/skills/` and `.agents/skills/` |
 
 ### Agent Instruction Files
 

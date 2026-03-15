@@ -10,21 +10,34 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
 </Warning>
 
 <Tabs>
-  <Tab title="In Cursor" icon="message-bot">
+  <Tab title="Agent issues" icon="message-bot">
     <AccordionGroup>
       <Accordion title="Skill not activating">
         **Symptom**: You type a prompt but the skill doesn't run.
 
-        **Solutions**:
-        - Use the direct reference format: `@create-voice` instead of typing keywords
-        - Check that the uSpec project folder is open in Cursor (not a parent directory)
-        - Restart Cursor if skills don't autocomplete
+        <Tabs>
+          <Tab title="Cursor">
+            - Use the direct reference format: `@create-voice` instead of typing keywords
+            - Check that the uSpec project folder is open in Cursor (not a parent directory)
+            - Restart Cursor if skills don't autocomplete
+          </Tab>
+          <Tab title="Claude Code">
+            - Confirm you're running `claude` from the uSpec project root
+            - Check that `CLAUDE.md` exists and `.claude/skills/` contains the skill folders
+            - Try mentioning the skill by name: "Run create-voice for this component"
+          </Tab>
+          <Tab title="Codex">
+            - Confirm you're in the uSpec project directory
+            - Check that `AGENTS.md` exists and `.agents/skills/` contains the skill folders
+            - Try using `/skills` to list available skills, then invoke with `$skill-name`
+          </Tab>
+        </Tabs>
       </Accordion>
       <Accordion title="Poor output quality">
         **Symptom**: The generated spec is missing information or has incorrect values.
 
         **Solutions**:
-        - Make sure you're using **Claude 4.6 Opus (Thinking)** or higher — lower-capacity models may truncate skill instructions and produce incomplete specs
+        - Make sure you're using a high-context model — **Claude 4.6 Opus (Thinking)** or higher in Cursor and Claude Code, or **GPT 5.4** or higher in Codex. Lower-capacity models may truncate skill instructions and produce incomplete specs.
         - Start a **new agent session** for each prompt to give the model full context capacity
         - Add more context to your prompt: describe all states, variants, and behaviors
         - Specify states explicitly (e.g., "enabled, hover, pressed, disabled")
@@ -35,11 +48,11 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
         **Symptom**: The agent stops generating before finishing, or the output is truncated or malformed.
 
         **Solutions**:
-        - Switch to **Claude 4.6 Opus (Thinking)** or higher — uSpec skills are token-intensive and require a high-context model
+        - Switch to a higher-context model — uSpec skills are token-intensive
         - Start a **new agent session** instead of continuing in an existing conversation — accumulated history reduces available context
         - If the issue persists, try running the skill again in a fresh session with a simpler prompt first
       </Accordion>
-      <Accordion title="Skills don't autocomplete">
+      <Accordion title="Skills don't appear in autocomplete (Cursor)">
         **Symptom**: Typing `@create-` doesn't show skill suggestions.
 
         **Solutions**:
@@ -52,22 +65,34 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
 
   <Tab title="Figma connection" icon="plug">
     <AccordionGroup>
-      <Accordion title="Cursor can't connect to Figma">
+      <Accordion title="Agent can't connect to Figma">
         **Symptom**: The agent reports it cannot access your Figma file.
 
         **Solutions**:
         - Confirm Figma Desktop is running (not the web version)
         - Check that the Desktop Bridge plugin is open and active in your Figma file
-        - In Cursor, type "Check Figma status" to diagnose the connection
+        - Ask your agent to "Check Figma status" to diagnose the connection
         - Restart the Desktop Bridge plugin if it's unresponsive
       </Accordion>
       <Accordion title="Desktop Bridge not connecting">
-        **Symptom**: The Desktop Bridge plugin is open but Cursor can't connect.
+        **Symptom**: The Desktop Bridge plugin is open but the agent can't connect.
 
         **Solutions**:
         - Close and reopen the Desktop Bridge plugin in Figma
         - Make sure only one instance of Figma Desktop is running
-        - Check that your Figma access token is configured correctly in Cursor's MCP settings
+        - Verify your Figma access token is configured correctly:
+
+        <Tabs>
+          <Tab title="Cursor">
+            Check your Cursor MCP settings or `.cursor/mcp.json`
+          </Tab>
+          <Tab title="Claude Code">
+            Check `.mcp.json` at the project root
+          </Tab>
+          <Tab title="Codex">
+            Check `.codex/config.toml`
+          </Tab>
+        </Tabs>
       </Accordion>
       <Accordion title="Unexpected behavior with multiple agents">
         **Symptom**: Output appears on the wrong page, node references break, or specs are corrupted when running two agents at the same time.
@@ -101,7 +126,7 @@ The agent can only document what it can see in Figma or what you describe. If st
 
 If the output has the right structure but lacks detail:
 
-- **Check your MCP connection**: type "Check Figma status" in Cursor. If the connection is down, the agent can't read your component data
+- **Check your MCP connection**: ask your agent to "Check Figma status". If the connection is down, the agent can't read your component data
 - **Verify the Figma link**: make sure the node-id points to the actual component, not a parent frame
 - **Re-run with more context**: describe the component's parts and their relationships
 

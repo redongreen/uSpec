@@ -21,15 +21,16 @@ Task Progress:
 - [ ] Step 1: Verify MCP connection
 - [ ] Step 2: Read template key from uspecs.config.json
 - [ ] Step 3: Navigate to the component and extract property data
-- [ ] Step 3a: Detect variant-gated booleans
-- [ ] Step 3b: Detect variable mode properties (shape, density)
-- [ ] Step 3c: Discover local child component properties
-- [ ] Step 3d: Normalize child properties (coupled axes, container-gated booleans, unified slots, sibling booleans)
+- [ ] Step 3a: Detect variant-gated booleans (deterministic + interpretation)
+- [ ] Step 3b: Detect variable mode properties (shape, density) — AI search
+- [ ] Step 3c: Discover local child component properties + boolean linkage (deterministic)
+- [ ] Step 3d: Normalize child properties (deterministic script)
+- [ ] Step 3e: AI validation layer — cross-check extraction output before rendering
 - [ ] Step 4: Navigate to destination (if different file)
 - [ ] Step 5: Import and detach the Property template
 - [ ] Step 6: Fill header fields
 - [ ] Step 7: Build property exhibits with component instances
-- [ ] Step 8: Visual validation
+- [ ] Step 8: Visual validation (limited role — confirms rendering, not primary safety net)
 ```
 
 ### Step 1: Verify MCP Connection
@@ -47,7 +48,7 @@ Read the file `uspecs.config.json` and extract:
 - The `fontFamily` value → save as `FONT_FAMILY` (default to `Inter` if not set)
 
 If the template key is empty, tell the user:
-> The property template key is not configured. Run `@setup-library` with your Figma template library link first.
+> The property template key is not configured. Run `@firstrun` with your Figma template library link first.
 
 ### Step 3: Extract Property Data
 
@@ -206,16 +207,33 @@ for (const bd of boolDefs) {
   });
 }
 
-return { boolLayerReport, variantAxes };
+// --- Interpret variant-gating deterministically ---
+const interpretedBooleans = boolLayerReport.map(entry => {
+  const result = { name: entry.name, requiredVariantOverrides: null, layerName: entry.layerName || null };
+  if (!entry.layerFoundInDefault && entry.foundInVariant) {
+    result.requiredVariantOverrides = entry.foundInVariant.diffFromDefault;
+    result.layerName = entry.foundInVariant.layerName;
+  }
+  return result;
+});
+
+return { boolLayerReport, interpretedBooleans, variantAxes };
 ```
 
 **How the agent should use this data:**
 
-This is a reasoning step — the script provides structural facts, and the agent decides how to act. For each boolean in `boolLayerReport`:
+The script now returns an `interpretedBooleans` array alongside the raw `boolLayerReport`. Each entry in `interpretedBooleans` contains:
 
-- **`layerFoundInDefault: true`** — No action needed. The boolean works on the default variant. Render normally in 6b.
-- **`layerFoundInDefault: false`** with `foundInVariant` — The boolean is **variant-gated**. The `foundInVariant.diffFromDefault` object tells the agent which variant axis values are required (e.g., `{ "Behavior": "Interactive" }`). Store this on the boolean entry as `requiredVariantOverrides`. In 6b, the agent must use these overrides when looking up the base variant for instance creation instead of the default variant. The description should note the dependency (e.g., "Requires Behavior = Interactive").
-- **`layerFoundInDefault: false`** without `foundInVariant` — The layer wasn't found anywhere. The agent should note this and render the boolean normally (the boolean may control something non-structural like opacity).
+- `name`: the boolean's clean name
+- `requiredVariantOverrides`: an object like `{ "Behavior": "Interactive" }` if the boolean is variant-gated, or `null` if it works on the default variant
+- `layerName`: the resolved layer name
+
+For each boolean in `interpretedBooleans`:
+
+- **`requiredVariantOverrides === null`** — No action needed. The boolean works on the default variant. Render normally in 6b.
+- **`requiredVariantOverrides` is an object** — The boolean is **variant-gated**. Store the `requiredVariantOverrides` on the boolean entry from Step 3's `booleanProps`. In 6b, use these overrides when looking up the base variant for instance creation. The description should note the dependency (e.g., "Requires Behavior = Interactive").
+
+No AI reasoning is needed — the script has already resolved which booleans are variant-gated and what overrides they require.
 
 ### Step 3b: Detect Variable Mode Properties
 
@@ -263,10 +281,11 @@ If no matching collections are found, set `variableModeProps` to an empty array 
 
 Some components contain nested child instances (e.g., a Button inside a Section Heading) that have their own configurable properties. These are not captured by the parent's `componentPropertyDefinitions`. This step walks the default variant's children recursively to find local child components and extract their properties.
 
-Run this script via `figma_execute`, replacing `TARGET_NODE_ID` with the actual node ID:
+Run this script via `figma_execute`, replacing `TARGET_NODE_ID` with the actual node ID. **Pass the parent's `booleanProps` array** (from Step 3) as `PARENT_BOOLEANS` so the script can resolve controlling boolean linkage deterministically:
 
 ```javascript
 const TARGET_NODE_ID = '__NODE_ID__';
+const PARENT_BOOLEANS = __PARENT_BOOLEANS_JSON__;
 
 const node = await figma.getNodeByIdAsync(TARGET_NODE_ID);
 if (!node || (node.type !== 'COMPONENT_SET' && node.type !== 'COMPONENT')) {
@@ -275,7 +294,6 @@ if (!node || (node.type !== 'COMPONENT_SET' && node.type !== 'COMPONENT')) {
 
 const isComponentSet = node.type === 'COMPONENT_SET';
 const defaultVariant = isComponentSet ? (node.defaultVariant || node.children[0]) : node;
-const fileKey = figma.root.children.map(p => p.id)[0]?.split(':')[0];
 
 const childComponents = [];
 
@@ -288,7 +306,6 @@ async function walkForInstances(container) {
 
         const parent = mainComp.parent;
         const isLocalComponentSet = parent && parent.type === 'COMPONENT_SET';
-        const isLocalComponent = mainComp.type === 'COMPONENT' && !isLocalComponentSet;
 
         const sourceNode = isLocalComponentSet ? parent : mainComp;
         const propDefs = sourceNode.componentPropertyDefinitions || {};
@@ -342,159 +359,283 @@ async function walkForInstances(container) {
 
 await walkForInstances(defaultVariant);
 
-return { childComponents };
+// --- Boolean linkage: resolve which parent boolean controls each hidden child ---
+const controllingBooleanNames = [];
+
+for (const child of childComponents) {
+  child.controllingBooleanName = null;
+  child.controllingBooleanRawKey = null;
+
+  if (child.visible) continue;
+
+  // Primary: resolve rawKey#nodeId to layer name match
+  for (const pb of PARENT_BOOLEANS) {
+    const nodeIdSuffix = pb.rawKey.split('#')[1];
+    if (!nodeIdSuffix) continue;
+    try {
+      const lid = defaultVariant.id.split(';')[0] + ';' + nodeIdSuffix;
+      const layerNode = await figma.getNodeByIdAsync(lid);
+      if (layerNode && layerNode.name === child.name) {
+        child.controllingBooleanName = pb.name;
+        child.controllingBooleanRawKey = pb.rawKey;
+        break;
+      }
+    } catch {}
+  }
+
+  // Fallback: deterministic normalized name containment
+  if (!child.controllingBooleanName) {
+    const normChild = child.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const pb of PARENT_BOOLEANS) {
+      const normBool = pb.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (normChild.includes(normBool) || normBool.includes(normChild)) {
+        child.controllingBooleanName = pb.name;
+        child.controllingBooleanRawKey = pb.rawKey;
+        break;
+      }
+    }
+  }
+
+  if (child.controllingBooleanName) {
+    controllingBooleanNames.push(child.controllingBooleanName);
+  }
+}
+
+return { childComponents, controllingBooleanNames };
 ```
 
-Save the returned `childComponents` array alongside `variantAxes`, `booleanProps`, etc. Each entry contains:
+Replace `__PARENT_BOOLEANS_JSON__` with the `booleanProps` array from Step 3 (e.g., `[{"name":"Trailing content","defaultValue":false,"rawKey":"Trailing content#6051:1","associatedLayer":"trailingContent v2"}]`).
+
+Save the returned `childComponents` array and `controllingBooleanNames` array. Each child entry now contains:
 - `name`: the layer name in the parent (e.g., "trailingContent v2")
 - `mainComponentName`: the source component name (e.g., "Content=Button (text)")
 - `mainComponentSetId` or `mainComponentId`: for creating instances
 - `isComponentSet`: whether it is a multi-variant component set
 - `variantAxes`, `booleanProps`, `instanceSwapProps`: its own properties
 - `visible`: whether it is visible by default in the parent
+- `controllingBooleanName`: the clean name of the parent boolean that controls this child's visibility, or `null` if none found
+- `controllingBooleanRawKey`: the full raw key for `setProperties()`, or `null`
+
+The `controllingBooleanNames` array contains all matched boolean names — these are skipped in 6b (not rendered as standalone boolean chapters).
 
 If `childComponents` is empty, proceed — there are no local child components to exhibit.
 
-#### Link controlling booleans to child components
+### Step 3d: Normalize Child Properties (Deterministic Script)
 
-After collecting `childComponents`, cross-reference each hidden child against the parent's `booleanProps` to find the parent boolean that controls the child's visibility. A match means the parent boolean and child variants should be rendered as a single unified chapter (see 6e).
+This is a deterministic data-processing step — no Figma calls needed. Run the following script via `figma_execute`, passing in the extracted data from Steps 3, 3c. It performs all four sub-analyses (coupled axes, container-gated booleans, unified slots, sibling booleans) and returns the full normalization plan.
 
-For each child where `visible === false`:
+Replace `__PARENT_VARIANT_AXES_JSON__` with the `variantAxes` array from Step 3, `__CHILD_COMPONENTS_JSON__` with the `childComponents` array from Step 3c, and `__CONTROLLING_BOOLEAN_NAMES_JSON__` with the `controllingBooleanNames` array from Step 3c:
 
-1. **Primary match (rawKey node resolution)**: The parent boolean's `rawKey` contains a `#nodeId` suffix. Check if that node ID resolves to a node whose name matches the child's layer `name`. This is the most reliable signal.
-2. **Fallback (fuzzy name match)**: Normalize both the boolean's `name` and the child's `name` to lowercase with spaces/special characters stripped, then check substring containment (e.g., "Trailing content" → "trailingcontent", "trailingContent v2" → "trailingcontentv2" — one contains the other).
+```javascript
+const PARENT_AXES = __PARENT_VARIANT_AXES_JSON__;
+const CHILDREN = __CHILD_COMPONENTS_JSON__;
+const CONTROLLING_BOOL_NAMES = __CONTROLLING_BOOLEAN_NAMES_JSON__;
 
-When a match is found, store on the child entry:
-- `controllingBooleanName`: the clean name of the parent boolean (e.g., "Trailing content")
-- `controllingBooleanRawKey`: the full raw key from the parent's `booleanProps` (e.g., "Trailing content#6051:1") — needed for `setProperties()` on parent instances
-
-Also build a `controllingBooleanNames` set containing all matched boolean names. This set is used in 6b to skip those booleans from standalone rendering.
-
-If no match is found for a hidden child, leave `controllingBooleanName` as `null` — the child will still be rendered in parent context but without an "off" state.
-
-### Step 3d: Normalize Child Properties
-
-This is a pure data-analysis step — no Figma calls. Examine the extracted `childComponents`, parent `variantAxes`, and parent `booleanProps` to produce a cleaner rendering plan. Run the four sub-analyses in sequence.
-
-#### 3d-i: Detect redundant coupled axes
-
-For each child component's variant axes, check whether the axis has **the same name and identical (or subset) options** as a parent variant axis. If so, mark it as `coupled: true` so Step 7 (6e-i) skips rendering it as a separate chapter.
-
-**Detection logic:**
-
-- Child axis name matches a parent axis name (case-insensitive)
-- Child axis options are a subset of (or equal to) parent axis options
-- Example: Child "Label" has axis `Size: [Large, Medium, Small, XSmall]`, parent has axis `Size: [Large, Medium, Small, XSmall]` → coupled, skip
-- Counter-example: Child "Input" has axis `isSelected: [false, true]` — no matching parent axis → keep
-
-**Data change:** Add `coupled: true` flag to matched child variant axes in `childComponents`. In Step 7 (6e-i), skip axes where `coupled === true`.
-
-#### 3d-ii: Detect container-gated booleans
-
-For each child component, inspect whether any of its boolean properties are "container-gated" — meaning the boolean has no visible effect unless a parent container boolean is first enabled.
-
-**Detection logic:**
-
-- A child component has a `controllingBooleanName` (from Step 3c linkage), meaning the child's root frame visibility is toggled by a parent boolean
-- The child also has its own boolean properties (e.g., "Trailing text", "Trailing artwork")
-- These sub-booleans are container-gated: toggling them while the container boolean is off produces identical-looking previews (both show the child hidden)
-
-When both conditions are true, the sub-booleans should not be rendered as standalone chapters — they are candidates for 3d-iii unification.
-
-#### 3d-iii: Collapse container + sub-booleans into unified slot chapters
-
-When a parent container boolean (e.g., "Leading content") gates a child component that has its own sub-booleans (e.g., "Leading artwork", "Leading text"), collapse them into a **single unified chapter** titled after the child name and container (e.g., "Input -- Leading content").
-
-The chapter shows a combinatorial preview where each meaningful combination of the container + sub-booleans is one preview item:
-
-For a container with 2 sub-booleans (artwork + text):
-
-- `None` — container off (default when controlling boolean defaults to false)
-- `Text only` — container on, text=true, artwork=false
-- `Artwork only` — container on, artwork=true, text=false
-- `Text + Artwork` — container on, both true
-
-**Data structure — `unifiedSlotChapters`:**
-
-```
-unifiedSlotChapters: [
-  {
-    chapterName: "Input -- Leading content",
-    childName: "Input",
-    containerBoolName: "Leading content",
-    containerBoolRawKey: "Leading content#12013:186",
-    subBooleans: [
-      { name: "Leading artwork", rawKey: "...", defaultValue: true },
-      { name: "Leading text", rawKey: "...", defaultValue: true }
-    ],
-    previewCombinations: [
-      { label: "None", containerOn: false, subValues: {} },
-      { label: "Text only", containerOn: true, subValues: { "Leading artwork": false, "Leading text": true } },
-      { label: "Artwork only", containerOn: true, subValues: { "Leading artwork": true, "Leading text": false } },
-      { label: "Text + Artwork", containerOn: true, subValues: { "Leading artwork": true, "Leading text": true } }
-    ],
-    defaultLabel: "None"
+// --- 3d-i: Detect coupled axes ---
+for (const child of CHILDREN) {
+  for (const axis of child.variantAxes) {
+    axis.coupled = false;
+    for (const pAxis of PARENT_AXES) {
+      if (axis.name.toLowerCase() === pAxis.name.toLowerCase()) {
+        const childSet = new Set(axis.options.map(o => o.toLowerCase()));
+        const parentSet = new Set(pAxis.options.map(o => o.toLowerCase()));
+        const isSubset = [...childSet].every(o => parentSet.has(o));
+        if (isSubset) { axis.coupled = true; break; }
+      }
+    }
   }
-]
-```
+}
 
-**Label generation:** Derive human-readable names from the sub-boolean names by stripping the common prefix shared with the container name (e.g., strip "Leading" from "Leading artwork" → "Artwork"). When there is only 1 sub-boolean, the combinations are: `None` / `{sub-boolean short name}`.
+// --- 3d-ii/iii: Container-gated booleans + unified slot chapters ---
+const unifiedSlotChapters = [];
+const unifiedSubBooleanNames = [];
 
-**Combination cap:** For containers with 3+ sub-booleans, limit to the most meaningful combinations (up to ~6 items). Omit edge combinations if the full power set is too large.
+function shortName(boolName, containerName) {
+  const prefixWords = containerName.toLowerCase().split(/\s+/);
+  const boolWords = boolName.split(/\s+/);
+  let stripped = boolWords.filter(w => !prefixWords.includes(w.toLowerCase()));
+  if (stripped.length === 0) stripped = boolWords;
+  return stripped.join(' ');
+}
 
-**Skip list updates:**
+function stripVerbs(name) {
+  return name.replace(/^(Show|Has|With|Enable|Toggle|Display)\s+/i, '');
+}
 
-- The container boolean is already in `controllingBooleanNames` (from Step 3c)
-- All sub-booleans that appear in `unifiedSlotChapters` are added to a new `unifiedSubBooleanNames` set so they are skipped in standalone 6e-ii rendering
+for (const child of CHILDREN) {
+  if (!child.controllingBooleanName || child.booleanProps.length === 0) continue;
 
-**Graceful fallback:** If the naming is ambiguous, the hierarchy is unusual, or there is any uncertainty about the grouping, fall back to rendering individual chapters rather than producing incorrect groupings.
+  const subBools = child.booleanProps;
+  const containerBoolName = child.controllingBooleanName;
+  const containerBoolRawKey = child.controllingBooleanRawKey;
 
-#### 3d-iv: Collapse sibling booleans into combinatorial chapters
+  const combos = [];
+  combos.push({ label: 'None', containerOn: false, subValues: {} });
 
-Even when no container/sub-boolean hierarchy exists (3d-ii/iii), a child component may have **multiple sibling booleans** that are more meaningful when shown as combinations rather than isolated true/false toggles. For example, a Label child with booleans "Show icon" (default: false) and "Character count" (default: true) is better presented as a single "Label" chapter with 4 combinations than as two separate chapters each showing true/false.
-
-**Detection logic:**
-
-- A child component has **2 or more boolean properties** that are NOT already consumed by 3d-ii/iii (not container-gated, not unified sub-booleans)
-- The booleans are siblings — they all belong to the same child component at the same level
-- The full power set of combinations is small enough to render (2 booleans → 4 combos, 3 booleans → up to 6 combos after capping)
-
-**When detected**, collapse all sibling booleans into a single `siblingBoolChapter` entry:
-
-```
-siblingBoolChapters: [
-  {
-    chapterName: "Label",
-    childName: "Label",
-    booleans: [
-      { name: "Show icon", defaultValue: false },
-      { name: "Character count", defaultValue: true }
-    ],
-    previewCombinations: [
-      { label: "None", subValues: { "Show icon": false, "Character count": false } },
-      { label: "Character count", subValues: { "Show icon": false, "Character count": true } },
-      { label: "Icon", subValues: { "Show icon": true, "Character count": false } },
-      { label: "Character count + Icon", subValues: { "Show icon": true, "Character count": true } }
-    ],
-    defaultLabel: "Character count"
+  if (subBools.length <= 5) {
+    const count = subBools.length;
+    const total = 1 << count;
+    const comboEntries = [];
+    for (let mask = 1; mask < total; mask++) {
+      const subValues = {};
+      const onNames = [];
+      for (let i = 0; i < count; i++) {
+        const on = Boolean(mask & (1 << i));
+        subValues[subBools[i].name] = on;
+        if (on) onNames.push(stripVerbs(shortName(subBools[i].name, containerBoolName)));
+      }
+      comboEntries.push({ label: onNames.join(' + '), containerOn: true, subValues, onCount: onNames.length });
+    }
+    comboEntries.sort((a, b) => a.onCount - b.onCount);
+    const capped = comboEntries.length > 5 ? [...comboEntries.slice(0, 4), comboEntries[comboEntries.length - 1]] : comboEntries;
+    for (const c of capped) { delete c.onCount; combos.push(c); }
+  } else {
+    for (const sb of subBools) {
+      const subValues = {};
+      for (const s of subBools) subValues[s.name] = (s.name === sb.name);
+      combos.push({ label: stripVerbs(shortName(sb.name, containerBoolName)), containerOn: true, subValues });
+    }
+    const allOn = {};
+    for (const s of subBools) allOn[s.name] = true;
+    combos.push({ label: subBools.map(s => stripVerbs(shortName(s.name, containerBoolName))).join(' + '), containerOn: true, subValues: allOn });
   }
-]
+
+  if (subBools.length === 1) {
+    combos[1].label = stripVerbs(shortName(subBools[0].name, containerBoolName));
+  }
+
+  const parentBoolDef = CONTROLLING_BOOL_NAMES.includes(containerBoolName);
+  let defaultLabel = 'None';
+  if (parentBoolDef) {
+    const defaultSubValues = {};
+    for (const sb of subBools) defaultSubValues[sb.name] = sb.defaultValue;
+    const match = combos.find(c => c.containerOn && Object.entries(c.subValues).every(([k, v]) => defaultSubValues[k] === v));
+    if (match) defaultLabel = match.label;
+  }
+
+  unifiedSlotChapters.push({
+    chapterName: child.name + ' -- ' + containerBoolName,
+    childName: child.name,
+    containerBoolName,
+    containerBoolRawKey,
+    subBooleans: subBools,
+    previewCombinations: combos,
+    defaultLabel
+  });
+
+  for (const sb of subBools) unifiedSubBooleanNames.push(sb.name);
+}
+
+// --- 3d-iv: Sibling boolean collapsing ---
+const siblingBoolChapters = [];
+const siblingBoolNames = [];
+const consumedByUnified = new Set(unifiedSubBooleanNames);
+
+for (const child of CHILDREN) {
+  if (child.controllingBooleanName && child.booleanProps.length > 0) continue;
+
+  const remaining = child.booleanProps.filter(b => !consumedByUnified.has(b.name));
+  if (remaining.length < 2) continue;
+
+  const combos = [];
+  const count = remaining.length;
+  const total = 1 << count;
+  const comboEntries = [];
+  for (let mask = 0; mask < total; mask++) {
+    const subValues = {};
+    const onNames = [];
+    for (let i = 0; i < count; i++) {
+      const on = Boolean(mask & (1 << i));
+      subValues[remaining[i].name] = on;
+      if (on) onNames.push(stripVerbs(remaining[i].name));
+    }
+    const label = onNames.length === 0 ? 'None' : onNames.join(' + ');
+    comboEntries.push({ label, subValues, onCount: onNames.length });
+  }
+  comboEntries.sort((a, b) => a.onCount - b.onCount);
+  const capped = comboEntries.length > 6 ? [...comboEntries.slice(0, 4), comboEntries[comboEntries.length - 2], comboEntries[comboEntries.length - 1]] : comboEntries;
+  for (const c of capped) { delete c.onCount; combos.push(c); }
+
+  const defaultSubValues = {};
+  for (const b of remaining) defaultSubValues[b.name] = b.defaultValue;
+  const defaultMatch = combos.find(c => Object.entries(c.subValues).every(([k, v]) => defaultSubValues[k] === v));
+  const defaultLabel = defaultMatch ? defaultMatch.label : 'None';
+
+  siblingBoolChapters.push({
+    chapterName: child.name,
+    childName: child.name,
+    booleans: remaining,
+    previewCombinations: combos,
+    defaultLabel
+  });
+
+  for (const b of remaining) siblingBoolNames.push(b.name);
+}
+
+return {
+  childComponents: CHILDREN,
+  unifiedSlotChapters,
+  unifiedSubBooleanNames,
+  siblingBoolChapters,
+  siblingBoolNames
+};
 ```
 
-**Label generation:**
+Save the returned data. The script produces:
 
-- `"None"` — all booleans off
-- For single-boolean-on combos, use a short human-readable name derived from the boolean name (e.g., "Show icon" → "Icon", "Character count" → "Character count")
-- For multi-boolean-on combos, join the short names with " + " (e.g., "Character count + Icon")
-- Strip common prefixes or verbs like "Show", "Has", "With" when deriving short names
+- **`childComponents`** — Updated with `coupled: true` flags on child variant axes that mirror parent axes (3d-i). In Step 7 (6e-i), skip axes where `coupled === true`.
+- **`unifiedSlotChapters`** — Array of chapter entries for container + sub-boolean combinations (3d-ii/iii). Each entry has `chapterName`, `childName`, `containerBoolName`, `containerBoolRawKey`, `subBooleans`, `previewCombinations`, and `defaultLabel`. Rendered in 6f.
+- **`unifiedSubBooleanNames`** — Array of sub-boolean names consumed by unified slot chapters. These are skipped in 6e-ii.
+- **`siblingBoolChapters`** — Array of chapter entries for sibling boolean combinations (3d-iv). Each entry has `chapterName`, `childName`, `booleans`, `previewCombinations`, and `defaultLabel`. Rendered in 6g.
+- **`siblingBoolNames`** — Array of boolean names consumed by sibling boolean chapters. These are skipped in 6e-ii.
 
-**Default label:** Compute from the actual default values of each boolean. The combination matching all defaults is the default label (e.g., if "Character count" defaults true and "Show icon" defaults false, the default is "Character count").
+**Label generation rules** (handled by the script):
+- Sub-boolean short names are derived by stripping the common prefix shared with the container name, plus common verbs ("Show", "Has", "With", "Enable", "Toggle", "Display")
+- `"None"` = container off (unified) or all booleans off (sibling)
+- Multi-on combos are joined with " + "
+- Default label is computed from actual boolean default values
 
-**Combination cap:** For 3+ sibling booleans, limit to ~6 meaningful combinations: all off, each individually on, common pairings, and all on.
+**Combination cap** (handled by the script): Power sets with more than 5-6 entries are capped to the most meaningful combinations (individually-on states, plus the all-on state).
 
-**Skip list updates:** All booleans consumed by `siblingBoolChapters` are added to a `siblingBoolNames` set so they are skipped in standalone 6e-ii rendering.
+**Graceful fallback**: If a child has only 1 remaining boolean after filtering (not consumed by unified slots), it is NOT added to `siblingBoolChapters` — it stays as a standard boolean chapter rendered in 6e-ii.
 
-**Graceful fallback:** If there is only 1 remaining boolean on a child (after 3d-ii/iii filtering), render it as a standard boolean chapter (6e-ii) rather than a degenerate 1-boolean combinatorial chapter. Also fall back to individual chapters if the boolean names are ambiguous or don't lend themselves to readable combination labels.
+### Step 3e: AI Validation Layer
+
+After all deterministic extraction is complete (Steps 3, 3a, 3b, 3c, 3d), perform an AI validation pass over the full dataset **before rendering**. This is the designated Tier 2 reasoning step — it catches issues that deterministic scripts cannot detect. Do NOT rely on visual inspection (Step 8) as the primary safety net.
+
+Review the following and make corrections to the data structures before proceeding to Step 4:
+
+#### Cross-check boolean linkage
+
+For each child component where `controllingBooleanName` is `null` and `visible === false`, check whether any parent boolean name is semantically related to the child's layer name. The deterministic script in 3c uses exact name matching and normalized substring containment, but some designs use unrelated naming conventions (e.g., boolean "Show actions" controlling a child named "toolbar"). If a semantic match is apparent, manually set `controllingBooleanName` and `controllingBooleanRawKey` on the child entry and add the boolean name to `controllingBooleanNames`.
+
+Conversely, if a deterministic match looks wrong (e.g., "Icon" boolean matched to "Icon button" child when "Icon" controls a different element), override it by setting `controllingBooleanName` back to `null`.
+
+#### Validate variable mode relevance
+
+Review the `variableModeProps` from Step 3b. For each collection:
+
+- Confirm it applies to this component specifically, not a different component or a global theme. A "Density" collection that only has bindings to unrelated components should be excluded.
+- Confirm the mode names represent meaningful property options (e.g., "Compact", "Default", "Spacious"), not color themes or breakpoints.
+- Remove any entries that are not relevant to this component's configurable properties.
+
+#### Catch structural anomalies
+
+Scan for potential issues in the extraction output:
+
+- A child component with 0 renderable properties after normalization (all variant axes coupled, all booleans consumed by unified/sibling chapters) — verify this is genuinely empty rather than a script oversight. If properties were incorrectly consumed, adjust the skip lists.
+- A `unifiedSlotChapter` where all sub-booleans default to `true` but the container defaults to `false` — the default label should be "None", not a combination label. Verify the `defaultLabel` is correct.
+- Child components whose `mainComponentName` suggests they are utility/internal components (e.g., "Spacer", "Divider") rather than meaningful sub-components — consider whether they should be exhibited at all.
+
+#### Sanity-check combination counts
+
+For each `unifiedSlotChapter` and `siblingBoolChapter`, verify the number of `previewCombinations` is reasonable:
+
+- If a chapter has more than 8 combinations, reduce to the most meaningful subset (all off, each individually on, all on)
+- If a chapter has only 2 combinations (just "None" and one other), consider whether it should remain as a unified chapter or be rendered as a simple boolean toggle instead
+- If combination labels are unclear or redundant, rewrite them for clarity
+
+After validation, proceed with the corrected data to rendering.
 
 ### Step 4: Navigate to Destination
 
@@ -1524,8 +1665,8 @@ return { success: true };
 - The target node can be either a `COMPONENT_SET` (multi-variant) or a standalone `COMPONENT` (single variant). The extraction script detects the type and returns `isComponentSet` accordingly. When the node is a standalone component, there are no variant axes — only boolean, instance swap, and variable mode properties apply. Instance creation uses `comp.createInstance()` directly.
 - The extraction script reads `componentPropertyDefinitions` from the component set or component, which captures all variant axes, boolean toggles, and instance swap properties. The `defaultProps` are built from `defaultVariant.variantProperties` (not `componentProperties`, which only has booleans/swaps).
 - For variant axes, the script finds the matching variant child by iterating the component set's children and matching `variantProperties`. Other properties are kept at their defaults.
-- For boolean toggles, the script creates instances from the default variant and uses `setProperties` to flip the boolean value. However, some booleans are **variant-gated** — the layer they control only exists under specific variant axis values (e.g., a "Dismiss button" layer only exists when `Behavior=Interactive`, not `Behavior=Static`). Step 3a detects this by resolving the boolean's `rawKey#nodeId` across variants. When a boolean is variant-gated, 6b uses the required variant as the base instead of the default variant, and the description notes the dependency.
-- The property template key is stored in `uspecs.config.json` under `templateKeys.propertyOverview` and is configured via `@setup-library`. This is a dedicated property template with the header already set to "Property" — no renaming needed.
+- For boolean toggles, the script creates instances from the default variant and uses `setProperties` to flip the boolean value. However, some booleans are **variant-gated** — the layer they control only exists under specific variant axis values (e.g., a "Dismiss button" layer only exists when `Behavior=Interactive`, not `Behavior=Static`). Step 3a detects this deterministically: the script resolves the boolean's `rawKey#nodeId` across variants and returns an `interpretedBooleans` array with `requiredVariantOverrides` already computed (no AI reasoning needed). When a boolean has `requiredVariantOverrides`, 6b uses those overrides as the base variant instead of the default, and the description notes the dependency.
+- The property template key is stored in `uspecs.config.json` under `templateKeys.propertyOverview` and is configured via `@firstrun`. This is a dedicated property template with the header already set to "Property" — no renaming needed.
 - Each variant option is shown in a horizontal layout inside the `#preview`. `layoutWrap: 'WRAP'` is always enabled so items wrap to additional rows instead of overflowing. The template's `clipsContent: true` is preserved to prevent any overflow beyond the preview bounds.
 - New chapters are appended to the Content parent via `appendChild` (not inserted at a table index).
 - **Chapter rollback on failure**: All chapter-creation scripts (6a, 6b, 6c) wrap the main logic in a try/catch. If the script fails after cloning `#anatomy-section`, the cloned chapter is removed before returning the error. This prevents orphan chapters from accumulating in the frame on retries.
@@ -1533,11 +1674,11 @@ return { success: true };
 - **Variable mode collection lookup**: The Figma plugin API in incremental mode requires the actual collection object (not a string ID) for `setExplicitVariableModeForCollection`. The 6c script fetches the collection via `getLocalVariableCollectionsAsync()` and matches by ID.
 - **Baked-in variable modes**: Some components have explicit variable modes set directly on their root or internal sub-instances. Instances created from such components inherit these baked-in modes, which override the wrapper frame's mode. The 6c script calls `clearExplicitVariableModeForCollection(collection)` recursively on each instance after creation so it inherits the mode from the wrapper instead.
 - **Sub-component discovery** (Step 3c): The extraction script walks the default variant's children recursively. For each `INSTANCE` child, it resolves the main component via `getMainComponentAsync()`. If the main component belongs to a local `COMPONENT_SET` or is a standalone `COMPONENT` with its own `componentPropertyDefinitions` (variant axes, booleans, instance swaps), those properties are extracted into the `childComponents` array. Child components with no configurable properties are skipped.
-- **Controlling boolean linkage** (Step 3c): After discovering child components, the skill cross-references each hidden child (`visible === false`) against the parent's `booleanProps` to find the parent boolean that toggles the child's visibility. The primary heuristic resolves the boolean's `rawKey#nodeId` suffix to check if the node name matches the child layer name. The fallback normalizes both names (lowercase, strip spaces/special chars) and checks substring containment. When a match is found, `controllingBooleanName` and `controllingBooleanRawKey` are stored on the child entry, and the boolean is added to a `controllingBooleanNames` skip set so 6b does not render it as a standalone chapter.
+- **Controlling boolean linkage** (Step 3c): The `figma_execute` script resolves boolean-to-child linkage deterministically within the script itself (no AI reasoning needed). For each hidden child (`visible === false`), it iterates the parent's `booleanProps` (passed as input) and uses two deterministic checks: (1) primary — resolve `rawKey#nodeId` suffix to a layer and compare its name to the child's layer name, (2) fallback — normalize both names (lowercase, strip non-alphanumeric) and check substring containment. The script returns `controllingBooleanName`, `controllingBooleanRawKey` on each child entry, plus a `controllingBooleanNames` array for the skip set used in 6b.
 - **In-context rendering** (6e): All child component properties are rendered on **parent instances**, never as isolated sub-component instances. For each preview, the skill creates a parent instance via `parentDefaultVariant.createInstance()`, toggles the controlling boolean if applicable, then finds the nested child instance by layer name and calls `setProperties()` to swap the variant or toggle the boolean. This ensures previews show the child property in the context of the full parent component, which is what designers see when configuring the component.
 - **Off-state label convention**: When a child has a controlling boolean, the first preview in the chapter shows the "off" state (boolean = false) labeled `"No {controllingBooleanName}"` (e.g., "No trailing content"). This negated phrasing clearly communicates that the child is hidden. The off state is marked as `(default)` when the controlling boolean's default value is `false`.
 - **Child component exhibits** (6e): Each child component with variant axes gets a chapter per axis, and each with booleans gets a chapter per boolean toggle. Instances are created from the **parent** component (not the child directly). Chapter titles use the format "{childLayerName} – {propertyName}" and descriptions note "Sub-component: {mainComponentName}" for context. The same rollback-on-failure pattern (try/catch with chapter removal) applies.
-- **Property normalization** (Step 3d): Before rendering, the agent analyzes the extracted property data to eliminate redundant or misleading chapters. This is a reasoning step, not a script — the agent examines the data and builds a normalization plan. Four issues are addressed: (1) child variant axes that mirror the parent (coupled axes) are skipped since they add no information, (2) sub-booleans nested inside container-gated children are identified so they are not rendered as standalone chapters with identical-looking previews, (3) container booleans + their sub-booleans are collapsed into unified slot chapters showing meaningful combinations, and (4) sibling booleans on the same child are collapsed into combinatorial chapters showing meaningful combinations instead of separate true/false toggles.
+- **Property normalization** (Step 3d): Before rendering, a deterministic `figma_execute` script processes the extracted property data to eliminate redundant or misleading chapters. No AI reasoning is needed — the script takes `parentVariantAxes`, `childComponents`, and `controllingBooleanNames` as inputs and returns the full normalization plan. Four issues are addressed: (1) child variant axes that mirror the parent (coupled axes) are flagged with `coupled: true` and skipped in rendering, (2) sub-booleans nested inside container-gated children are identified as candidates for unification, (3) container booleans + their sub-booleans are collapsed into `unifiedSlotChapters` with combinatorial previews, and (4) sibling booleans on the same child are collapsed into `siblingBoolChapters` with combinatorial previews.
 - **Coupled axis detection** (3d-i): A child variant axis is coupled when it shares the same name (case-insensitive) with a parent axis and its options are a subset of (or equal to) the parent's options. For example, a child "Label" with `Size: [Large, Medium, Small]` matching the parent's `Size: [Large, Medium, Small, XSmall]` is coupled — the child size always follows the parent, so showing it separately is redundant.
 - **Unified slot chapter labeling** (3d-iii / 6f): Combination labels are derived by stripping the common prefix from sub-boolean names. For a container "Leading content" with sub-booleans "Leading artwork" and "Leading text", the labels become: None / Text only / Artwork only / Text + Artwork. When there is only 1 sub-boolean, the labels are: None / {short name}. The "None" state represents the container boolean in its off position.
 - **Combination cap** (3d-iii): For containers with 3+ sub-booleans, the full power set may be too large. Limit unified slot chapters to ~6 meaningful combinations, omitting edge cases. Focus on the most common designer workflows (all off, each on individually, all on) and skip unlikely combinations.

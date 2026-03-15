@@ -3,11 +3,11 @@ title: "Structure"
 description: "Generate dimensional properties documentation for spacing, padding, and density variants"
 ---
 
-Structure specs document component measurements such as heights, widths, padding, and gaps, and how those values change across variants like density, size, and shape.
-
 <Frame>
   <video src="/images/specs/structure-output.mp4" autoPlay muted loop playsInline alt="Example structure spec output in Figma" />
 </Frame>
+
+Structure specs document component measurements such as heights, widths, padding, and gaps, and how those values change across variants like density, size, and shape.
 
 ## What you need
 
@@ -19,17 +19,43 @@ Structure specs document component measurements such as heights, widths, padding
   Tell the agent which variant axes affect dimensions. A button might vary by size, while a list item varies by density. The agent checks both explicit variants and variable mode collections.
 </Tip>
 
-## When to use
+## How to use
 
-Create a structure spec when you need to document:
+Reference the skill and paste your Figma link. Include context about which parts to measure and how dimensions vary across variants:
 
-- Component dimensions (height, width, min/max values)
-- Spacing and padding values
-- How values change across density modes (compact, default, spacious)
-- How values change across sizes (small, medium, large)
-- Gap and alignment specifications
+<Tabs>
+  <Tab title="Cursor">
+    ```
+    @create-structure https://www.figma.com/design/abc123/Components?node-id=100:200
 
-## What the agent generates
+    This is a list item with Compact, Default, and Spacious densities. Include
+    container, leading slot, label, and trailing slot dimensions.
+    ```
+  </Tab>
+  <Tab title="Claude Code">
+    ```
+    /create-structure https://www.figma.com/design/abc123/Components?node-id=100:200
+
+    This is a list item with Compact, Default, and Spacious densities. Include
+    container, leading slot, label, and trailing slot dimensions.
+    ```
+  </Tab>
+  <Tab title="Codex">
+    ```
+    $create-structure https://www.figma.com/design/abc123/Components?node-id=100:200
+
+    This is a list item with Compact, Default, and Spacious densities. Include
+    container, leading slot, label, and trailing slot dimensions.
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  To place the annotation in a different file or page, add a destination link to your prompt:
+  `Destination: https://www.figma.com/design/xyz789/Docs?node-id=0-1`
+</Tip>
+
+## What it generates
 
 The agent measures your component and renders a documentation frame directly in your Figma file with tables showing how values change across variants.
 
@@ -49,34 +75,41 @@ Each section covers a part of the component (container, leading content, labels,
   Some dimensional properties are controlled via Figma variable modes (like density) rather than explicit variant axes. The agent checks for both automatically.
 </Note>
 
-## Example prompts
+## How it works
 
-<Tabs>
-  <Tab title="Size-based">
+```mermaid
+flowchart LR
+    A[You] -->|Figma link| B[Agent Skill]
+    B -->|Extract data| C[Console MCP]
+    C -->|Component data| B
+    B -->|Render| C
+    C -->|Annotation frame| D[Figma Output]
 ```
-@create-structure https://www.figma.com/design/abc123/Components?node-id=100:200
 
-This is a button with four sizes: Large (56px), Medium (48px), Small (40px),
-XSmall (32px). Include padding and icon sizes.
-```
-  </Tab>
-  <Tab title="Density-based">
-```
-@create-structure https://www.figma.com/design/abc123/Components?node-id=200:300
+<Steps>
+  <Step title="Extract">
+    The skill reads dimensions, padding, gaps, and variable bindings from the component via the Console MCP.
+  </Step>
+  <Step title="Measure variants">
+    Each variant (size, density mode) is measured to build comparison columns.
+  </Step>
+  <Step title="Discover sub-components">
+    Nested component instances are measured to document composition relationships.
+  </Step>
+  <Step title="Import template">
+    The structure documentation template is imported from the library, instantiated, and detached into an editable frame.
+  </Step>
+  <Step title="Render">
+    The skill fills header fields, builds dimension tables with variant columns, and maps token references.
+  </Step>
+  <Step title="Validate">
+    A screenshot is captured and checked for completeness. Issues are fixed automatically for up to 3 iterations.
+  </Step>
+</Steps>
 
-This is a list item with Compact, Default, and Spacious densities. Include
-container, leading slot, label, and trailing slot dimensions.
-```
-  </Tab>
-  <Tab title="Single spec">
-```
-@create-structure https://www.figma.com/design/abc123/Components?node-id=300:400
-
-This is a tooltip with a single size. Document the container padding,
-max width, arrow dimensions, and offset from the trigger element.
-```
-  </Tab>
-</Tabs>
+<Tip>
+The skill renders programmatically, so the output is consistent and repeatable. Running it on the same component produces identical results.
+</Tip>
 
 ## Tips for better output
 

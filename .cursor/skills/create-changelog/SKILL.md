@@ -53,7 +53,7 @@ If connection fails, guide user through setup before proceeding.
 Read the file `uspecs.config.json` and extract the `changelog` value from the `templateKeys` object.
 
 Save this key as `CHANGELOG_TEMPLATE_KEY`. If the key is empty, tell the user:
-> The changelog template key is not configured. Run `@setup-library` with your Figma template library link first.
+> The changelog template key is not configured. Run `@firstrun` with your Figma template library link first.
 
 ### Step 4: Gather Context
 
@@ -272,7 +272,7 @@ return { success: true };
 
 ## Notes
 
-- The changelog template key is stored in `uspecs.config.json` under `templateKeys.changelog` and is configured via `@setup-library`.
+- The changelog template key is stored in `uspecs.config.json` under `templateKeys.changelog` and is configured via `@firstrun`.
 - Two-level cloning: `#new-date-entry` (one per date+author) → `#changes` (one per change item within an entry). Each level is cloned from its template, filled, and the original template hidden after all clones are created.
 - Bullet formatting: descriptions prefixed with `- ` have the prefix stripped and `setRangeListOptions({ type: 'UNORDERED' })` applied to render native Figma bullets.
 - The instruction file (`changelog/agent-changelog-instruction.md`) contains the writing style, schema, and validation rules. The AI reasoning for rewriting and formatting is unchanged — only the delivery mechanism has changed from JSON output to direct Figma rendering.

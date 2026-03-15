@@ -1,13 +1,13 @@
 ---
 title: "Getting Started"
-description: "Set up Cursor, Figma Console MCP, and your template library, then create your first spec"
+description: "Set up your AI agent, Figma Console MCP, and template library, then create your first spec"
 ---
 
 This page covers everything you need to go from zero to your first generated spec.
 
 <CardGroup cols={2}>
   <Card title="Setup instructions" icon="download" href="#setup-instructions">
-    Install Cursor, connect Figma, and configure your template library.
+    Install your AI agent, connect Figma, and configure your template library.
   </Card>
   <Card title="Create your first spec" icon="rocket" href="#create-your-first-spec">
     Prompt format, available skills, and tips for better output.
@@ -18,52 +18,119 @@ This page covers everything you need to go from zero to your first generated spe
 
 ## Setup instructions
 
-uSpec runs entirely in Cursor and connects to Figma through the Figma Console MCP. You need three things:
+uSpec connects an AI coding agent to Figma through the Figma Console MCP. You need three things:
 
-1. **Cursor**: the AI code editor that runs uSpec agent skills
-2. **Figma Console MCP**: the bridge that connects Cursor to your Figma files
+1. **AI agent host**: the coding environment that runs uSpec skills (Cursor, Claude Code, or Codex)
+2. **Figma Console MCP**: the bridge that connects your agent to Figma files
 3. **Template library**: the Figma file containing documentation templates
 
 <Note>
-  You only need to complete this setup once. After that, you can generate specs anytime by opening the project in Cursor.
+  You only need to complete this setup once. After that, you can generate specs anytime by opening the project in your agent host.
 </Note>
 
-### 1. Install Cursor
+### 1. Set up your agent host
 
-Cursor is the AI code editor that powers uSpec. All agent skills run inside Cursor's chat.
+<Tabs>
+  <Tab title="Cursor">
+    Cursor is an AI code editor. All uSpec skills run inside Cursor's chat.
 
-<Steps>
-  <Step title="Download Cursor">
-    Go to [cursor.com](https://cursor.com) and download the app for your platform.
-  </Step>
-  <Step title="Clone the uSpec repository">
-    Clone the repository to your local machine.
+    <Steps>
+      <Step title="Download Cursor">
+        Go to [cursor.com](https://cursor.com) and download the app for your platform.
+      </Step>
+      <Step title="Clone the uSpec repository">
+        Clone the repository to your local machine.
 
-    ```bash
-    git clone https://github.com/redongreen/uSpec.git
-    ```
-  </Step>
-  <Step title="Open the project in Cursor">
-    Open the `uSpec` folder in Cursor. The agent skills in `.cursor/skills/` load automatically. No extra configuration needed.
-  </Step>
-  <Step title="Select the right model">
-    uSpec skills are token-intensive and require a model with high context capacity. In Cursor's chat, select **Claude 4.6 Opus (Thinking)** or higher as your model.
+        ```bash
+        git clone https://github.com/redongreen/uSpec.git
+        ```
+      </Step>
+      <Step title="Open the project in Cursor">
+        Open the `uSpec` folder in Cursor. The agent skills in `.cursor/skills/` load automatically.
+      </Step>
+      <Step title="Select the right model">
+        uSpec skills are token-intensive and require a model with high context capacity. In Cursor's chat, select **Claude 4.6 Opus (Thinking)** or higher as your model.
 
-    <Warning>
-      Lower-capacity models may truncate instructions mid-skill, producing incomplete or broken specs. Claude 4.6 Opus (Thinking) is the minimum recommended model.
-    </Warning>
-  </Step>
-</Steps>
+        <Warning>
+          Lower-capacity models may truncate instructions mid-skill, producing incomplete or broken specs. Claude 4.6 Opus (Thinking) is the minimum recommended model.
+        </Warning>
+      </Step>
+    </Steps>
 
-<Check>
-  You can verify skills are available by typing `@create-voice` in Cursor's chat. It should autocomplete to the skill file.
-</Check>
+    <Check>
+      Verify skills are available by typing `@create-voice` in Cursor's chat. It should autocomplete to the skill file.
+    </Check>
+  </Tab>
+
+  <Tab title="Claude Code">
+    Claude Code is Anthropic's terminal-based coding agent. The `firstrun` skill is pre-installed in `.claude/skills/` — running it deploys all other skills.
+
+    <Steps>
+      <Step title="Install Claude Code">
+        Follow the [Claude Code installation guide](https://code.claude.com/docs/en/overview) to install the CLI.
+      </Step>
+      <Step title="Clone the uSpec repository">
+        Clone the repository to your local machine.
+
+        ```bash
+        git clone https://github.com/redongreen/uSpec.git
+        ```
+      </Step>
+      <Step title="Open the project">
+        Navigate to the `uSpec` folder. Claude Code reads `CLAUDE.md` for project instructions and discovers the `firstrun` skill in `.claude/skills/` automatically.
+
+        ```bash
+        cd uSpec
+        claude
+        ```
+      </Step>
+      <Step title="Select the right model">
+        Use **Claude 4.6 Opus** or higher. uSpec skills are token-intensive and require high context capacity.
+      </Step>
+    </Steps>
+
+    <Check>
+      Run `claude` in the project directory. Claude Code should load `CLAUDE.md` and recognize the `firstrun` skill.
+    </Check>
+  </Tab>
+
+  <Tab title="Codex">
+    Codex is OpenAI's coding agent. The `firstrun` skill is pre-installed in `.agents/skills/` — running it deploys all other skills.
+
+    <Steps>
+      <Step title="Install Codex">
+        Follow the [Codex setup guide](https://developers.openai.com/codex/) to install the CLI.
+      </Step>
+      <Step title="Clone the uSpec repository">
+        Clone the repository to your local machine.
+
+        ```bash
+        git clone https://github.com/redongreen/uSpec.git
+        ```
+      </Step>
+      <Step title="Open the project">
+        Navigate to the `uSpec` folder. Codex reads `AGENTS.md` for project instructions and discovers the `firstrun` skill in `.agents/skills/`.
+
+        ```bash
+        cd uSpec
+        ```
+      </Step>
+      <Step title="Select the right model">
+        Use **GPT 5.4** or higher. uSpec skills are token-intensive and may produce incomplete output with lower-capacity models.
+      </Step>
+    </Steps>
+
+    <Check>
+      Codex should discover the `firstrun` skill listed in `AGENTS.md`. Type `$firstrun` to get started, or use `/skills` to browse what's available.
+    </Check>
+  </Tab>
+</Tabs>
 
 ---
 
 ### 2. Set up Figma Console MCP
 
-The [Figma Console MCP](https://github.com/southleft/figma-console-mcp) connects Cursor to Figma Desktop, giving the agent access to your component data, variables, styles, and screenshots.
+The [Figma Console MCP](https://github.com/southleft/figma-console-mcp) connects your agent to Figma Desktop, giving it access to component data, variables, styles, and screenshots.
 
 #### Get a Figma personal access token
 
@@ -80,26 +147,67 @@ The [Figma Console MCP](https://github.com/southleft/figma-console-mcp) connects
   Copy the token immediately. You won't be able to see it again after closing the dialog.
 </Warning>
 
-#### Configure the MCP in Cursor
+#### Configure the MCP in your agent
 
-Add the Figma Console MCP to your Cursor MCP configuration:
+<Tabs>
+  <Tab title="Cursor">
+    Add the Figma Console MCP to your Cursor MCP configuration:
 
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["-y", "figma-console-mcp@latest"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+    ```json
+    {
+      "mcpServers": {
+        "figma-console": {
+          "command": "npx",
+          "args": ["-y", "figma-console-mcp@latest"],
+          "env": {
+            "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+          }
+        }
       }
     }
-  }
-}
-```
+    ```
+
+    Add this to your Cursor MCP settings (global or project-level `.cursor/mcp.json`).
+  </Tab>
+
+  <Tab title="Claude Code">
+    The repo includes a `.mcp.json` at the project root. Open it and replace the placeholder token:
+
+    ```json
+    {
+      "mcpServers": {
+        "figma-console": {
+          "command": "npx",
+          "args": ["-y", "figma-console-mcp@latest"],
+          "env": {
+            "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+          }
+        }
+      }
+    }
+    ```
+
+    Claude Code reads `.mcp.json` from the project root automatically.
+  </Tab>
+
+  <Tab title="Codex">
+    The repo includes a `.codex/config.toml`. Open it and replace the placeholder token:
+
+    ```toml
+    [mcp_servers.figma-console]
+    command = "npx"
+    args = ["-y", "figma-console-mcp@latest"]
+
+    [mcp_servers.figma-console.env]
+    FIGMA_ACCESS_TOKEN = "figd_YOUR_TOKEN_HERE"
+    ```
+
+    Codex reads MCP configuration from `.codex/config.toml`.
+  </Tab>
+</Tabs>
 
 <Tip>
-  This uses the NPX setup, which gives you all 56+ tools including design creation and variable management. For alternative installation methods, troubleshooting, and the latest configuration options, see the [Figma Console MCP documentation](https://docs.figma-console-mcp.southleft.com/).
+  This uses the NPX setup, which gives you all 59+ tools including design creation and variable management. For alternative installation methods, troubleshooting, and the latest configuration options, see the [Figma Console MCP documentation](https://docs.figma-console-mcp.southleft.com/).
 </Tip>
 
 #### Connect to Figma Desktop
@@ -114,27 +222,33 @@ The **Desktop Bridge plugin** provides real-time access to your Figma file data.
     Open the Desktop Bridge plugin in your Figma file. It auto-connects via WebSocket. No special launch flags needed.
   </Step>
   <Step title="Verify the connection">
-    In Cursor's chat, type: *"Check Figma status"*
+    In your agent, type: *"Check Figma status"*
 
     The agent should confirm an active connection.
   </Step>
 </Steps>
 
 <Check>
-  When the connection is active, Cursor can read your Figma file data, take screenshots, and access variables and styles.
+  When the connection is active, your agent can read Figma file data, take screenshots, and access variables and styles.
 </Check>
 
 ---
 
-### 3. Set up the template library
+### 3. Run firstrun
 
-uSpec renders documentation using Figma component templates. Every skill depends on these templates — without them, specs cannot be generated. You need to add the templates to your Figma organization and run a one-time configuration step.
+The `firstrun` skill is your single entry point for setting up uSpec. It asks which platform you're using, deploys skills to the right directory, and configures your template library.
 
 <Note>
-  Uber designers can skip this step. The internal template library is already configured.
+  You only need to run `firstrun` once per environment. It handles both skill deployment and template configuration.
 </Note>
 
 #### Get the template file
+
+uSpec renders documentation using Figma component templates. You need to add the templates to your Figma organization before running `firstrun`.
+
+<Note>
+  Uber designers can skip this — the internal template library is already configured. When `firstrun` asks for a library link, type "skip".
+</Note>
 
 <Steps>
   <Step title="Open the Community file">
@@ -155,31 +269,52 @@ uSpec renders documentation using Figma component templates. Every skill depends
 </Steps>
 
 <Tip>
-  If you're working solo or testing, you can skip publishing and use the file directly. The setup skill will still work as long as you have the file open.
+  If you're working solo or testing, you can skip publishing and use the file directly. The `firstrun` skill will still work as long as you have the file open.
 </Tip>
 
-#### Configure the templates
-
-Run the setup skill in Cursor to connect uSpec to your template library:
+#### Run the firstrun skill
 
 <Steps>
   <Step title="Open the Desktop Bridge plugin">
     In Figma Desktop, open the **Desktop Bridge** plugin in your template library file.
   </Step>
-  <Step title="Run the setup skill">
-    In Cursor's chat, type:
+  <Step title="Run firstrun">
+    <Tabs>
+      <Tab title="Cursor">
+        In Cursor's chat, type:
 
-    ```
-    @setup-library (link to your template library)
-    ```
+        ```
+        @firstrun
+        ```
+      </Tab>
+      <Tab title="Claude Code">
+        Invoke the skill directly or let Claude auto-discover it:
+
+        ```
+        /firstrun
+        ```
+      </Tab>
+      <Tab title="Codex">
+        Invoke the skill with `$` or let Codex match it from the description:
+
+        ```
+        $firstrun
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Answer the prompts">
+    The agent asks two questions:
+    1. **Which environment?** — Select Cursor, Claude Code CLI, or Codex CLI. This deploys all skills to the right directory.
+    2. **Library link** — Paste the link to your Figma template library (Uber designers can type "skip").
   </Step>
   <Step title="Wait for confirmation">
-    The agent extracts component keys from your templates and updates the configuration automatically.
+    The agent extracts component keys from your templates and writes the configuration automatically.
   </Step>
 </Steps>
 
 <Check>
-  When you see "Setup complete! You are now ready to use uSpec", your template library is configured.
+  When you see "Setup complete! You are now ready to use uSpec", your environment and template library are configured.
 </Check>
 
 ---
@@ -188,9 +323,9 @@ Run the setup skill in Cursor to connect uSpec to your template library:
 
 Before running a skill, confirm all three setup steps are complete:
 
-1. Cursor is open with the uSpec project and skills are autocompleting
+1. Your agent host is open with the uSpec project and skills are available
 2. The Desktop Bridge plugin is running in Figma and the connection is active
-3. The template library is configured (`uspecs.config.json` has your template keys)
+3. You've run `firstrun` — the template library is configured (`uspecs.config.json` has your template keys)
 
 Every prompt follows the same format:
 
@@ -202,24 +337,48 @@ Reference a skill, paste a Figma link, and describe anything the agent can't inf
 
 ### Example prompt
 
-```
-@create-voice https://www.figma.com/design/abc123/Components?node-id=100:200
+<Tabs>
+  <Tab title="Cursor">
+    ```
+    @create-voice https://www.figma.com/design/abc123/Components?node-id=100:200
 
-This is a primary action button with enabled, hover, pressed, and disabled states.
-The button has a text label and an optional leading icon.
-```
+    This is a primary action button with enabled, hover, pressed, and disabled states.
+    The button has a text label and an optional leading icon.
+    ```
+  </Tab>
+  <Tab title="Claude Code">
+    ```
+    /create-voice https://www.figma.com/design/abc123/Components?node-id=100:200
+
+    This is a primary action button with enabled, hover, pressed, and disabled states.
+    The button has a text label and an optional leading icon.
+    ```
+
+    You can also skip the `/` and describe what you need — Claude auto-discovers the skill from its description.
+  </Tab>
+  <Tab title="Codex">
+    ```
+    $create-voice https://www.figma.com/design/abc123/Components?node-id=100:200
+
+    This is a primary action button with enabled, hover, pressed, and disabled states.
+    The button has a text label and an optional leading icon.
+    ```
+
+    Type `$` to mention a skill explicitly, or use `/skills` to browse what's available. Codex can also match skills implicitly from their description.
+  </Tab>
+</Tabs>
 
 ### Available skills
 
 | Skill | What it generates |
 |-------|-------------------|
-| `@create-anatomy` | Numbered markers on a component with an attribute table |
-| `@create-property` | Variant axis and boolean toggle exhibits with instance previews |
-| `@create-voice` | Screen reader specs for VoiceOver, TalkBack, and ARIA |
-| `@create-color` | Color token annotations for all elements and states |
-| `@create-api` | Property tables with values, defaults, and examples |
-| `@create-structure` | Dimensional specs for spacing, padding, and sizing |
-| `@create-motion` | Animation timeline and easing spec from After Effects data |
+| `create-anatomy` | Numbered markers on a component with an attribute table |
+| `create-property` | Variant axis and boolean toggle exhibits with instance previews |
+| `create-voice` | Screen reader specs for VoiceOver, TalkBack, and ARIA |
+| `create-color` | Color token annotations for all elements and states |
+| `create-api` | Property tables with values, defaults, and examples |
+| `create-structure` | Dimensional specs for spacing, padding, and sizing |
+| `create-motion` | Animation timeline and easing spec from After Effects data |
 
 ### What happens when you run a skill
 
@@ -254,7 +413,7 @@ The button has a text label and an optional leading icon.
 ### Do
 
 - **Start a new agent session for every prompt.** Each skill consumes significant context. A fresh session ensures the model has full capacity and avoids degraded output.
-- **Confirm the MCP connection before running a skill.** Run the Desktop Bridge plugin in Figma and verify the connection in Cursor. If the agent can't reach Figma, the skill will fail.
+- **Confirm the MCP connection before running a skill.** Run the Desktop Bridge plugin in Figma and verify the connection in your agent. If the agent can't reach Figma, the skill will fail.
 - **Run one agent per Figma file at a time.** The MCP supports multiple connections, but all agents share one active page and file context. Finish one skill before starting the next.
 
 ### Don't
@@ -268,16 +427,30 @@ The button has a text label and an optional leading icon.
 ## Setup issues
 
 <AccordionGroup>
-  <Accordion title="Skills don't autocomplete in Cursor">
-    - Confirm the uSpec project folder is open in Cursor (not a parent directory)
-    - Check that `.cursor/skills/` contains the skill folders
-    - Restart Cursor after cloning the repository
+  <Accordion title="Skills not loading">
+    <Tabs>
+      <Tab title="Cursor">
+        - Confirm the uSpec project folder is open in Cursor (not a parent directory)
+        - Check that `.cursor/skills/` contains the skill folders
+        - Restart Cursor after cloning the repository
+      </Tab>
+      <Tab title="Claude Code">
+        - Confirm you're running `claude` from the `uSpec` project root
+        - Check that `CLAUDE.md` exists at the project root
+        - Only `firstrun` is available before initial setup — run `/firstrun` to deploy all skills
+      </Tab>
+      <Tab title="Codex">
+        - Confirm you're in the `uSpec` project directory
+        - Check that `AGENTS.md` exists at the project root
+        - Only `firstrun` is available before initial setup — run `$firstrun` to deploy all skills
+      </Tab>
+    </Tabs>
   </Accordion>
   <Accordion title="Desktop Bridge not connecting">
     - Confirm Figma Desktop is running (not the web version)
     - Close and reopen the Desktop Bridge plugin in Figma
     - Make sure only one instance of Figma Desktop is running
-    - Check that your Figma access token is configured correctly in Cursor's MCP settings
+    - Check that your Figma access token is configured correctly in your agent's MCP settings
   </Accordion>
 </AccordionGroup>
 

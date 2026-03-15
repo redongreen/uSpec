@@ -3,11 +3,11 @@ title: "API"
 description: "Generate component property documentation with configuration examples"
 ---
 
-API specs document all configurable properties for a component: values, defaults, required vs. optional, and usage examples. This gives engineers a clear reference for implementing the component.
-
 <Frame>
   <video src="/images/specs/api-output.mp4" autoPlay muted loop playsInline alt="Example API spec output in Figma" />
 </Frame>
+
+API specs document all configurable properties for a component: values, defaults, required vs. optional, and usage examples. This gives engineers a clear reference for implementing the component.
 
 ## What you need
 
@@ -19,17 +19,41 @@ API specs document all configurable properties for a component: values, defaults
   Mention which properties are required, what the defaults are, and any sub-components that have their own configuration (e.g., a trailing button inside a section heading).
 </Tip>
 
-## When to use
+## How to use
 
-Create an API spec when you need to document:
+Reference the skill and paste your Figma link. Include context about the component's properties, accepted values, and sub-component configurations for a more accurate spec:
 
-- All configurable props and options for a component
-- Required vs. optional properties
-- Default values
-- Sub-component configurations (nested components with their own props)
-- Configuration examples for common use cases
+<Tabs>
+  <Tab title="Cursor">
+    ```
+    @create-api https://www.figma.com/design/abc123/Components?node-id=100:200
 
-## What the agent generates
+    This is a section heading with leading content (primary/secondary labels),
+    trailing content (text button, icon button, or none), and density options.
+    The label is required, subtitle is optional. Default trailing content is none.
+    ```
+  </Tab>
+  <Tab title="Claude Code">
+    ```
+    /create-api https://www.figma.com/design/abc123/Components?node-id=100:200
+
+    This is a section heading with leading content (primary/secondary labels),
+    trailing content (text button, icon button, or none), and density options.
+    The label is required, subtitle is optional. Default trailing content is none.
+    ```
+  </Tab>
+  <Tab title="Codex">
+    ```
+    $create-api https://www.figma.com/design/abc123/Components?node-id=100:200
+
+    This is a section heading with leading content (primary/secondary labels),
+    trailing content (text button, icon button, or none), and density options.
+    The label is required, subtitle is optional. Default trailing content is none.
+    ```
+  </Tab>
+</Tabs>
+
+## What it generates
 
 The agent inspects your component's variant axes, boolean toggles, content slots, and variable modes, then renders a documentation frame in your Figma file:
 
@@ -38,8 +62,6 @@ The agent inspects your component's variant axes, boolean toggles, content slots
 | Main property table | All top-level properties with values, required status, defaults, and notes |
 | Sub-component tables | Separate tables for configurable nested elements (e.g., trailing content options) |
 | Configuration examples | 1–4 examples showing common setups |
-
-### How properties are identified
 
 The agent looks at three sources in Figma to find all configurable properties:
 
@@ -51,34 +73,41 @@ The agent looks at three sources in Figma to find all configurable properties:
   Transient interactive states like hover and pressed are not included as API properties. Those are handled at runtime by the platform. Only persistent states like disabled, selected, and loading appear as properties.
 </Note>
 
-## Example prompts
+## How it works
 
-<Tabs>
-  <Tab title="Simple component">
+```mermaid
+flowchart LR
+    A[You] -->|Figma link| B[Agent Skill]
+    B -->|Extract data| C[Console MCP]
+    C -->|Component data| B
+    B -->|Render| C
+    C -->|Annotation frame| D[Figma Output]
 ```
-@create-api https://www.figma.com/design/abc123/Components?node-id=100:200
 
-This is a button with size, type, color, and label properties.
-```
-  </Tab>
-  <Tab title="Complex component">
-```
-@create-api https://www.figma.com/design/abc123/Components?node-id=200:300
+<Steps>
+  <Step title="Extract">
+    The skill reads variant axes, boolean toggles, content slots, and variable modes from the component via the Console MCP.
+  </Step>
+  <Step title="Classify properties">
+    Each property is categorized as required or optional, and defaults are identified.
+  </Step>
+  <Step title="Discover sub-components">
+    Nested component instances are resolved to find their own configurable properties.
+  </Step>
+  <Step title="Import template">
+    The API documentation template is imported from the library, instantiated, and detached into an editable frame.
+  </Step>
+  <Step title="Render">
+    The skill fills header fields, builds property tables, sub-component tables, and configuration examples.
+  </Step>
+  <Step title="Validate">
+    A screenshot is captured and checked for completeness. Issues are fixed automatically for up to 3 iterations.
+  </Step>
+</Steps>
 
-This is a section heading with leading content (primary/secondary labels),
-trailing content (text button, icon button, or none), and density options.
-```
-  </Tab>
-  <Tab title="Form control">
-```
-@create-api https://www.figma.com/design/abc123/Components?node-id=300:400
-
-This is a text field with label, placeholder, helper text, and error message.
-It supports leading and trailing icons, character count, and isDisabled state.
-The label is required, helper text is optional.
-```
-  </Tab>
-</Tabs>
+<Tip>
+The skill renders programmatically, so the output is consistent and repeatable. Running it on the same component produces identical results.
+</Tip>
 
 ## Tips for better output
 

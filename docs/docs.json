@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "uSpec",
-  "description": "Generate design system documentation for your UI components — directly from Cursor to Figma. Create accessibility specs, color annotations, anatomy annotations, property exhibits, API docs, motion specs, and more.",
+  "description": "Generate design system documentation for your UI components — directly from your AI agent to Figma. Works with Cursor, Claude Code, and Codex. Create accessibility specs, color annotations, anatomy annotations, property exhibits, API docs, motion specs, and more.",
   "colors": {
     "primary": "#2428F7",
     "light": "#b4c0fd",

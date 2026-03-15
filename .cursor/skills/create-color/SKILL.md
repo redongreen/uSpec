@@ -54,7 +54,7 @@ Read the file `uspecs.config.json` and extract:
 - The `fontFamily` value → save as `FONT_FAMILY` (default to `Inter` if not set)
 
 If the template key is empty, tell the user:
-> The color annotation template key is not configured. Run `@setup-library` with your Figma template library link first.
+> The color annotation template key is not configured. Run `@firstrun` with your Figma template library link first.
 
 ### Step 4: Gather Context
 
@@ -1155,7 +1155,7 @@ return { success: true };
 
 ## Notes
 
-- The color annotation template key is stored in `uspecs.config.json` under `templateKeys.colorAnnotation` and is configured via `@setup-library`.
+- The color annotation template key is stored in `uspecs.config.json` under `templateKeys.colorAnnotation` and is configured via `@firstrun`.
 - The target node can be either a `COMPONENT_SET` (multi-variant) or a standalone `COMPONENT` (single variant). The extraction script detects the type and returns `isComponentSet` accordingly. When the node is a standalone component, it is treated as a single-entry variant array and there are no variant axes. Preview instance creation in Step 11 uses the component directly for standalone components.
 - Three-level cloning: variants → tables → rows. Each variant section is cloned from `#variant-template`, each table from `#color-table-template`, and each row from `#element-row-template`.
 - Preview instructions: The `#preview-instruction-light` and `#preview-instruction-dark` frames each contain multiple TEXT nodes. The second TEXT node (index 1) receives the preview text formatted as "{ComponentName} {VariantName}".
