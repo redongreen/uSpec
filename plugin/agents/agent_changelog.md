@@ -64,40 +64,6 @@ The user may also provide:
 
 ---
 
-## Claude Plugin Workflows
-
-This file is also the canonical guide for changelog tasks executed through the Claude plugin.
-
-### Create changelog
-
-1. Verify MCP/Desktop Bridge connectivity.
-2. Read `uspecs.config.json` and extract `templateKeys.changelog`.
-3. Rewrite the user’s raw change input using the writing rules in this file.
-4. Import and detach the changelog template, clone `#new-date-entry` per entry, and clone `#changes` per change item.
-5. Apply bullet-formatted descriptions and visually validate the final frame.
-
-### Update changelog
-
-1. Verify MCP/Desktop Bridge connectivity.
-2. Navigate to the existing changelog frame and verify its structure before writing anything.
-3. Rewrite the change content using the writing rules in this file.
-4. Clone the newest valid entry structure, insert the new content at the top, and validate the rendered result.
-
-### Convert changelog
-
-1. Verify MCP/Desktop Bridge connectivity.
-2. Navigate to the existing changelog and detect whether it uses the uSpec template structure.
-3. Extract text content from known node paths when structured, or infer entry grouping from visual ordering when unstructured.
-4. Normalize dates and rewrite content to match the schema and style rules in this file.
-
-### Plugin-specific requirements
-
-- If Figma access fails for update or convert, stop rather than guessing.
-- If the changelog template key is missing for create mode, stop and instruct the user to run `@setup-library`.
-- The writing, grouping, and validation rules in this file remain the source of truth; the plugin layer handles template operations and rendering.
-
----
-
 ## Data Schema
 
 *(Convert mode outputs JSON; Create mode uses this structure internally.)*

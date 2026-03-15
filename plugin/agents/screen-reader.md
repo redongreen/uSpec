@@ -79,30 +79,6 @@ A part is **NOT** a focus stop if:
 | Tab bar | — | Tablist container; each tab (via arrow keys) |
 | Accordion | — | Header/trigger button; content is revealed, not a stop |
 
----
-
-## Claude Plugin Workflow
-
-When used through the Claude plugin, this file governs both the accessibility reasoning and the direct Figma rendering workflow.
-
-### Expected execution flow
-
-1. Read `voiceover.md`, `talkback.md`, and `aria.md` before analysis.
-2. Verify MCP/Desktop Bridge connectivity when a Figma link is provided.
-3. Read `uspecs.config.json` and extract `templateKeys.screenReader`.
-4. Gather context from Figma, screenshots, or description, then apply the merge analysis and focus-stop rules in this file.
-5. Build the structured accessibility data:
-   - `guidelines`
-   - optional `focusOrder`
-   - `states[]` with platform-specific sections
-6. Import and detach the Screen Reader template, fill the header, and render focus-order/state sections into Figma.
-7. Perform visual validation and iterate if focus order, platform labels, or announcement tables are wrong.
-
-### Plugin-specific requirements
-
-- If the screen reader template key is missing, stop and instruct the user to run `@setup-library`.
-- The rules in this file and the platform references remain the source of truth; the plugin layer handles extraction, template population, and validation.
-
 **Result:** After this analysis, you have a list of **actual focus stops** — only these go in the `focusOrder` and get their own tables in platform sections. Merged parts are documented as properties (accessible name, hint, value) of the focus stop they're merged into.
 
 ### Step 3: Check for Grouping Structure
@@ -495,3 +471,4 @@ Merge analysis: Each tab is independently interactive (buttons). The tablist is 
 | ARIA (Web) | 1 | Tab list | "Main navigation, tablist" | role: tablist, aria-label: "Main navigation" |
 | ARIA (Web) | 2 | Selected tab | "Home, tab, selected, 1 of 3" | role: tab, aria-selected: true, tabindex: 0 |
 | ARIA (Web) | 3 | Unselected tab | "Profile, tab, 2 of 3" | role: tab, aria-selected: false, tabindex: -1 |
+

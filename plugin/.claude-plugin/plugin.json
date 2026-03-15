@@ -1,0 +1,9 @@
+{
+  "name": "uspec",
+  "version": "1.0.0",
+  "description": "Automate design system documentation — from Figma to finished specs. Generate API specs, color annotations, structure specs, screen reader specs, motion specs, component anatomy, and changelogs directly from Figma files.",
+  "author": {
+    "name": "Ian Guisard",
+    "email": ""
+  }
+}

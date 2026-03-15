@@ -127,28 +127,6 @@ interface ColorElement {
 }
 ```
 
----
-
-## Claude Plugin Workflow
-
-When used through the Claude plugin, this file governs both the color-token analysis and the direct Figma rendering workflow.
-
-### Expected execution flow
-
-1. Verify MCP/Desktop Bridge connectivity when a Figma source is involved.
-2. Read `uspecs.config.json` and extract `templateKeys.colorAnnotation`.
-3. Gather context with screenshots, file data, variables, token values, and styles.
-4. Run the token extraction and boolean-enrichment steps before organizing the results.
-5. Use the analysis rules in this file to produce structured variant and table data.
-6. Import and detach the Color Annotation template, fill the header, and render one section per variant/state strategy.
-7. Validate visually in Figma and iterate if token mappings, table grouping, or variant coverage is wrong.
-
-### Plugin-specific requirements
-
-- If the color template key is missing, stop and instruct the user to run `@setup-library`.
-- Hardcoded values still need to be documented clearly when no token is present.
-- The grouping, token naming, and strategy-selection rules in this file remain canonical; the plugin layer only performs extraction and template population.
-
 ### Strategy B (Consolidated Multi-Column Layout)
 
 ```typescript
@@ -809,3 +787,4 @@ Before proceeding to the rendering steps, verify:
 - **Missing component color modes:** Not checking `figma_get_variables` for components like Tag, Badge, or Alert that likely have semantic color variants (Success, Warning, Error) controlled via variable modes
 - **Rendering only one mode:** When a component has multiple color modes (e.g., 11 Tag color modes), every mode must have its own section(s) with resolved semantic tokens — do not document only the default mode and describe the rest in `generalNotes`
 - **Missing boolean-gated elements:** Not checking if `propertyDefs` contains BOOLEAN properties that hide sub-components with unique color tokens. Boolean toggles can gate INSTANCE_SWAP swaps, deferred fills, or nested frames whose children carry tokens not present in the baseline extraction
+

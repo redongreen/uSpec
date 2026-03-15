@@ -1,8 +1,8 @@
 # uSpec
 
-Automate design system documentation — from Figma to finished specs, powered by AI agent skills in Cursor.
+Automate design system documentation — from Figma to finished specs, powered by AI agent skills.
 
-uSpec connects Cursor to your Figma files through the Figma Console MCP. Agent skills extract component structure, design tokens, variables, and styles directly from your file and render structured documentation right in Figma. No manual spec writing required.
+uSpec connects AI assistants (Cursor, Claude Code) to your Figma files through the Figma Console MCP. Agent skills extract component structure, design tokens, variables, and styles directly from your file and render structured documentation right in Figma. No manual spec writing required.
 
 ## What you can generate
 
@@ -19,6 +19,37 @@ uSpec connects Cursor to your Figma files through the Figma Console MCP. Agent s
 ## Get started
 
 Full documentation, installation guide, and examples at **[uSpec.design](https://uspec.design/)**.
+
+## Using with Claude Code
+
+uSpec is available as a Claude Code plugin. Install it to use these skills with the Claude Code CLI:
+
+```bash
+# Install from this repository
+claude install /path/to/uSpec/plugin
+
+# Or install from a published package
+claude install uspec
+```
+
+See [plugin/README.md](plugin/README.md) for detailed plugin installation and usage instructions.
+
+## Project Structure
+
+```
+uSpec/
+├── plugin/              # Claude Code plugin (installable)
+│   ├── .claude-plugin/  # Plugin manifest
+│   └── skills/          # Agent skills
+├── anatomy/             # Anatomy spec source files
+├── api/                 # API spec source files
+├── changelog/           # Changelog spec source files
+├── color/               # Color spec source files
+├── motion/              # Motion spec source files
+├── screen-reader/       # Screen reader spec source files
+├── structure/           # Structure spec source files
+└── docs/                # Documentation site
+```
 
 ## License
 

@@ -58,26 +58,6 @@ This section is a reference for what to inspect and how. The SKILL.md workflow (
 | Overflow | `node.clipsContent` — whether the frame clips children that exceed its bounds |
 | Padding | `node.paddingTop`, `node.paddingBottom`, `node.paddingLeft`, `node.paddingRight` |
 | Spacing | `node.itemSpacing`, `node.counterAxisSpacing` |
-
----
-
-## Claude Plugin Workflow
-
-When used through the Claude plugin, this file drives the full direct-to-Figma structure spec workflow.
-
-### Expected execution flow
-
-1. Verify MCP/Desktop Bridge connectivity.
-2. Read `uspecs.config.json` and extract `templateKeys.structureSpec`.
-3. Run the baseline extraction and variable-mode inspection, then do deeper `figma_execute` exploration for booleans, internal spacing, and state-conditional measurements.
-4. Use the sectioning, column, and measurement rules in this file to build the structured section data.
-5. Import and detach the Structure template, fill header fields, render each section table, and configure preview instances for the section’s scenario.
-6. Perform visual validation and iterate if columns, measurements, or preview states are wrong.
-
-### Plugin-specific requirements
-
-- If the structure template key is missing, stop and instruct the user to run `@setup-library`.
-- The reasoning and organization rules in this file remain the source of truth; the plugin workflow is responsible for extraction depth, template population, and validation.
 | Corner radius | `node.cornerRadius` |
 | Variable bindings | `node.boundVariables` → use `figma.variables.getVariableById(binding.id)` to get token name |
 | Typography style | `textNode.textStyleId` → use `figma.getStyleByIdAsync(id)` to get style name |
@@ -659,3 +639,4 @@ Before rendering into Figma, verify:
 | ☐ **Composition section** | If component is composed of 2+ sub-components with their own size variants, a composition section comes first |
 | ☐ **Behavior variant previews** | If a behavior/configuration axis exists (e.g., Static vs Interactive), the preview shows only the default configuration — one row of instances at each size. Border/stroke differences between configurations are documented as table rows, not duplicated in the preview. |
 | ☐ **State-conditional sections** | If any state introduces new properties not present in the default state, or changes border/stroke presence or weight between states, it has its own section |
+

@@ -24,39 +24,6 @@ You receive these fields from the Step 3 extraction (Step 4 context) or from the
 
 ---
 
-## Claude Plugin Workflow
-
-When this instruction file is used from the Claude plugin, the anatomy task is a direct-to-Figma workflow rather than a JSON-only reasoning pass.
-
-### Expected execution flow
-
-1. Verify MCP/Desktop Bridge connectivity with `figma_get_status`.
-2. Read `uspecs.config.json` and extract:
-   - `templateKeys.anatomyOverview` as the anatomy template key
-   - `fontFamily` for any text overrides
-3. Navigate to the target component, run the extraction script, then apply the classification and note-writing rules in this file to the returned `elements`.
-4. If a destination file or page differs from the source component file, navigate there before rendering.
-5. Import and detach the anatomy template, then fill:
-   - header fields
-   - composition artwork
-   - numbered markers
-   - the 4-column annotation table
-6. For each eligible INSTANCE child, generate a child section:
-   - unhide property-gated content when needed
-   - resolve the default child component
-   - extract grouped child elements
-   - re-apply the note-writing rules in this file
-   - render the per-child table and artwork
-7. Perform visual validation in Figma and iterate if layout, numbering, or hidden-content handling is wrong.
-
-### Plugin-specific requirements
-
-- If the anatomy template key is missing, stop and instruct the user to run `@setup-library`.
-- Hidden-by-default elements must still be documented when they are property-controlled and part of the component anatomy.
-- The analysis rules in this file remain the source of truth; the plugin layer is only responsible for extraction, template population, and validation.
-
----
-
 ## Element Classification Rules
 
 Classify each element in the `elements` array using these rules, evaluated in order:

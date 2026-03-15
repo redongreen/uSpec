@@ -119,27 +119,6 @@ The agent **does** need to:
 
 ### Step 1: Compute Track Width and pxPerMs
 
----
-
-## Claude Plugin Workflow
-
-This file is also the canonical execution guide for the Claude plugin motion workflow.
-
-### Expected execution flow
-
-1. Verify MCP/Desktop Bridge connectivity for the destination file.
-2. Read `uspecs.config.json` and extract `templateKeys.motionSpec`.
-3. Read the exported JSON from the user or referenced file; validate it against the schema in this file.
-4. Use the transformation rules here to compute only layout-dependent values such as `trackWidth` and `pxPerMs`.
-5. Import and detach the Motion template, fill the header, generate the ruler, render one timeline section per animated layer, then render the detail rows.
-6. Hide any template scaffolding and perform visual validation in Figma.
-
-### Plugin-specific requirements
-
-- If the motion template key is missing, stop and instruct the user to run `@setup-library`.
-- The exported JSON remains the sole source of truth; screenshots are optional context only.
-- Rendering should use the pre-computed segment values directly rather than re-deriving timing or easing data.
-
 The track width is **dynamic** — the agent computes an ideal width based on the composition duration, then resizes `#track-area` (in every property row) and `#ruler-track` to match. The parent containers use HUG sizing, so they expand automatically.
 
 **Computing the ideal track width:**
