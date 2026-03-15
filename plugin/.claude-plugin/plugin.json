@@ -9,41 +9,98 @@
     "type": "git",
     "url": "https://github.com/yourusername/uSpec"
   },
-  "skills": [
+  "agents": [
     {
       "name": "anatomy",
-      "description": "Generate component anatomy annotations with numbered markers and attribute tables for every element",
-      "path": "skills/anatomy/SKILL.md"
+      "description": "Element classification and annotation specialist. Enriches component elements with semantic roles and human-readable notes before rendering anatomy specifications.",
+      "path": "agents/anatomy.md"
     },
     {
       "name": "api",
-      "description": "Generate API specifications with properties, values, defaults, and configuration examples",
-      "path": "skills/api/SKILL.md"
+      "description": "Component API documentation specialist. Analyzes UI components and outputs structured JSON documenting configurable properties, sub-component configurations, and example configurations.",
+      "path": "agents/api.md"
     },
     {
       "name": "changelog",
-      "description": "Generate component changelogs documenting changes and updates",
-      "path": "skills/changelog/SKILL.md"
+      "description": "Changelog documentation specialist. Tracks and documents component changes, updates, and version history.",
+      "path": "agents/agent_changelog.md"
     },
     {
       "name": "color",
-      "description": "Generate color annotations with design token mapping for every element and state",
-      "path": "skills/color/SKILL.md"
+      "description": "Design token mapping specialist. Documents color annotations mapping UI elements to design tokens across variants and states.",
+      "path": "agents/color.md"
     },
     {
       "name": "motion",
-      "description": "Generate motion specifications with animation timeline bars and easing details from After Effects data",
-      "path": "skills/motion/SKILL.md"
+      "description": "Animation specification specialist. Generates motion specifications with timeline data and easing details from After Effects animations.",
+      "path": "agents/motion.md"
     },
     {
       "name": "screen-reader",
-      "description": "Generate screen reader specifications for VoiceOver, TalkBack, and ARIA accessibility",
-      "path": "skills/screen-reader/SKILL.md"
+      "description": "Accessibility specialist. Generates screen reader specifications for VoiceOver, TalkBack, and ARIA accessibility standards.",
+      "path": "agents/screen-reader.md"
     },
     {
       "name": "structure",
-      "description": "Generate structure specifications with dimensions, spacing, and padding across density and size variants",
-      "path": "skills/structure/SKILL.md"
+      "description": "Structural specification specialist. Documents component dimensions, spacing, padding, and how values change across density, size, and shape variants.",
+      "path": "agents/structure.md"
+    }
+  ],
+  "skills": [
+    {
+      "name": "create-anatomy",
+      "description": "Generate a visual anatomy annotation in Figma showing numbered markers on a component instance with an attribute table.",
+      "path": "skills/create-anatomy/SKILL.md"
+    },
+    {
+      "name": "create-api",
+      "description": "Generate API overview specifications documenting component properties, values, defaults, and configuration examples.",
+      "path": "skills/create-api/SKILL.md"
+    },
+    {
+      "name": "create-changelog",
+      "description": "Generate a new changelog for a component or design system file with the first entry.",
+      "path": "skills/create-changelog/SKILL.md"
+    },
+    {
+      "name": "update-changelog",
+      "description": "Add new entries directly to an existing changelog in Figma using MCP tools.",
+      "path": "skills/update-changelog/SKILL.md"
+    },
+    {
+      "name": "convert-changelog",
+      "description": "Convert an existing Figma changelog into structured JSON format.",
+      "path": "skills/convert-changelog/SKILL.md"
+    },
+    {
+      "name": "create-color",
+      "description": "Generate color annotation specifications mapping UI elements to design tokens.",
+      "path": "skills/create-color/SKILL.md"
+    },
+    {
+      "name": "create-motion",
+      "description": "Generate motion specification annotations from After Effects timeline data.",
+      "path": "skills/create-motion/SKILL.md"
+    },
+    {
+      "name": "create-property",
+      "description": "Generate a visual property annotation in Figma showing each configurable property axis with component instance previews.",
+      "path": "skills/create-property/SKILL.md"
+    },
+    {
+      "name": "create-structure",
+      "description": "Generate structure specifications documenting component dimensions, spacing, padding, and variant changes.",
+      "path": "skills/create-structure/SKILL.md"
+    },
+    {
+      "name": "create-voice",
+      "description": "Generate screen reader accessibility specifications for VoiceOver, TalkBack, and ARIA.",
+      "path": "skills/create-voice/SKILL.md"
+    },
+    {
+      "name": "setup-library",
+      "description": "Configure uSpec with your Figma template library.",
+      "path": "skills/setup-library/SKILL.md"
     }
   ],
   "requirements": {
