@@ -158,32 +158,28 @@ flowchart TB
   </Tab>
 
   <Tab title="Structure">
-    The structure skill loads its instruction file, measures all dimensional properties, and renders them into tables by variant axis (size, density, or shape) directly in Figma.
+    The structure skill uses a two-tier architecture: deterministic scripts handle data extraction and rendering, while AI reasoning is focused on interpretation and planning.
 
 ```mermaid
 flowchart TB
     Skill[SKILL.md] --> Instruction[agent-structure-instruction.md]
     Skill --> MCP[Figma Console MCP]
 
-    Instruction --> Analyze[Analyze structure]
-    MCP --> Measure[Measure dimensions and spacing]
-    MCP --> VarAxes[Identify variant axes]
-    MCP --> TokenVals[Extract token-bound values]
+    MCP --> Extract["Tier 1: Deterministic extraction"]
+    Extract --> Dims[Dimensions, tokens, sub-components]
+    Extract --> Compare[Cross-variant comparison]
 
-    Measure --> DeepExplore[Deep exploration: walk sub-components]
-    VarAxes --> DeepExplore
-    DeepExplore --> Organize[Organize by section]
-    TokenVals --> Organize
+    Dims --> Interpret["Tier 2: AI interpretation"]
+    Compare --> Interpret
+    Instruction --> Interpret
 
-    Analyze --> Columns[Determine column pattern]
-    Columns --> Organize
-    Organize --> Hierarchy[Apply property hierarchy]
-    Hierarchy --> Checklist[Audit against checklist]
-    Checklist --> Render[Render in Figma via figma_execute]
+    Interpret --> Plan[Section plan, notes, anomaly detection]
+    Plan --> Import[Import and detach template]
+    Import --> Render["Tier 1: Deterministic render"]
     Render --> Validate[Screenshot validation]
 ```
 
-  After measuring the top-level component, the skill runs a deep exploration step: it walks sub-components, enables all boolean toggles, and inspects internal child trees across sizes and states. Values are reported as token references when bound to a variable (e.g., `sizing-button-lg (56)`) or as plain numbers when hardcoded. The column pattern depends on the component: sizes get columns like Large, Medium, Small; density gets Compact, Default, Spacious.
+  The AI's reasoning budget is spent on interpretation — building the section plan, writing design-intent notes, and detecting anomalies — rather than data gathering. Deterministic scripts (~85% of the pipeline) handle extraction, cross-variant comparison, table rendering, and native Figma measurements. Values are reported as token references when bound to a variable (e.g., `sizing-button-lg (56)`) or as plain numbers when hardcoded.
   </Tab>
 
   <Tab title="Color Annotation">

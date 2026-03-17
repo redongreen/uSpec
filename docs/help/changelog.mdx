@@ -3,6 +3,33 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V1.2 — March 2026" description="Drastically improved create-structure skill">
+  ## uSpec V1.2
+
+  Major overhaul of the `create-structure` skill with smarter measurements, template-driven layout, and a clear deterministic/AI split.
+
+  ### Smarter measurement annotations
+
+  - Padding and spacing now use **Figma's native measurement display** instead of custom text labels — cleaner output with no mislabeled annotations
+  - Min/max constraints show actual node values (e.g., `min 32`, `max 200`)
+
+  ### Template-driven previews
+
+  - Preview layout is defined by the template; the script no longer overrides direction or spacing
+  - Section template hidden by default, eliminating an extra manual step
+
+  ### Clearer agent instructions
+
+  - Removed ambiguous language that caused layout direction changes
+  - Updated validation rules for new measurement behavior
+
+  ### Deterministic vs AI split (~85/15)
+
+  - ~85% deterministic scripts handle extraction, cross-variant comparison, and rendering
+  - ~15% AI reasoning handles section planning, design-intent notes, and anomaly detection
+  - Output is highly consistent across runs
+</Update>
+
 <Update label="V1.1.0 — March 2026" description="Multi-platform support and improved layer detection">
   ## uSpec V1.1.0
 

@@ -84,4 +84,4 @@ else
 fi
 
 echo ""
-echo "Done. Remember to update CLAUDE.md, AGENTS.md, and implementation.md if you added a new skill."
+echo "Done. Remember to update implementation.md if you added a new skill."

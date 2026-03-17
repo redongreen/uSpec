@@ -111,11 +111,11 @@ Look for `valuesByMode` in the response. If it has multiple mode values, those b
 
 ### Extracting Measurements
 
-The enhanced extraction script (Step 4b) provides pre-formatted `display` strings on every dimensional property. Use `display` directly as table cell values:
+Both the extraction script (Step 4b) and the cross-variant script (Step 4d) provide pre-formatted `display` strings on every dimensional property. Use `display` directly as table cell values:
 - Token-bound: `display` = `"token-name (resolved-value)"` (e.g., `"spacing-md (16)"`)
 - Hardcoded: `display` = `"value"` (e.g., `"16"`)
 
-No manual formatting of token+value strings is needed — the extraction handles it.
+Step 4b provides full `{ value, token, display }` tuples on variant root dimensions, children, enriched tree nodes, and sub-components. Step 4d provides the same format in `rootDimensions` and `subComponentDimensions` across all sizes. Both sources use identical formatting — table values can come from either.
 
 ### Collapsed/Expanded Dimensional Model
 
@@ -234,14 +234,17 @@ The enhanced extraction script (Step 4b) handles sub-component discovery automat
 
 **Level 2 — Sub-component instance toggles:** For every INSTANCE child at depth 0 in the enriched tree, the extraction script reads `instance.componentProperties` for BOOLEAN entries and stores them as `booleanOverrides` on each sub-component entry. It also resolves `subCompSetId` (the sub-component's own component set ID) and `subCompVariantAxes` (the sub-component's own variant axes).
 
-**The `subComponents` array** in the extraction output contains all discovered sub-components with:
+**The `subComponents` array** in the extraction output contains full data for each discovered sub-component:
 - `name` — the instance name in the parent (e.g., "Label", "Input", "Hint text")
 - `mainComponentName` — the main component's name
 - `subCompSetId` — the sub-component's own component set ID (for preview sourcing)
 - `subCompVariantAxes` — the sub-component's own variant axes (e.g., Size: ["Large", "Medium", "Small"])
 - `booleanOverrides` — boolean properties that gate internal children (e.g., character count, status icons)
-- `dimensions` — the sub-component's own dimensional properties
-- `children` — the sub-component's internal child tree
+- `dimensions` — the sub-component's own dimensional properties from the fully-enabled enriched tree (`{ value, token, display }` tuples)
+- `children` — recursive children with dimensions, matching the `extractChildren` format
+- `typography` — typography data if the sub-component is a TEXT node (or `null`)
+
+Step 4b provides sub-component dimensions from the enriched tree (fully-enabled state). Step 4d adds cross-variant measurements across all parent sizes. Both sources are available for section planning and row population.
 
 **Example:** A Label sub-component might have `booleanOverrides: { "Character count#12013:5": false, "Show icon#12013:0": false }`. The cross-variant script (Step 4d) enables all booleans and measures the sub-component's children across all parent sizes, so the `subComponentDimensions` data includes both the default and toggled-on children.
 
@@ -310,7 +313,7 @@ Do **not** use this for states that simply change existing numeric property valu
 
 - Use a descriptive `sectionName` like `"Input — Selected"` or `"Button — Focused"`
 - The `sectionDescription` should explain why this state has its own section
-- The preview should include both a default-state instance and a state-active instance side by side for comparison
+- The preview should include both a default-state instance and a state-active instance for comparison
 - The columns can be simpler (e.g., `["Spec", "Default", "Selected", "Notes"]`) or omit the default column and only document the new properties
 
 ### Example
@@ -319,7 +322,7 @@ Do **not** use this for states that simply change existing numeric property valu
 
 - Section name: "Input — Selected"
 - Description: "When input field is selected an inner border is shown for accessibility."
-- Preview: Input instance in default state and another in selected state, side by side
+- Preview: Input instance in default state and another in selected state
 - Columns: Spec | Default | Selected | Notes
 
 | Spec | Default | Selected | Notes |
@@ -333,7 +336,7 @@ Do **not** use this for states that simply change existing numeric property valu
 
 - Section name: "Tag — Interactive states"
 - Description: "Interactive tag shows border changes between enabled and active states."
-- Preview: Interactive Tag instance in Enabled state and another in Active state, side by side
+- Preview: Interactive Tag instance in Enabled state and another in Active state
 - Columns: Spec | Enabled | Active | Notes
 
 | Spec | Enabled | Active | Notes |
@@ -504,9 +507,10 @@ The extraction script provides pre-formatted `display` strings on every `{ value
 - **Ignoring anomalies:** Not flagging scaling inconsistencies, token misconfiguration, or asymmetric padding. The extraction data makes these visible — call them out in notes.
 - **Incomplete sections:** Not verifying that every auto-layout container and sub-component from the extraction has its own section or is covered by a parent section.
 - **Showing parent component in sub-component preview:** Sub-component section previews must show instances from the sub-component's own component set (`subComponents[].subCompSetId`), not the parent. A "Label" section should show four Label instances at different sizes, not four full Text Field instances.
-- **Overriding preview frame layout:** The `#Preview` frame's layout properties are defined by the template. Never override them — only set `clipsContent = false`.
+- **Overriding preview frame layout:** The `#Preview` frame's layout properties are defined by the template. Never override them.
 - **Missing border/stroke state changes:** Only checking whether a state adds entirely new properties, without checking if an existing border/stroke appears, disappears, or changes weight between states. The `stateComparison` data from Step 4d makes this visible.
-- **Measurement labels missing property name:** Annotation labels must always include the property name: `"paddingLeft (10)"`, `"itemSpacing (12)"`, `"minHeight (min 32)"`. Never show just the raw value.
+- **Measurement labels for constraints:** Min/max constraint labels must include the prefix: `"min 32"`, `"max 200"`. Padding and spacing measurements use Figma's default display (actual pixel values) with no custom labels.
+- **Extra annotations not in table:** Annotating properties that don't have a corresponding row in the section's table. Only draw measurements for properties documented in the table below — the token map gates which properties get annotated.
 
 ---
 
@@ -648,8 +652,9 @@ Before rendering into Figma, verify:
 | ☐ **Notes column** | Every row has a notes value (use "–" if no note needed) |
 | ☐ **Preview per section** | Each section has a distinct preview showing variant instances relevant to that section's axis |
 | ☐ **Sub-component preview sourcing** | Sub-component section previews use `subComponents[].subCompSetId` from extraction, not the parent's component set. Boolean overrides from `subComponents[].booleanOverrides` (all set to `true`) are applied. |
-| ☐ **Preview frame untouched** | The `#Preview` frame's layout properties are NOT overridden — only `clipsContent` is set to `false` |
-| ☐ **Measurement labels descriptive** | Annotation labels use `"propertyName (value)"` format |
+| ☐ **Preview frame untouched** | The `#Preview` frame's layout properties are NOT overridden — the template provides the correct layout |
+| ☐ **Measurement labels correct** | Padding and spacing use Figma's default display (actual pixel values). Min/max constraints use `freeText` with constraint prefix (`"min 32"`, `"max 200"`). |
+| ☐ **Table-driven annotations only** | Measurement lines appear ONLY for properties that have a corresponding row in the section's table. No extra annotations for properties not documented in the table. Token maps gate which properties get annotated. |
 | ☐ **Composition section** | If component has 2+ sub-components with their own size variants, a composition section comes first |
 | ☐ **Behavior variant previews** | Default configuration only for the preview; border/stroke differences documented as table rows |
 | ☐ **State-conditional sections** | States that introduce new properties or change border/stroke have their own section (detected by `stateComparison` from Step 4d) |

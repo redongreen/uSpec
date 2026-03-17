@@ -164,6 +164,8 @@ All skills render directly in Figma via `figma_execute`, following a shared patt
 
 **Property extraction (Property):** `create-property` uses a two-tier extraction model. **Tier 1 (deterministic scripts):** Steps 3, 3a, 3c, and 3d are `figma_execute` scripts that extract properties, resolve variant-gated booleans, link controlling booleans to child components by node ID, and normalize the data (coupled axes, unified slot chapters, sibling boolean collapsing). **Tier 2 (AI reasoning):** Step 3b (variable mode search) requires AI judgment for collection matching, and Step 3e is a validation layer that cross-checks the deterministic output for semantic mismatches, structural anomalies, and combination count sanity before rendering.
 
+**Structure extraction (Structure):** `create-structure` uses the same two-tier extraction model. **Tier 1 (deterministic scripts):** Steps 4b (enhanced extraction: dimensions, tokens, sub-components, collapsed dimensions) and 4d (cross-variant dimensional comparison) are `figma_execute` scripts that measure every variant, resolve token bindings, walk sub-component trees, and build the raw comparison data. **Tier 2 (AI reasoning):** Step 6 is an AI interpretation layer that builds the section plan, writes design-intent notes, detects anomalies, and judges completeness before the deterministic rendering step fills the template.
+
 **Clone visibility:** All cloned sections explicitly set `visible = true` after cloning, since template sources are hidden.
 
 | Skill | Template | Sections Generated |

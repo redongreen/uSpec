@@ -80,36 +80,33 @@ Each section covers a part of the component (container, leading content, labels,
 ```mermaid
 flowchart LR
     A[You] -->|Figma link| B[Agent Skill]
-    B -->|Extract data| C[Console MCP]
-    C -->|Component data| B
-    B -->|Render| C
-    C -->|Annotation frame| D[Figma Output]
+    B -->|Deterministic scripts| C[Console MCP]
+    C -->|Raw data| D[AI Interpretation]
+    D -->|Section plan| E[Deterministic Render]
+    E -->|Annotation frame| F[Figma Output]
 ```
 
 <Steps>
   <Step title="Extract">
-    The skill reads dimensions, padding, gaps, and variable bindings from the component via the Console MCP.
+    Deterministic scripts measure dimensions, padding, gaps, token bindings, sub-components, and cross-variant comparisons via the Console MCP.
   </Step>
-  <Step title="Measure variants">
-    Each variant (size, density mode) is measured to build comparison columns.
-  </Step>
-  <Step title="Discover sub-components">
-    Nested component instances are measured to document composition relationships.
+  <Step title="Interpret">
+    AI builds the section plan, writes design-intent notes, detects anomalies, and judges completeness.
   </Step>
   <Step title="Import template">
     The structure documentation template is imported from the library, instantiated, and detached into an editable frame.
   </Step>
   <Step title="Render">
-    The skill fills header fields, builds dimension tables with variant columns, and maps token references.
+    Deterministic scripts fill tables, place preview instances, and add native Figma measurements.
   </Step>
   <Step title="Validate">
     A screenshot is captured and checked for completeness. Issues are fixed automatically for up to 3 iterations.
   </Step>
 </Steps>
 
-<Tip>
-The skill renders programmatically, so the output is consistent and repeatable. Running it on the same component produces identical results.
-</Tip>
+<Note>
+  Roughly 85% of the pipeline is deterministic scripts (extraction, rendering, measurements) and 15% is AI reasoning (section planning, notes, anomaly detection). Output is highly consistent across runs.
+</Note>
 
 ## Tips for better output
 

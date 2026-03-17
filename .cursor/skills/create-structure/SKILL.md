@@ -311,25 +311,34 @@ for (const [axis, vals] of Object.entries(variantAxes)) {
   defaultValues[axis] = vals[0];
 }
 
+// Only vary dimension-affecting axes (Size, Density, Shape); skip visual-only (State, Mode, Theme)
+const DIMENSION_AXES = /size|density|shape/i;
+const dimensionAffectingAxes = Object.keys(variantAxes).filter(a => DIMENSION_AXES.test(a));
+const axesToVary = dimensionAffectingAxes.length > 0 ? dimensionAffectingAxes : [Object.keys(variantAxes)[0] || ''];
+
 const selectedVariants = new Set();
-for (const [axis, vals] of Object.entries(variantAxes)) {
+for (const axis of axesToVary) {
+  const vals = variantAxes[axis] || [];
   for (const val of vals) {
     const props = { ...defaultValues, [axis]: val };
     const name = Object.entries(props).map(([k, v]) => k + '=' + v).join(', ');
     selectedVariants.add(name);
   }
 }
+if (selectedVariants.size === 0 && variantChildren.length > 0) {
+  selectedVariants.add(variantChildren[0].name);
+}
 
 const variants = [];
 for (const variant of variantChildren) {
   if (!isComponentSet || selectedVariants.has(variant.name)) {
-    const v = {
+    const dims = await extractDimensions(variant);
+    variants.push({
       name: variant.name,
-      dimensions: await extractDimensions(variant),
+      dimensions: dims,
       children: await extractChildren(variant, 0, true),
       layoutTree: buildLayoutTree(variant)
-    };
-    variants.push(v);
+    });
   }
 }
 
@@ -352,7 +361,7 @@ for (const child of enrichedTree) {
       subCompSetId: child.subCompSetId,
       subCompVariantAxes: child.subCompVariantAxes || {},
       booleanOverrides: child.booleanOverrides || {},
-      dimensions: child.dimensions,
+      dimensions: child.dimensions || {},
       children: child.children || [],
       typography: child.typography || null
     });
@@ -376,14 +385,14 @@ return {
 
 Save the returned JSON. The enhanced extraction script provides:
 
-- **Representative variants** — one per value of each axis at default values for other axes (same strategy as before: Size(4) × State(11) = 14 instead of 44).
+- **Representative variants** — one per value of each *dimension-affecting* axis (Size, Density, Shape) at default values for other axes. Visual-only axes (State, Mode, Theme) are skipped — e.g., Size(4) × State(11) yields 4 variants instead of 14.
 - **Collapsed/expanded dimensional model** — `padding` is a single `{ value, token, display }` when all sides equal, `{ vertical, horizontal }` when top==bottom and left==right, or `{ top, bottom, start, end }` with logical directions when sides differ. Same pattern for `cornerRadius` (uniform vs `{ topStart, topEnd, bottomStart, bottomEnd }`) and `strokeWeight` (uniform vs per-side).
 - **Typography as composite** — `typography: { styleName }` when a named text style exists, or `{ fontSize, fontWeight, lineHeight, ... }` for inline values. Never both — mutual exclusion enforced at extraction time.
 - **Pre-formatted display strings** — every dimensional property includes a `display` field: `"token-name (value)"` when token-bound, `"value"` when hardcoded. Use `display` directly in table rows and token maps.
 - **Sub-component discovery** — all top-level INSTANCE children have `subCompSetId`, `subCompVariantAxes`, and `booleanOverrides` populated automatically via `getMainComponentAsync()`.
-- **Enriched tree** — always created from a test instance of the default variant. When parent booleans exist, all are set to `true` to capture elements hidden in defaults. When no booleans exist, the enriched tree still discovers sub-component metadata (subCompSetId, booleanOverrides) that the representative variant children also carry.
+- **Enriched tree** — full recursive tree with dimensions from a fully-enabled test instance (all parent booleans set to `true`). Each node includes name, type, visible, dimensions, children, typography for TEXT, and sub-component metadata for INSTANCE. Used for sub-component discovery, completeness checks, and detailed dimensional analysis.
 - **Layout tree** — a recursive `layoutTree` on each variant showing auto-layout nesting, which containers have padding/spacing, and the hierarchy of structurally significant frames.
-- **`subComponents` array** — pre-resolved list of discovered sub-components with their component set IDs, own variant axes, boolean overrides, dimensions, and children.
+- **`subComponents` array** — full sub-component data: name, mainComponentName, subCompSetId, subCompVariantAxes, booleanOverrides, dimensions, children, and typography. Provides sub-component dimensions from the enriched tree (fully-enabled state) in addition to the cross-variant measurements from Step 4d.
 
 You will use `componentName`, `compSetNodeId`, `variantAxes`, `propertyDefs`, `booleanDefs`, `variants`, `enrichedTree`, `subComponents`, and each variant's `layoutTree` in subsequent steps. The `propertyDefs` object contains exact Figma property keys (including `#nodeId` suffixes for booleans) needed for `setProperties()` when placing preview instances.
 
@@ -868,10 +877,14 @@ The mapping from table `spec` names to Figma properties:
 | `paddingStart` / `paddingLeft` | `paddingLeft` |
 | `paddingEnd` / `paddingRight` | `paddingRight` |
 | `contentSpacing` / `itemSpacing` / `gapBetween` / `iconLabelSpacing` | `itemSpacing` |
+| `minWidth` | `minWidth` |
+| `maxWidth` | `maxWidth` |
+| `minHeight` | `minHeight` |
+| `maxHeight` | `maxHeight` |
 
 For each section row, look up the row's `spec` in this mapping. For each value column index `i`, set `tokenMaps[i][figmaProp] = row.values[i]`. The `row.values[i]` already contains the correctly formatted display string (e.g., `"spacing-md (16)"` or `"16"`) because Step 7 populated rows using the `display` field from the dimensional data.
 
-If the section has no padding or spacing rows, set `TOKEN_MAPS` to `[]`. The recursive tree walker will still annotate padding, spacing, and min/max constraints it discovers, using raw numeric values as labels.
+If the section has no dimensional rows (no padding, spacing, or min/max rows), set `TOKEN_MAPS` to `[]`. No measurement annotations will be drawn — the `annotateNode` function only creates measurements for properties that have a corresponding entry in the token map. This ensures annotations exactly match the table rows below.
 
 #### Step 11b: Render the table
 
@@ -1071,14 +1084,11 @@ const compNode = await figma.getNodeByIdAsync(sourceId);
 if (!compNode) return { error: 'Component not found: ' + sourceId };
 const isComponentSet = compNode.type === 'COMPONENT_SET';
 
-await figma.loadFontAsync({ family: FONT_FAMILY, style: 'Medium' });
-
-function labelText(tokenMap, logicalName, figmaProp, fallbackValue) {
-  const value = (tokenMap && tokenMap[figmaProp] && tokenMap[figmaProp] !== '–') ? tokenMap[figmaProp] : String(fallbackValue);
-  return logicalName + ' (' + value + ')';
+function hasTokenEntry(tokenMap, figmaProp) {
+  return tokenMap && tokenMap[figmaProp] && tokenMap[figmaProp] !== '–';
 }
 
-function annotateNode(node, tokenMap, isRoot) {
+function annotateNode(node, tokenMap, isRoot, annotateScope) {
   if (!node.visible) return;
   const isAutoLayout = node.layoutMode && node.layoutMode !== 'NONE';
 
@@ -1092,73 +1102,69 @@ function annotateNode(node, tokenMap, isRoot) {
     const last = kids[kids.length - 1];
 
     if (first) {
-      if (pT >= MIN_ANNOTATABLE) {
+      if (pT >= MIN_ANNOTATABLE && hasTokenEntry(tokenMap, 'paddingTop')) {
         figma.currentPage.addMeasurement(
-          { node: node, side: 'TOP' }, { node: first, side: 'TOP' },
-          { freeText: labelText(tokenMap, 'paddingTop', 'paddingTop', pT), offset: { type: 'OUTER', fixed: -20 } }
+          { node: node, side: 'TOP' }, { node: first, side: 'TOP' }
         );
       }
-      if (pB >= MIN_ANNOTATABLE) {
+      if (pB >= MIN_ANNOTATABLE && hasTokenEntry(tokenMap, 'paddingBottom')) {
         figma.currentPage.addMeasurement(
-          { node: last, side: 'BOTTOM' }, { node: node, side: 'BOTTOM' },
-          { freeText: labelText(tokenMap, 'paddingBottom', 'paddingBottom', pB), offset: { type: 'OUTER', fixed: -20 } }
+          { node: last, side: 'BOTTOM' }, { node: node, side: 'BOTTOM' }
         );
       }
-      if (pL >= MIN_ANNOTATABLE) {
+      if (pL >= MIN_ANNOTATABLE && hasTokenEntry(tokenMap, 'paddingLeft')) {
         figma.currentPage.addMeasurement(
-          { node: node, side: 'LEFT' }, { node: first, side: 'LEFT' },
-          { freeText: labelText(tokenMap, 'paddingStart', 'paddingLeft', pL), offset: { type: 'OUTER', fixed: -20 } }
+          { node: node, side: 'LEFT' }, { node: first, side: 'LEFT' }
         );
       }
-      if (pR >= MIN_ANNOTATABLE) {
+      if (pR >= MIN_ANNOTATABLE && hasTokenEntry(tokenMap, 'paddingRight')) {
         figma.currentPage.addMeasurement(
-          { node: last, side: 'RIGHT' }, { node: node, side: 'RIGHT' },
-          { freeText: labelText(tokenMap, 'paddingEnd', 'paddingRight', pR), offset: { type: 'OUTER', fixed: -20 } }
+          { node: last, side: 'RIGHT' }, { node: node, side: 'RIGHT' }
         );
       }
     }
 
     const spacing = Math.round(node.itemSpacing || 0);
-    if (spacing >= MIN_ANNOTATABLE && kids.length > 1) {
+    if (spacing >= MIN_ANNOTATABLE && kids.length > 1 && hasTokenEntry(tokenMap, 'itemSpacing')) {
       const isH = node.layoutMode === 'HORIZONTAL';
       for (let ci = 0; ci < kids.length - 1; ci++) {
         figma.currentPage.addMeasurement(
           { node: kids[ci], side: isH ? 'RIGHT' : 'BOTTOM' },
-          { node: kids[ci + 1], side: isH ? 'LEFT' : 'TOP' },
-          { freeText: labelText(tokenMap, 'itemSpacing', 'itemSpacing', spacing), offset: { type: 'OUTER', fixed: 10 } }
+          { node: kids[ci + 1], side: isH ? 'LEFT' : 'TOP' }
         );
       }
     }
   }
 
-  if (node.minWidth > 0) {
+  if (node.minWidth > 0 && hasTokenEntry(tokenMap, 'minWidth')) {
     figma.currentPage.addMeasurement(
       { node: node, side: 'LEFT' }, { node: node, side: 'RIGHT' },
-      { freeText: labelText(tokenMap, 'minWidth', 'minWidth', 'min ' + node.minWidth), offset: { type: 'OUTER', fixed: 30 } }
+      { freeText: 'min ' + Math.round(node.minWidth) }
     );
   }
-  if (node.maxWidth > 0 && node.maxWidth < 10000) {
+  if (node.maxWidth > 0 && node.maxWidth < 10000 && hasTokenEntry(tokenMap, 'maxWidth')) {
     figma.currentPage.addMeasurement(
       { node: node, side: 'LEFT' }, { node: node, side: 'RIGHT' },
-      { freeText: labelText(tokenMap, 'maxWidth', 'maxWidth', 'max ' + node.maxWidth), offset: { type: 'OUTER', fixed: 30 } }
+      { freeText: 'max ' + Math.round(node.maxWidth) }
     );
   }
-  if (node.minHeight > 0) {
+  if (node.minHeight > 0 && hasTokenEntry(tokenMap, 'minHeight')) {
     figma.currentPage.addMeasurement(
       { node: node, side: 'TOP' }, { node: node, side: 'BOTTOM' },
-      { freeText: labelText(tokenMap, 'minHeight', 'minHeight', 'min ' + node.minHeight), offset: { type: 'OUTER', fixed: 30 } }
+      { freeText: 'min ' + Math.round(node.minHeight) }
     );
   }
-  if (node.maxHeight > 0 && node.maxHeight < 10000) {
+  if (node.maxHeight > 0 && node.maxHeight < 10000 && hasTokenEntry(tokenMap, 'maxHeight')) {
     figma.currentPage.addMeasurement(
       { node: node, side: 'TOP' }, { node: node, side: 'BOTTOM' },
-      { freeText: labelText(tokenMap, 'maxHeight', 'maxHeight', 'max ' + node.maxHeight), offset: { type: 'OUTER', fixed: 30 } }
+      { freeText: 'max ' + Math.round(node.maxHeight) }
     );
   }
 
-  if ('children' in node && (isRoot || node.type !== 'INSTANCE')) {
+  const recurse = annotateScope === 'fullTree' && ('children' in node) && (isRoot || node.type !== 'INSTANCE');
+  if (recurse) {
     for (const child of node.children) {
-      annotateNode(child, tokenMap);
+      annotateNode(child, tokenMap, false, annotateScope);
     }
   }
 }
@@ -1197,11 +1203,6 @@ for (let i = 0; i < COLUMN_VALUES.length; i++) {
 
   instances.push({ colValue, targetVariant, tokenMap: TOKEN_MAPS.length > i ? TOKEN_MAPS[i] : {} });
 }
-
-// IMPORTANT: Do NOT change the preview frame's layout properties (layoutMode,
-// sizing, padding, etc.) — the template already defines the correct layout.
-// Only set clipsContent to false so annotations outside bounds remain visible.
-preview.clipsContent = false;
 
 const wrappers = [];
 for (const entry of instances) {
@@ -1242,25 +1243,15 @@ for (const entry of instances) {
   wrappers.push({ wrapper, entry });
 }
 
+const annotateScope = useSubComp ? 'fullTree' : 'rootOnly';
 for (const { wrapper, entry } of wrappers) {
   if (entry._inst) {
     wrapper.layoutMode = 'NONE';
-    annotateNode(entry._inst, entry.tokenMap, true);
+    annotateNode(entry._inst, entry.tokenMap, true, annotateScope);
   }
 }
 
 return { success: true, section: SECTION_NAME };
-```
-
-#### After all sections: hide the template
-
-After processing all sections (each with 11a → 11b → 11c), hide the original `#section-template`:
-
-```javascript
-const frame = await figma.getNodeByIdAsync('__FRAME_ID__');
-const sectionTemplate = frame.findOne(n => n.name === '#section-template');
-if (sectionTemplate) sectionTemplate.visible = false;
-return { success: true };
 ```
 
 ### Step 12: Visual Validation
@@ -1273,13 +1264,14 @@ return { success: true };
    - Hierarchy indicators (├─ / └─) appear on sub-properties
    - General notes are visible or hidden as expected
    - Each section's `#Preview` frame has at least one child instance and the instances are visible
-   - **Preview layout**: Instances are placed inside the `#Preview` frame. Each instance has a label below it. The preview frame's layout properties (layoutMode, sizing, padding) are defined by the template and must NOT be overridden by the script — only `clipsContent` is set to `false` so annotations remain visible.
+   - **Preview layout**: Instances are placed inside the `#Preview` frame. Each instance has a label below it. The template's `#Preview` frame provides the layout — the script does not override any of its properties.
    - Column widths look balanced — the notes column is not crushed
-   - **Padding measurements**: Native Figma measurement lines appear between every auto-layout container edge and its first/last visible child where padding >= 4px, across the full instance tree.
-   - **Spacing measurements**: Native Figma measurement lines appear between consecutive visible siblings in every auto-layout container where itemSpacing >= 4px.
-   - **Min/max constraints**: Measurement lines appear on any node with minWidth, maxWidth, minHeight, or maxHeight set, showing the constraint value.
+   - **Table-driven annotations**: Measurement lines appear ONLY for properties that have a corresponding row in the section's table. If a property is not documented in the table, it is not annotated on the preview — no extra measurements. The `TOKEN_MAPS` built from table rows gate which properties get annotated.
+   - **Padding measurements**: Native Figma measurement lines appear between auto-layout container edges and first/last visible child, but only when the token map includes `paddingTop`, `paddingBottom`, `paddingLeft`, or `paddingRight` entries (i.e., the table has padding rows).
+   - **Spacing measurements**: Native Figma measurement lines appear between consecutive visible siblings, but only when the token map includes an `itemSpacing` entry (i.e., the table has a spacing row).
+   - **Min/max constraints**: Measurement lines appear only when the token map includes `minWidth`, `maxWidth`, `minHeight`, or `maxHeight` entries (i.e., the table has corresponding rows).
    - **Measurement labels**: `freeText` labels always include the property name and value in the format `"propertyName (value)"` — e.g., `"paddingLeft (10)"`, `"itemSpacing (12)"`, `"minHeight (min 32)"`. When a `TOKEN_MAPS` entry exists, the value portion uses the token-enriched string (e.g., `"paddingLeft (spacing-md (16))"`). The property name prefix ensures annotations are self-descriptive when viewed on the canvas.
-   - **INSTANCE boundary**: The entry-point instance is fully traversed (all internal frames and containers are annotated). Nested sub-component INSTANCE children are measured externally (e.g., their minHeight) but NOT recursed into — their internals are documented in their own specs.
+   - **Annotation scope**: Root sections annotate only the root instance. Sub-component sections annotate the full subtree of each instance. Nested INSTANCE children are measured externally but not recursed into — their internals are documented in their own sections.
    - **Minimum threshold**: No measurements appear for padding or spacing values below 4px.
    - **Sub-component preview correctness**: Sub-component section previews show instances from the sub-component's own component set (not the parent). Verify that the preview shows the sub-component in isolation (e.g., four Label instances at different sizes, not four full Text Field instances). If `SUB_COMP_OVERRIDES` was specified, verify that optional internal children (e.g., character count, icons) are visible on each preview instance.
    - **Behavior variant preview simplicity**: When a behavior/configuration axis exists (e.g., Static vs Interactive), the preview shows only the default configuration — one row of instances at each size. Do NOT duplicate instances for each configuration.
@@ -1292,7 +1284,7 @@ return { success: true };
 - **Behavior/Configuration variant previews**: When a variant axis controls visual configuration (e.g., Static vs Interactive), the preview shows only the **default configuration** (e.g., Static) — one row of instances at each size is sufficient to illustrate dimensional properties. There is no need to duplicate instances for each configuration. If dimensional values are identical across configurations, document them once with a note. If a property like `borderWidth` differs, add it as a row in the table.
 - **Two-tier extraction model**: The extraction script (Step 4b) provides a comprehensive structured baseline — variant axes, dimensions, token bindings, property definitions, sub-component discovery (with `subCompSetId`, `subCompVariantAxes`, and `booleanOverrides`), an enriched fully-enabled child tree, a layout tree, and collapsed/expanded dimensional representations. Step 4d adds a deterministic cross-variant dimensional comparison across all sizes for every sub-component. Together, these two deterministic scripts provide complete dimensional data, eliminating the need for free-form `figma_execute` exploration. The AI's reasoning budget (Step 6) is spent on interpretation, not data gathering.
 - **Two levels of boolean toggles**: The parent component's `propertyDefs` contains booleans that gate top-level sub-components (e.g., "Show hint text" on a Text Field). Each sub-component INSTANCE also has its own `componentProperties` with booleans that gate *internal* children (e.g., "Character count" and "Show icon" on a Label instance). The enhanced extraction script (Step 4b) captures BOTH levels: `booleanDefs` for parent-level booleans, and `subComponents[].booleanOverrides` for each sub-component's own boolean properties. The enriched tree is always created (even when no parent booleans exist), ensuring sub-component discovery works for all components.
-- The extraction script (Step 4b) selects representative variants (one per axis value at defaults for other axes) and walks their full child trees, extracting collapsed/expanded dimensions, logical-direction padding, token bindings with display strings, typography composites, and layout trees. For a component with N axes each having V values, this extracts at most V1 + V2 + ... + Vn - (n-1) variants instead of V1 × V2 × ... × Vn.
+- The extraction script (Step 4b) selects representative variants only from dimension-affecting axes (Size, Density, Shape), skipping visual-only axes (State, Mode, Theme). Each variant returns full dimensions with `{ value, token, display }` tuples, recursive children with dimensions, and a layoutTree. For Size(4) × State(11), this yields 4 variants instead of 14. The enriched tree and subComponents include full dimensional data.
 - **Collapsed/expanded dimensional model**: Padding is returned as a single `{ value, token, display }` when all four sides have equal values AND equal token names, `{ vertical, horizontal }` when top==bottom and left==right (values and tokens), or `{ top, bottom, start, end }` with logical directions when sides differ in value or token. This means two sides with the same numeric value but different token names (e.g., `spacing-vertical-md` vs `spacing-horizontal-md`, both resolving to 16) will be returned per-side, preserving the distinct token names. Same pattern for cornerRadius and strokeWeight. The data structure itself communicates whether values are uniform — the AI doesn't need to guess. Table rows become `padding` / `horizontalPadding` + `verticalPadding` / individual `paddingTop`, `paddingStart`, etc. based on the shape of the extraction output.
 - **Logical direction normalization**: The extraction uses logical directions (`start`/`end`) instead of physical (`left`/`right`) for padding and stroke weight. Corner radii use `topStart`, `topEnd`, `bottomStart`, `bottomEnd`. This ensures specs are RTL-aware by default.
 - **Typography as composite**: The extraction returns `typography: { styleName }` when a named text style is used, or `{ fontSize, fontWeight, lineHeight, ... }` for inline values — never both. This makes table row decisions deterministic: if `styleName` exists, emit one `textStyle` row; if inline, emit individual typography rows.
@@ -1304,12 +1296,13 @@ return { success: true };
 - When the component is in a different file than the destination, run the extraction script in the component's file first, then navigate to the destination before importing the template.
 - Dynamic columns: The `#variant-value` template in the header row and `#property-value-cell` in each data row are cloned once per value column, then the original template is removed. Clones are inserted before the Notes column to maintain correct column order. All value columns and the Notes column use `layoutSizingHorizontal = 'FILL'` so Figma's auto-layout distributes width equally across them.
 - **Per-section rendering**: Step 11 processes one section at a time: determine preview parameters (11a), render table (11b), populate preview (11c). This keeps section-specific context fresh — the agent determines which variant axis, column values, property overrides, and token maps to use immediately before rendering each preview.
-- Preview instances: Step 11c provides an explicit `figma_execute` script per section that creates labeled component instances inside each section's `#Preview` frame. It uses variant matching with fallback logic (exact match first, then best partial match) identical to create-property. The preview frame's layout properties are defined by the template and must NOT be overridden — the script only sets `clipsContent = false`.
-- **Recursive tree walker**: The `annotateNode()` function walks the full visible subtree of each instance, creating native Figma measurements on every structurally significant node.
-- **INSTANCE recursion boundary**: The entry-point instance is always fully traversed — `annotateNode` is called with `isRoot = true`, which bypasses the INSTANCE type check for that node only. All nested INSTANCE children encountered during recursion are measured externally but NOT recursed into.
+- Preview instances: Step 11c provides an explicit `figma_execute` script per section that creates labeled component instances inside each section's `#Preview` frame. It uses variant matching with fallback logic (exact match first, then best partial match) identical to create-property. The template's `#Preview` frame provides the layout — the script does not override any of its properties.
+- **Annotation scope**: Root/variant sections (SUB_COMP_SET_ID empty) annotate only the root instance — no recursion into children. Sub-component sections (SUB_COMP_SET_ID non-empty) annotate the full visible subtree of each instance. This ensures each section's preview only shows measurements for what that section documents.
+- **Table-driven annotations**: The `annotateNode()` function only creates measurements for properties that have an entry in the `tokenMap` (built from the section's table rows). A `hasTokenEntry()` guard on every measurement call ensures annotations exactly match what the table documents — no extra measurements for properties not in the table. Padding and spacing measurements use Figma's native display (actual pixel values); min/max constraint measurements use `freeText` with the actual node property value (e.g., `min 32`). When scope is `fullTree`, it recurses into the visible subtree; when scope is `rootOnly`, it annotates only the entry-point node.
+- **INSTANCE recursion boundary**: When recursing, nested INSTANCE children are measured externally but NOT recursed into.
 - **Sub-component preview sourcing**: When a section documents a sub-component, the preview script uses `SUB_COMP_SET_ID` (from `subComponents[].subCompSetId` in Step 4b) to create instances from the sub-component's own component set. The `SUB_COMP_OVERRIDES` (from `subComponents[].booleanOverrides` with all values set to `true`) enables boolean properties on each instance so optional internal children are visible.
-- **Native Figma measurements**: All dimension annotations use `figma.currentPage.addMeasurement()`. Padding: `{ type: 'OUTER', fixed: -20 }`, spacing: `{ type: 'OUTER', fixed: 10 }`, min/max constraints: `{ type: 'OUTER', fixed: 30 }`.
-- **Token map from extraction data**: Because the extraction returns pre-formatted `display` strings, token maps are built directly from the section's row data. The `display` string goes directly into both table cells and annotation labels, eliminating manual TOKEN_MAPS construction. The mapping from table spec names to Figma properties is documented in Step 11a.
+- **Native Figma measurements**: All dimension annotations use `figma.currentPage.addMeasurement()`. Padding and spacing measurements use Figma's default display (actual measured pixel values) with no `freeText` or custom offset. Min/max constraint measurements use `freeText` with the actual node constraint value (e.g., `'min ' + Math.round(node.minHeight)`) and Figma's default centering.
+- **Token map from extraction data**: Because the extraction returns pre-formatted `display` strings, token maps are built directly from the section's row data. The `display` string goes directly into table cells, eliminating manual TOKEN_MAPS construction. The mapping from table spec names to Figma properties (including `minWidth`, `maxWidth`, `minHeight`, `maxHeight`) is documented in Step 11a. The token map gates which properties get annotated — only properties with a token map entry produce measurement lines.
 - **Minimum annotation threshold**: Measurements are skipped when the padding or spacing value is less than 4px.
 - Hierarchy indicators: The `#hierarchy-indicator` frame contains two child vectors — `within-group` (├─) for mid-group rows and `#hierarchy-indicator-last` (└─) for the last row. For non-sub-properties, the entire frame is hidden.
 - Each section is rendered in a separate `figma_execute` call to avoid timeouts.
