@@ -722,6 +722,7 @@ const PROPERTY_NAME = '__PROPERTY_NAME__';
 const OPTIONS = __OPTIONS_JSON__;
 const DEFAULT_VALUE = '__DEFAULT_VALUE__';
 const DEFAULT_PROPS = __DEFAULT_PROPS_JSON__;
+const FONT_FAMILY = '__FONT_FAMILY__';
 
 const frame = await figma.getNodeByIdAsync(FRAME_ID);
 const chapterTemplate = frame.findOne(n => n.name === '#anatomy-section');
@@ -846,6 +847,7 @@ const PROPERTY_NAME = '__PROPERTY_NAME__';
 const DEFAULT_VALUE = __DEFAULT_BOOL_VALUE__;
 const ASSOCIATED_LAYER = '__ASSOCIATED_LAYER__';
 const VARIANT_OVERRIDES = __VARIANT_OVERRIDES_OR_NULL__;
+const FONT_FAMILY = '__FONT_FAMILY__';
 
 const frame = await figma.getNodeByIdAsync(FRAME_ID);
 const chapterTemplate = frame.findOne(n => n.name === '#anatomy-section');
@@ -977,6 +979,7 @@ const DEFAULT_VALUE = '__DEFAULT_VALUE__';
 const COLLECTION_NAME = '__COLLECTION_NAME__';
 const COLLECTION_ID = '__COLLECTION_ID__';
 const MODES = __MODES_JSON__;
+const FONT_FAMILY = '__FONT_FAMILY__';
 
 const frame = await figma.getNodeByIdAsync(FRAME_ID);
 const chapterTemplate = frame.findOne(n => n.name === '#anatomy-section');
@@ -1100,6 +1103,7 @@ const MAIN_COMP_NAME = '__MAIN_COMPONENT_NAME__';
 const CONTROLLING_BOOL_NAME = '__CONTROLLING_BOOL_NAME__';
 const CONTROLLING_BOOL_RAW_KEY = __CONTROLLING_BOOL_RAW_KEY_OR_NULL__;
 const VARIANT_AXES = __VARIANT_AXES_JSON__;
+const FONT_FAMILY = '__FONT_FAMILY__';
 
 const frame = await figma.getNodeByIdAsync(FRAME_ID);
 const chapterTemplate = frame.findOne(n => n.name === '#anatomy-section');
@@ -1260,6 +1264,7 @@ const MAIN_COMP_NAME = '__MAIN_COMPONENT_NAME__';
 const CONTROLLING_BOOL_NAME = '__CONTROLLING_BOOL_NAME__';
 const CONTROLLING_BOOL_RAW_KEY = __CONTROLLING_BOOL_RAW_KEY_OR_NULL__;
 const BOOLEAN_PROPS = __BOOLEAN_PROPS_JSON__;
+const FONT_FAMILY = '__FONT_FAMILY__';
 
 const frame = await figma.getNodeByIdAsync(FRAME_ID);
 const chapterTemplate = frame.findOne(n => n.name === '#anatomy-section');
@@ -1395,6 +1400,7 @@ const CHAPTER_NAME = '__CHAPTER_NAME__';
 const CONTAINER_BOOL_NAME = '__CONTAINER_BOOL_NAME__';
 const DEFAULT_LABEL = '__DEFAULT_LABEL__';
 const PREVIEW_COMBINATIONS = __PREVIEW_COMBINATIONS_JSON__;
+const FONT_FAMILY = '__FONT_FAMILY__';
 
 const frame = await figma.getNodeByIdAsync(FRAME_ID);
 const chapterTemplate = frame.findOne(n => n.name === '#anatomy-section');
@@ -1527,6 +1533,7 @@ const CHILD_NAME = '__CHILD_LAYER_NAME__';
 const CHAPTER_NAME = '__CHAPTER_NAME__';
 const DEFAULT_LABEL = '__DEFAULT_LABEL__';
 const PREVIEW_COMBINATIONS = __PREVIEW_COMBINATIONS_JSON__;
+const FONT_FAMILY = '__FONT_FAMILY__';
 
 const frame = await figma.getNodeByIdAsync(FRAME_ID);
 const chapterTemplate = frame.findOne(n => n.name === '#anatomy-section');

@@ -439,7 +439,7 @@ Save the returned `compositionSectionId` — you need it for Step 8.
 
 ### Step 8: Build Composition Artwork with Markers + Fill Table
 
-Run via `figma_execute`. Replace `__COMPOSITION_SECTION_ID__`, `__COMP_SET_NODE_ID__`, `__IS_COMPONENT_SET__`, the `elements` array, and `__BOOLEAN_UNHIDES_JSON__` with the enriched data from Step 4. Use the `compositionSectionId` from Step 7 to scope lookups. `__BOOLEAN_UNHIDES_JSON__` is an array of `{ booleanRawKey }` objects from elements whose `unhideStrategy.method === 'boolean'` — these booleans are toggled via `setProperties` instead of direct unhide. Pass `[]` if no boolean-controlled hidden elements exist.
+Run via `figma_execute`. Replace `__COMPOSITION_SECTION_ID__`, `__COMP_SET_NODE_ID__`, `__IS_COMPONENT_SET__`, the `elements` array, `__BOOLEAN_UNHIDES_JSON__`, and `__FONT_FAMILY__` (from `uspecs.config.json`, default: `Inter`) with the enriched data from Step 4. Use the `compositionSectionId` from Step 7 to scope lookups. `__BOOLEAN_UNHIDES_JSON__` is an array of `{ booleanRawKey }` objects from elements whose `unhideStrategy.method === 'boolean'` — these booleans are toggled via `setProperties` instead of direct unhide. Pass `[]` if no boolean-controlled hidden elements exist.
 
 **Artwork** (`#preview`): Place a component instance with hidden children made visible via property-aware unhide, then clone `#marker-example` for each element with connecting lines.
 
@@ -452,6 +452,7 @@ const IS_COMPONENT_SET = __IS_COMPONENT_SET__;
 const MARKER_COLOR = { r: 0.922, g: 0, b: 0.431 };
 
 const elements = __ELEMENTS_JSON__;
+const FONT_FAMILY = '__FONT_FAMILY__';
 
 const section = await figma.getNodeByIdAsync(COMPOSITION_SECTION_ID);
 const frame = section.parent.parent;
@@ -708,7 +709,7 @@ For each direct child that is an `INSTANCE` node (has `mainComponentId` or `main
 
 Skip this step entirely if no child elements have `nodeType === 'INSTANCE'` and no slot-wrapper FRAMEs were identified in Step 4. Additionally, **check `shouldCreateSection`** on each eligible child (set during Step 4 reasoning) — skip the `figma_execute` call entirely for any child where `shouldCreateSection === false`. These are utility or trivially simple sub-components (Spacer, Divider, structural-only, etc.) that don't warrant a dedicated section. The `gcElements.length <= 1` guard in the JavaScript remains as a runtime safety net, but the agent should avoid even calling `figma_execute` for ineligible children.
 
-For **each** eligible child element (`shouldCreateSection === true`), run via `figma_execute` (replace `__FRAME_ID__`, `__CHILD_NAME__`, `__CHILD_COMP_ID__`, `__CHILD_IS_COMP_SET__` with values from the extraction data). For direct INSTANCE children, use `mainComponentSetId` if `childIsComponentSet` is true, otherwise use `mainComponentId`. For **slot-wrapper FRAMEs**, use `wrappedInstance.mainComponentSetId` if `wrappedInstance.childIsComponentSet` is true, otherwise use `wrappedInstance.mainComponentId`. Replace `__CHILD_BOOLEAN_PROPS_JSON__` with the child sub-component's boolean properties (extracted from its `componentPropertyDefinitions` during Step 4 reasoning). If the child has no boolean properties, pass `[]`:
+For **each** eligible child element (`shouldCreateSection === true`), run via `figma_execute` (replace `__FRAME_ID__`, `__CHILD_NAME__`, `__CHILD_COMP_ID__`, `__CHILD_IS_COMP_SET__` with values from the extraction data). For direct INSTANCE children, use `mainComponentSetId` if `childIsComponentSet` is true, otherwise use `mainComponentId`. For **slot-wrapper FRAMEs**, use `wrappedInstance.mainComponentSetId` if `wrappedInstance.childIsComponentSet` is true, otherwise use `wrappedInstance.mainComponentId`. Replace `__CHILD_BOOLEAN_PROPS_JSON__` with the child sub-component's boolean properties (extracted from its `componentPropertyDefinitions` during Step 4 reasoning). If the child has no boolean properties, pass `[]`. Replace `__FONT_FAMILY__` with the `fontFamily` value from `uspecs.config.json` (default: `Inter`):
 
 ```javascript
 const FRAME_ID = '__FRAME_ID__';
@@ -717,6 +718,7 @@ const CHILD_COMP_ID = '__CHILD_COMP_ID__';
 const CHILD_IS_COMP_SET = __CHILD_IS_COMP_SET__;
 const MARKER_COLOR = { r: 0.922, g: 0, b: 0.431 };
 const CHILD_BOOLEAN_PROPS = __CHILD_BOOLEAN_PROPS_JSON__;
+const FONT_FAMILY = '__FONT_FAMILY__';
 
 const frame = await figma.getNodeByIdAsync(FRAME_ID);
 const anatomySectionTemplate = frame.findOne(n => n.name === '#anatomy-section');

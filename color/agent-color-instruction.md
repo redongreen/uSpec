@@ -91,6 +91,8 @@ For each visual element in the component:
 2. Find its color token
 3. Write a brief description of what the element does
 
+**Consolidated extraction data:** When using the SKILL.md workflow, Step 4b produces a single extraction payload containing color bindings (`variantColorData`), axis classification (`axisClassification`), boolean enrichment (`booleanDelta`), mode detection (`modeDetection`), and sub-component tags (`isSubComponent` / `subComponentName` on entries). Use these fields directly rather than re-analyzing from scratch.
+
 **Key insight:** Element names should be consistent across states. If "Background" appears in Enabled state, use "Background" in Hover state too—don't rename it.
 
 ---
@@ -256,12 +258,14 @@ When a component contains another component (e.g., a Button inside a Section hea
 - **Instead**, reference the sub-component by name with a note
 - **Order elements** in visual order: leading slots → middle → trailing
 
+**Extraction metadata:** The extraction script tags INSTANCE nodes with `isSubComponent: true` and `subComponentName` (the resolved component set name, e.g., `"Button"`). Use these fields to deterministically identify nested components — do not guess based on layer names alone. When an entry has `isSubComponent: true`, emit a reference entry using the `subComponentName`:
+
 **Example:**
 ```json
 { "element": "trailingContent (Button)", "token": "–", "notes": "Follows Button component styling" }
 ```
 
-This avoids duplicating token specs and points engineers to the canonical source (the Button component spec).
+The `subComponentName` value tells you exactly which component is nested, so the reference entry can name the correct component. This avoids duplicating token specs and points engineers to the canonical source (the Button component spec).
 
 ---
 
@@ -317,7 +321,7 @@ Some components have BOTH mode-controlled colors AND interactive states. Example
 
 1. Each mode must be rendered as its own section(s) — do NOT collapse modes into `generalNotes` only
 2. Create **one section per Type x Mode combination**: e.g., 2 types x 11 modes = 22 sections named "Primary / Gray", "Primary / Orange", ..., "Secondary / Gray", etc.
-3. Use the `modeTokenMap` from Step 4c-ii to resolve generic tokens (e.g., `Primary/tagBackground`) to their semantic aliases per mode (e.g., `Tag/Gray/backgroundPrimary` for Gray mode)
+3. Use `modeDetection.modeTokenMap` from the extraction output to resolve generic tokens (e.g., `Primary/tagBackground`) to their semantic aliases per mode (e.g., `Tag/Gray/backgroundPrimary` for Gray mode)
 4. Strategy B applies — states become column headers within each section's table
 5. The `generalNotes` should still explain the mode system at a high level, but every mode's tokens must appear in their own sections
 6. Each section's preview shows all state instances with the correct color mode applied via `setExplicitVariableModeForCollection`
@@ -385,7 +389,7 @@ Determine states from what you see in Figma, not from a fixed list:
 | State matrix (Enabled/Hover/Disabled rows) | Interactive states? Yes | One variant per state, each with one "Spec" table |
 | Frames named "Default", "Negative" + states | Multiple visual variants with states? | One variant per combination: "Default / Enabled", "Default / Hover", etc. |
 | Frames named "Default", "Negative" without states | Multiple visual variants, no states? | One variant per visual variant, each with one "Spec" table |
-| Button nested inside Section heading | Nested component? Yes | Reference Button, don't duplicate |
+| Extraction entries with `isSubComponent: true` | Nested component? Yes | Use `subComponentName` to emit reference entry, don't duplicate tokens |
 | Hex color with no token reference | Hardcoded color | Use hex, note in `generalNotes` |
 | Same element in multiple states | Consistent naming | Use identical element name across variant entries |
 | Variable collection named "[Component] color" | Component-specific color modes? | One variant per Type × Mode combination — render ALL modes, not just one |
@@ -588,7 +592,7 @@ Note: Light/Dark theme does not need to be checked. Semantic tokens handle theme
 }
 ```
 
-**Token resolution per mode:** Use the `modeTokenMap` from Step 4c-ii to translate generic tokens to semantic tokens for each mode. For example, if the extraction found `Primary/tagBackground`, resolve it via `modeTokenMap["Gray"]["Primary/tagBackground"]` → `Tag/Gray/backgroundPrimary`.
+**Token resolution per mode:** Use `modeDetection.modeTokenMap` from the extraction output to translate generic tokens to semantic tokens for each mode. For example, if the extraction found `Primary/tagBackground`, resolve it via `modeDetection.modeTokenMap["Gray"]["Primary/tagBackground"]` → `Tag/Gray/backgroundPrimary`.
 
 **Also add `generalNotes`** explaining the mode-controlled behavior at a high level:
 - `"Color variants (Gray, Orange, Yellow, ...) are controlled via 'Tag color' variable mode at the container level. Size and Behavior axes do not affect color tokens."`
@@ -760,11 +764,11 @@ Before proceeding to the rendering steps, verify:
 | ☐ **States are columns, not sections** (Strategy B) | States appear as column headers in the consolidated table, not as separate variant sections |
 | ☐ **Token names are clean** | No raw CSS variable syntax (`var(--content/contentPrimary)` → `contentPrimary`); no path prefixes left |
 | ☐ **Element names consistent across states** | Same element uses the same name in every variant (e.g., "Background" is not renamed to "Fill" in Hover) |
-| ☐ **No duplicate sub-component tokens** | Nested components are referenced (e.g., `"token": "–"`, `"notes": "Follows Button component styling"`), not fully documented |
+| ☐ **No duplicate sub-component tokens** | Entries with `isSubComponent: true` are emitted as references (e.g., `"token": "–"`, `"notes": "Follows Button component styling"` using `subComponentName`), not fully documented |
 | ☐ **Notes on every element** | Every element has a 3-8 word description; no empty notes or bare `"–"` |
 | ☐ **`generalNotes` is color-specific only** | No size, layout, prop, or behavior information — only color/token implementation notes. Omitted entirely if nothing color-specific to note |
 | ☐ **No invented tokens** | Every token name was found in Figma data, not guessed |
-| ☐ **Boolean toggles checked** | Verified that elements hidden behind boolean properties don't introduce new tokens not captured in the baseline extraction |
+| ☐ **Boolean toggles checked** | `booleanDelta` from extraction is merged if `deltaCount > 0`; elements hidden behind boolean properties are accounted for |
 | ☐ **Hardcoded colors noted** | If any element uses a hex value instead of a token, it's noted in `generalNotes` |
 | ☐ **Elements only where color exists** | No layout containers, spacers, or non-visual elements included |
 | ☐ **Straight quotes** | JSON uses ASCII `"` not curly quotes `""` |
@@ -786,5 +790,6 @@ Before proceeding to the rendering steps, verify:
 - **Curly quotes:** Use straight quotes `"` not `""`—JSON requires ASCII
 - **Missing component color modes:** Not checking `figma_get_variables` for components like Tag, Badge, or Alert that likely have semantic color variants (Success, Warning, Error) controlled via variable modes
 - **Rendering only one mode:** When a component has multiple color modes (e.g., 11 Tag color modes), every mode must have its own section(s) with resolved semantic tokens — do not document only the default mode and describe the rest in `generalNotes`
-- **Missing boolean-gated elements:** Not checking if `propertyDefs` contains BOOLEAN properties that hide sub-components with unique color tokens. Boolean toggles can gate INSTANCE_SWAP swaps, deferred fills, or nested frames whose children carry tokens not present in the baseline extraction
+- **Missing boolean-gated elements:** Not merging `booleanDelta.delta` when `deltaCount > 0`. The consolidated extraction automatically discovers elements hidden behind boolean toggles (INSTANCE_SWAP swaps, deferred fills, nested frames) by diffing an all-booleans-enabled instance against the baseline
+- **Ignoring sub-component tags:** Not using `isSubComponent` / `subComponentName` from extraction data to emit reference entries for nested components. These fields are deterministic — do not rely on AI guesswork from layer names alone
 
