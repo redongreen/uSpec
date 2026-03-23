@@ -152,17 +152,9 @@ async function extractColorBindings(node, path) {
   return entries;
 }
 
-async function walkTree(node, parentPath, subComponentCtx) {
+async function walkTree(node, parentPath) {
   const currentPath = parentPath ? parentPath + ' > ' + node.name : node.name;
   let entries = await extractColorBindings(node, node.name);
-
-  if (subComponentCtx) {
-    entries = entries.map(e => ({
-      ...e,
-      isSubComponent: true,
-      subComponentName: subComponentCtx
-    }));
-  }
 
   if (node.type === 'INSTANCE') {
     let compSetName = null;
@@ -172,15 +164,19 @@ async function walkTree(node, parentPath, subComponentCtx) {
         compSetName = mainComp.parent.name;
       }
     } catch {}
-    const ctx = subComponentCtx || compSetName;
+    if (compSetName) {
+      entries = entries.map(e => ({ ...e, subComponentName: compSetName }));
+    }
     for (const child of node.children) {
-      const childEntries = await walkTree(child, currentPath, ctx);
+      const childEntries = await walkTree(child, currentPath);
+      if (compSetName) {
+        childEntries.forEach(e => { if (!e.subComponentName) e.subComponentName = compSetName; });
+      }
       entries = entries.concat(childEntries);
     }
   } else if ('children' in node) {
     for (const child of node.children) {
-      const childEntries = await walkTree(child, currentPath, subComponentCtx);
-      entries = entries.concat(childEntries);
+      entries = entries.concat(await walkTree(child, currentPath));
     }
   }
 
@@ -227,7 +223,7 @@ const axisTokenSets = {};
 
 const variantColorData = [];
 for (const variant of filteredVariants) {
-  const colorEntries = await walkTree(variant, null, null);
+  const colorEntries = await walkTree(variant, null);
   const tokenFingerprint = colorEntries
     .filter(e => e.token)
     .map(e => e.token)
@@ -273,7 +269,7 @@ if (Object.keys(boolProps).length > 0) {
     ? (node.defaultVariant || node.children[0])
     : node;
   const baselineKeys = new Set();
-  const baselineEntries = await walkTree(defaultVariant, null, null);
+  const baselineEntries = await walkTree(defaultVariant, null);
   for (const e of baselineEntries) {
     baselineKeys.add(e.element + '|' + e.property + '|' + (e.token || e.hex));
   }
@@ -283,7 +279,35 @@ if (Object.keys(boolProps).length > 0) {
   instance.y = defaultVariant.y;
   instance.setProperties(boolProps);
 
-  const enrichedEntries = await walkTree(instance, null, null);
+  function enableNestedBooleans(node) {
+    if (node.type === 'INSTANCE') {
+      const childProps = node.componentProperties;
+      if (childProps) {
+        const childBoolProps = {};
+        for (const [key, val] of Object.entries(childProps)) {
+          if (val.type === 'BOOLEAN') childBoolProps[key] = true;
+        }
+        if (Object.keys(childBoolProps).length > 0) {
+          try { node.setProperties(childBoolProps); } catch {}
+        }
+      }
+    }
+    if ('children' in node) {
+      for (const child of node.children) enableNestedBooleans(child);
+    }
+  }
+
+  function directUnhide(node) {
+    if (!node.visible) node.visible = true;
+    if ('children' in node) {
+      for (const child of node.children) directUnhide(child);
+    }
+  }
+
+  enableNestedBooleans(instance);
+  directUnhide(instance);
+
+  const enrichedEntries = await walkTree(instance, null);
   const delta = [];
   for (const e of enrichedEntries) {
     const key = e.element + '|' + e.property + '|' + (e.token || e.hex);
@@ -357,12 +381,12 @@ Save the returned JSON. This consolidated extraction provides:
 - `variantAxes` — variant axis names and their options, for mapping variant sections to Figma property keys
 - `propertyDefs` — exact Figma property keys (including `#nodeId` suffixes) for `setProperties()` when placing preview instances
 - `variantCount` / `sampledCount` / `skippedAxes` — extraction scope metadata
-- `variantColorData` — per-variant array of `colorEntries`, each with `element`, `property`, `hex`, `token`, `opacity`, and optional `isSubComponent` / `subComponentName` for nested component entries
+- `variantColorData` — per-variant array of `colorEntries`, each with `element`, `property`, `hex`, `token`, `opacity`, and optional `subComponentName` (string) identifying which nested component the entry belongs to (e.g., `"Button"`). Always show the actual token; use `subComponentName` for richer notes
 - `axisClassification` — per-axis classification with `isState`, `colorRelevant`, and `tokenSetsByValue`
 - `booleanDelta` — elements discovered behind boolean toggles (`deltaCount`, `delta` entries, `booleanPropsToggled`)
 - `modeDetection` — mode-controlled collection info (`hasModeCollection`, `collectionName`, `collectionId`, `modes`, `modeIds`, `modeTokenMap`)
 
-Use this data in Step 4c to interpret and plan the rendering strategy. Entries with `isSubComponent: true` represent nested components — emit reference entries using `subComponentName` rather than duplicating tokens.
+Use this data in Step 4c to interpret and plan the rendering strategy. Entries with `subComponentName` come from nested instances — always include their actual tokens and use the sub-component name for descriptive notes and element names.
 
 ### Step 4c: Interpret Extraction Data
 
@@ -370,7 +394,7 @@ Using the consolidated extraction output from Step 4b, perform the following int
 
 1. **Validate extraction**: Confirm `variantColorData` is non-empty and `sampledCount > 0`. If the component is a standalone `COMPONENT` (not a set), expect a single variant entry.
 2. **Merge boolean delta**: If `booleanDelta.deltaCount > 0`, merge the `booleanDelta.delta` entries into the default variant's color entries. These represent elements hidden behind boolean toggles.
-3. **Identify sub-component references**: Scan `variantColorData` entries for `isSubComponent: true`. For these, emit a reference entry using `subComponentName` (e.g., `"notes": "Follows {subComponentName} component styling"`) rather than duplicating tokens.
+3. **Annotate sub-component entries**: Entries with `subComponentName` come from nested instances. Include their actual tokens — use the sub-component name to write descriptive notes (e.g., `"Button container fill"`). Group sub-component entries together in the table when it aids readability.
 4. **Map elements to tokens**: Using the `variantColorData` entries, build element-to-token mappings. Entries with a non-null `token` field have a resolved variable binding; entries with `token: null` use a hard-coded color (note this in output).
 5. **Capture Figma property keys**: Use `propertyDefs` and `variantAxes` from the extraction to map variant section names to correct Figma property values for `setProperties()`.
 6. **Choose rendering strategy**: See Step 4c-i below.
@@ -381,33 +405,44 @@ Using the consolidated extraction output from Step 4b, perform the following int
 Using `axisClassification` from the extraction output and `modeDetection` from the extraction output, choose one of two rendering strategies:
 
 **Strategy A — Simple (single-state sections):**
-- Use when the total number of color-relevant variant combinations is **≤ 6 sections**
+- Default strategy — use unless Strategy B conditions are met
 - Layout: One section per variant, each with preview + single table
 - Table columns: `Element | Token | Notes`
 - This is the current behavior with the column header corrected from "State" to "Token"
 
 **Strategy B — Consolidated (multi-column table with states as columns):**
-- Use when the total number of color-relevant variant combinations is **> 6 sections**
+- Use only when a non-state color-relevant multiplier exists AND Strategy A would produce > 6 sections
 - Layout: One section per color-relevant NON-state axis value × mode combination (e.g., "Primary / Gray", "Secondary / Orange")
 - Table columns: `Element | {State1} | {State2} | ... | {StateN} | Notes`
 - States become column headers instead of separate sections
+- Without a non-state multiplier, Strategy B collapses everything into a single mega-section — always use Strategy A in that case
 
-**Decision logic:**
+**Decision logic (two-gate model):**
 
-1. Count color-relevant axes (from `axisClassification` where `colorRelevant: true`)
-2. Identify the state axis (where `isState: true`)
-3. Calculate total planned sections:
-   - For Strategy A: product of all color-relevant axis value counts × number of modes (if `modeDetection.hasModeCollection`)
-   - For Strategy B: product of all color-relevant NON-state axis value counts × number of modes (if `modeDetection.hasModeCollection`)
-4. If total planned sections ≤ 6 → **Strategy A**
-5. If total planned sections > 6 → **Strategy B** (states become columns)
+1. Identify color-relevant axes (from `axisClassification` where `colorRelevant: true`) and the state axis (where `isState: true`)
+2. **Gate 1 — Viability:** A non-state color-relevant multiplier must exist. This means at least one of:
+   - A mode-controlled collection with 2+ modes (`modeDetection.hasModeCollection` with `modes.length >= 2`)
+   - A non-state color-relevant axis with 2+ values (e.g., Type: Primary/Secondary)
+   - **If no non-state multiplier exists → Strategy A** (regardless of section count)
+3. **Gate 2 — Benefit:** Calculate Strategy A section count = product of ALL color-relevant axis value counts (including states) × number of modes (if mode-controlled)
+   - If Strategy A sections ≤ 6 → **Strategy A**
+   - If Strategy A sections > 6 → **Strategy B** (states become columns)
+4. **Soft guidance:** If the state axis has > 6-7 values, Strategy B would produce very wide tables. Consider whether Strategy A with many sections would actually be more readable.
 
 If Strategy B, also record:
 - `stateAxisName`: name of the state axis (e.g., "State")
 - `stateValues`: ordered list of state values (columns)
 - `nonStateAxes`: the remaining color-relevant axes whose combinations form sections
 
-The agent may also use judgment to override the threshold when the layout would be clearer with one strategy over the other.
+**Decision examples:**
+
+| Component  | States | Non-state multiplier | Gate 1 | Gate 2  | Result                      |
+| ---------- | ------ | -------------------- | ------ | ------- | --------------------------- |
+| Text Field | 11     | None                 | FAIL   | --      | **A** (11 sections)         |
+| Button     | 4      | None                 | FAIL   | --      | **A** (4 sections)          |
+| Tag        | 5      | 2 types × 11 modes   | PASS   | 110 > 6 | **B** (22 sections, 5 cols) |
+| Badge      | 3      | 5 modes              | PASS   | 15 > 6  | **B** (5 sections, 3 cols)  |
+| Switch     | 4      | None                 | FAIL   | --      | **A** (4 sections)          |
 
 #### Step 4c-ii: Build Variant Reduction Plan
 
@@ -435,7 +470,7 @@ Follow the data structure reference in the instruction file. Build an internal w
 
 The data structure depends on the rendering strategy chosen in Step 4c-i:
 
-#### Strategy A (Simple — ≤ 6 sections)
+#### Strategy A (Simple)
 
 - `componentName`: string
 - `generalNotes`: string (optional)
@@ -447,7 +482,7 @@ The data structure depends on the rendering strategy chosen in Step 4c-i:
     - `name`: string (table label, e.g. "Spec" or state name)
     - `elements`: array, each with `element`, `token`, `notes`
 
-#### Strategy B (Consolidated — > 6 sections)
+#### Strategy B (Consolidated)
 
 - `componentName`: string
 - `generalNotes`: string (optional)
@@ -542,13 +577,14 @@ Replace `__HAS_GENERAL_NOTES__` with `true` or `false`.
 
 Use the rendering strategy determined in Step 4c-i. Run **one `figma_execute` call per variant** to avoid timeouts.
 
-#### Strategy A: Simple Layout (≤ 6 sections)
+#### Strategy A: Simple Layout
 
 For each variant in the data, run the following script. Replace all `__PLACEHOLDER__` values with actual data. `__TABLES_JSON__` is the tables array for this variant (each element has `element`, `token`, `notes`).
 
 - `__COMPONENT_SET_NODE_ID__` is the node ID of the component set (from Step 4b extraction: `compSetNodeId`). Set to `''` if not available.
 - `__VARIANT_PROPERTIES_JSON__` is an object mapping **Figma property keys** (exactly as returned by `componentPropertyDefinitions`) to values for this variant. Set to `{}` if not available.
 - `__FONT_FAMILY__` is the `fontFamily` value from `uspecs.config.json` (default: `Inter`).
+- `__BOOLEAN_UNHIDES_JSON__` is an array of `{ booleanRawKey: string }` objects derived from `booleanDelta.booleanPropsToggled` in the extraction output. Set to `[]` if `booleanDelta.deltaCount === 0`.
 
 ```javascript
 const FRAME_ID = '__FRAME_ID__';
@@ -558,6 +594,7 @@ const COMPONENT_SET_ID = '__COMPONENT_SET_NODE_ID__';
 const VARIANT_PROPS = __VARIANT_PROPERTIES_JSON__;
 const TABLES = __TABLES_JSON__;
 const FONT_FAMILY = '__FONT_FAMILY__';
+const BOOLEAN_UNHIDES = __BOOLEAN_UNHIDES_JSON__;
 
 const frame = await figma.getNodeByIdAsync(FRAME_ID);
 const variantTemplate = frame.findOne(n => n.name === '#variant-template');
@@ -615,7 +652,7 @@ if (previewContainer && COMPONENT_SET_ID) {
         : componentSet;
     }
     await figma.loadFontAsync({ family: FONT_FAMILY, style: 'Medium' });
-    for (const containerName of ['Light theme preview placeholder', 'Dark theme preview placeholder']) {
+    for (const containerName of ['Light theme preview placeholder']) {
       const container = previewContainer.findOne(n => n.name === containerName);
       if (container) {
         const placeholder = container.findOne(n => n.name === 'Placeholder');
@@ -633,7 +670,41 @@ if (previewContainer && COMPONENT_SET_ID) {
         container.appendChild(wrapper);
 
         const instance = targetVariant.createInstance();
+        if (BOOLEAN_UNHIDES.length > 0) {
+          const boolProps = {};
+          for (const bu of BOOLEAN_UNHIDES) boolProps[bu.booleanRawKey] = true;
+          instance.setProperties(boolProps);
+        }
         wrapper.appendChild(instance);
+
+        function enableNestedBooleans(node) {
+          if (node.type === 'INSTANCE') {
+            const childProps = node.componentProperties;
+            if (childProps) {
+              const childBoolProps = {};
+              for (const [key, val] of Object.entries(childProps)) {
+                if (val.type === 'BOOLEAN') childBoolProps[key] = true;
+              }
+              if (Object.keys(childBoolProps).length > 0) {
+                try { node.setProperties(childBoolProps); } catch {}
+              }
+            }
+          }
+          if ('children' in node) {
+            for (const child of node.children) enableNestedBooleans(child);
+          }
+        }
+        const topBoolProps = {};
+        const topProps = instance.componentProperties;
+        if (topProps) {
+          for (const [key, val] of Object.entries(topProps)) {
+            if (val.type === 'BOOLEAN') topBoolProps[key] = true;
+          }
+          if (Object.keys(topBoolProps).length > 0) {
+            try { instance.setProperties(topBoolProps); } catch {}
+          }
+        }
+        enableNestedBooleans(instance);
 
         const label = figma.createText();
         label.fontName = { family: FONT_FAMILY, style: 'Medium' };
@@ -652,12 +723,6 @@ if (previewContainer && COMPONENT_SET_ID) {
   const lightFrame = variant.findOne(n => n.name === '#preview-instruction-light');
   if (lightFrame) {
     const textNodesInFrame = lightFrame.children.filter(c => c.type === 'TEXT');
-    if (textNodesInFrame[1]) textNodesInFrame[1].characters = previewText;
-  }
-
-  const darkFrame = variant.findOne(n => n.name === '#preview-instruction-dark');
-  if (darkFrame) {
-    const textNodesInFrame = darkFrame.children.filter(c => c.type === 'TEXT');
     if (textNodesInFrame[1]) textNodesInFrame[1].characters = previewText;
   }
 }
@@ -722,7 +787,7 @@ tableTemplate.remove();
 return { success: true, variant: VARIANT_NAME };
 ```
 
-#### Strategy B: Consolidated Multi-Column Layout (> 6 sections)
+#### Strategy B: Consolidated Multi-Column Layout
 
 For each variant in the data, run the following script. Replace all `__PLACEHOLDER__` values with actual data.
 
@@ -732,6 +797,7 @@ For each variant in the data, run the following script. Replace all `__PLACEHOLD
 - `__COLLECTION_ID__` is the variable collection ID for mode-controlled colors (e.g. `"VariableCollectionId:6006:13874"`). Set to `''` if not mode-controlled.
 - `__MODE_ID__` is the variable mode ID for this section (e.g. `"6006:2"` for Gray). Set to `''` if not mode-controlled.
 - `__FONT_FAMILY__` is the `fontFamily` value from `uspecs.config.json` (default: `Inter`).
+- `__BOOLEAN_UNHIDES_JSON__` is an array of `{ booleanRawKey: string }` objects derived from `booleanDelta.booleanPropsToggled` in the extraction output. Set to `[]` if `booleanDelta.deltaCount === 0`.
 
 ```javascript
 const FRAME_ID = '__FRAME_ID__';
@@ -745,6 +811,7 @@ const TABLES = __TABLES_JSON__;
 const COLLECTION_ID = '__COLLECTION_ID__';
 const MODE_ID = '__MODE_ID__';
 const FONT_FAMILY = '__FONT_FAMILY__';
+const BOOLEAN_UNHIDES = __BOOLEAN_UNHIDES_JSON__;
 
 const frame = await figma.getNodeByIdAsync(FRAME_ID);
 const variantTemplate = frame.findOne(n => n.name === '#variant-template');
@@ -794,7 +861,7 @@ if (previewContainer && COMPONENT_SET_ID) {
     const isCompSet = componentSet.type === 'COMPONENT_SET';
     await figma.loadFontAsync({ family: FONT_FAMILY, style: 'Medium' });
 
-    for (const containerName of ['Light theme preview placeholder', 'Dark theme preview placeholder']) {
+    for (const containerName of ['Light theme preview placeholder']) {
       const container = previewContainer.findOne(n => n.name === containerName);
       if (!container) continue;
       const placeholder = container.findOne(n => n.name === 'Placeholder');
@@ -837,8 +904,42 @@ if (previewContainer && COMPONENT_SET_ID) {
         }
 
         const inst = targetVariant.createInstance();
+        if (BOOLEAN_UNHIDES.length > 0) {
+          const boolProps = {};
+          for (const bu of BOOLEAN_UNHIDES) boolProps[bu.booleanRawKey] = true;
+          inst.setProperties(boolProps);
+        }
         wrapper.appendChild(inst);
         if (collection) clearModesRecursive(inst, collection);
+
+        function enableNestedBooleans(node) {
+          if (node.type === 'INSTANCE') {
+            const childProps = node.componentProperties;
+            if (childProps) {
+              const childBoolProps = {};
+              for (const [key, val] of Object.entries(childProps)) {
+                if (val.type === 'BOOLEAN') childBoolProps[key] = true;
+              }
+              if (Object.keys(childBoolProps).length > 0) {
+                try { node.setProperties(childBoolProps); } catch {}
+              }
+            }
+          }
+          if ('children' in node) {
+            for (const child of node.children) enableNestedBooleans(child);
+          }
+        }
+        const topBoolProps = {};
+        const topProps = inst.componentProperties;
+        if (topProps) {
+          for (const [key, val] of Object.entries(topProps)) {
+            if (val.type === 'BOOLEAN') topBoolProps[key] = true;
+          }
+          if (Object.keys(topBoolProps).length > 0) {
+            try { inst.setProperties(topBoolProps); } catch {}
+          }
+        }
+        enableNestedBooleans(inst);
 
         const label = figma.createText();
         label.fontName = { family: FONT_FAMILY, style: 'Medium' };
@@ -857,12 +958,6 @@ if (previewContainer && COMPONENT_SET_ID) {
   const lightFrame = variant.findOne(n => n.name === '#preview-instruction-light');
   if (lightFrame) {
     const textNodesInFrame = lightFrame.children.filter(c => c.type === 'TEXT');
-    if (textNodesInFrame[1]) textNodesInFrame[1].characters = previewText;
-  }
-
-  const darkFrame = variant.findOne(n => n.name === '#preview-instruction-dark');
-  if (darkFrame) {
-    const textNodesInFrame = darkFrame.children.filter(c => c.type === 'TEXT');
     if (textNodesInFrame[1]) textNodesInFrame[1].characters = previewText;
   }
 }
@@ -986,8 +1081,8 @@ return { success: true };
 2. Verify:
    - All variant sections are present with correct titles (for mode-controlled components: one section per Type × Mode combination)
    - Tables within each variant have correct element-to-token mappings with resolved semantic tokens
-   - **Strategy B previews**: Each variant's light and dark preview containers show **all state instances side by side with labels** (e.g., Enabled, Hover, Pressed, Active, Disabled)
-   - **Strategy A previews**: Each variant's light and dark preview containers show a labeled component instance
+   - **Strategy B previews**: Each variant's preview container shows **all state instances side by side with labels** (e.g., Enabled, Hover, Pressed, Active, Disabled)
+   - **Strategy A previews**: Each variant's preview container shows a labeled component instance
    - For mode-controlled components, preview instances display the correct color mode
    - General notes are visible or hidden as expected
 3. If issues are found, fix via `figma_execute` and re-capture (up to 3 iterations)
@@ -997,14 +1092,14 @@ return { success: true };
 - The color annotation template key is stored in `uspecs.config.json` under `templateKeys.colorAnnotation` and is configured via `@firstrun`.
 - The target node can be either a `COMPONENT_SET` (multi-variant) or a standalone `COMPONENT` (single variant). The extraction script detects the type and returns `isComponentSet` accordingly. When the node is a standalone component, it is treated as a single-entry variant array and there are no variant axes. Preview instance creation in Step 11 uses the component directly for standalone components.
 - Three-level cloning: variants → tables → rows. Each variant section is cloned from `#variant-template`, each table from `#color-table-template`, and each row from `#element-row-template`.
-- Preview instructions: The `#preview-instruction-light` and `#preview-instruction-dark` frames each contain multiple TEXT nodes. The second TEXT node (index 1) receives the preview text formatted as "{ComponentName} {VariantName}".
+- Preview instructions: The `#preview-instruction-light` frame contains multiple TEXT nodes. The second TEXT node (index 1) receives the preview text formatted as "{ComponentName} {VariantName}".
 - The extraction script (Step 4b) supports smart sampling via `SKIP_AXES` — pass color-irrelevant axes and their default values to avoid extracting redundant variants. For components with few variants (≤ 10), extracting all variants is fine.
 - The instruction file (`color/agent-color-instruction.md`) contains the data structure reference, examples, and element-to-token mapping rules that guide the analysis phase.
-- Preview frames: Each variant section has light and dark preview containers. The `Placeholder` child is removed and replaced with live component instances.
+- Preview frames: Each variant section has a light theme preview container. The `Placeholder` child is removed and replaced with live component instances.
   - **Strategy A**: One labeled instance per container (wrapper frame with instance + text label).
-  - **Strategy B**: Multiple labeled instances per container — one per state column. Each instance is wrapped in a vertical frame with a text label showing the state name (e.g., "Enabled", "Hover"). The theme containers use `HORIZONTAL` layout with `itemSpacing: 24` so instances flow left to right.
+  - **Strategy B**: Multiple labeled instances per container — one per state column. Each instance is wrapped in a vertical frame with a text label showing the state name (e.g., "Enabled", "Hover"). The preview container uses `HORIZONTAL` layout with `itemSpacing: 24` so instances flow left to right.
 - **Mode-controlled previews**: For components with a variable mode collection (e.g., "Tag color"), each preview instance wrapper has `setExplicitVariableModeForCollection(collection, modeId)` applied so the correct color mode renders. After creating each instance, `clearModesRecursive` is called to remove any baked-in modes so the instance inherits from the wrapper.
 - **Mode-expanded sections**: When `hasModeCollection: true`, every mode is rendered as its own section(s) — one per Type × Mode combination. Section names use the format `"{Type} / {Mode}"` (e.g., "Primary / Gray"). Tokens are resolved per mode via `modeDetection.modeTokenMap` from the extraction output. The `collectionId` and `modeId` are passed to the rendering script for preview mode application.
 - The script uses scored variant matching (exact match first, then best partial match by score) to find the correct variant child directly, rather than creating from the default and calling `setProperties()`. This handles sparse component sets where some variant combinations may not exist.
 - **Column header rename:** The template's `#state-title` layer originally displays "State", but the column actually holds token names. Strategy A renames this to "Token" at render time. Strategy B replaces the column entirely with per-state columns.
-- **Two rendering strategies:** Step 4c determines whether to use Strategy A (simple, ≤ 6 sections) or Strategy B (consolidated, > 6 sections). Strategy B clones the `#state-title` / `#state-name` cells N times (one per state). All cloned state columns and the Notes column use `layoutSizingHorizontal = 'FILL'` so Figma's auto-layout distributes width equally — no hardcoded pixel widths needed.
+- **Two rendering strategies:** Step 4c determines whether to use Strategy A or Strategy B based on the two-gate model in Step 4c-i. Strategy B clones the `#state-title` / `#state-name` cells N times (one per state). All cloned state columns and the Notes column use `layoutSizingHorizontal = 'FILL'` so Figma's auto-layout distributes width equally — no hardcoded pixel widths needed.

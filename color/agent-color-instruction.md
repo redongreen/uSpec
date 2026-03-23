@@ -34,6 +34,8 @@ May include: component name, specific variants to document, context about usage.
 
 ## Analysis Process
 
+**Note:** When following the SKILL.md workflow, these steps provide domain knowledge for the analysis phase. The SKILL.md steps (Step 4b extraction, Step 4c interpretation) supersede the manual MCP calls below.
+
 ### Step 1: Get Visual Context
 Use MCP tools:
 1. `figma_navigate` — Open the component URL
@@ -64,12 +66,12 @@ Ask these diagnostic questions:
    → Combine with states: one variant per visual-variant + state combination (e.g., "Default / Enabled", "isNegative / Hover").
 
 4. **Are there nested components?** (Button inside a Section heading)
-   → Reference the sub-component instead of duplicating its tokens.
+   → Include actual tokens for sub-component elements. Use the sub-component name (from extraction metadata) for richer element names and notes (e.g., "Button container fill").
 
 5. **Are there component-specific variable collections that control colors?**
    → Look for collections named after the component: "[Component] color", "[Component] style", "[Component] emphasis"
    → Common examples: "Tag color" (Default, Success, Warning, Error), "Badge style" (Neutral, Positive, Negative)
-   → Each mode becomes its own variant entry with one "Spec" table — unless the component also has interactive states producing > 6 total sections, in which case use Strategy B (see Complexity Analysis below).
+   → Each mode becomes its own variant entry with one "Spec" table — unless the two-gate model in the Complexity Analysis section indicates Strategy B (requires a non-state multiplier AND Strategy A sections > 6).
 
 ### Step 3: Extract Token Names
 Figma returns tokens in CSS variable format. Convert to clean token names:
@@ -91,7 +93,7 @@ For each visual element in the component:
 2. Find its color token
 3. Write a brief description of what the element does
 
-**Consolidated extraction data:** When using the SKILL.md workflow, Step 4b produces a single extraction payload containing color bindings (`variantColorData`), axis classification (`axisClassification`), boolean enrichment (`booleanDelta`), mode detection (`modeDetection`), and sub-component tags (`isSubComponent` / `subComponentName` on entries). Use these fields directly rather than re-analyzing from scratch.
+**Consolidated extraction data:** When using the SKILL.md workflow, Step 4b produces a single extraction payload containing color bindings (`variantColorData`), axis classification (`axisClassification`), boolean enrichment (`booleanDelta`), mode detection (`modeDetection`), and sub-component metadata (`subComponentName` on entries from nested instances). Use these fields directly rather than re-analyzing from scratch.
 
 **Key insight:** Element names should be consistent across states. If "Background" appears in Enabled state, use "Background" in Hover state too—don't rename it.
 
@@ -245,6 +247,8 @@ Use `"token": "none"` when:
 ### Elements Not Present in All States
 If an element only appears in certain states, only include it in those state tables. Don't add it to other states with "none".
 
+**Strategy B exception:** Since `tokensByState` requires a value for every state column, use `"none"` for states where the element is absent.
+
 ### Grouped or Nested Elements
 For complex components, use descriptive element names:
 - `"State layer (backplate)"` - background highlight
@@ -254,18 +258,20 @@ For complex components, use descriptive element names:
 
 ### Sub-Components (Nested Components)
 When a component contains another component (e.g., a Button inside a Section heading's trailing content):
-- **Do NOT** duplicate the sub-component's tokens
-- **Instead**, reference the sub-component by name with a note
+- **Include actual tokens** for sub-component entries — developers need the complete color picture
+- **Use `subComponentName` for richer notes** that provide context (e.g., `"Button container fill"` instead of just `"fill"`)
+- **Group sub-component entries together** in the table when it aids readability
 - **Order elements** in visual order: leading slots → middle → trailing
 
-**Extraction metadata:** The extraction script tags INSTANCE nodes with `isSubComponent: true` and `subComponentName` (the resolved component set name, e.g., `"Button"`). Use these fields to deterministically identify nested components — do not guess based on layer names alone. When an entry has `isSubComponent: true`, emit a reference entry using the `subComponentName`:
+**Extraction metadata:** The extraction script tags INSTANCE children with `subComponentName` (the resolved component set name, e.g., `"Button"`). Use this field to deterministically identify nested components — do not guess based on layer names alone. When entries have `subComponentName`, include their actual tokens in the table and use the sub-component name to write richer, more descriptive notes.
 
 **Example:**
 ```json
-{ "element": "trailingContent (Button)", "token": "–", "notes": "Follows Button component styling" }
+{ "element": "Button container", "token": "interactivePrimary", "notes": "Button container fill" },
+{ "element": "Button label", "token": "contentInversePrimary", "notes": "Button text color" }
 ```
 
-The `subComponentName` value tells you exactly which component is nested, so the reference entry can name the correct component. This avoids duplicating token specs and points engineers to the canonical source (the Button component spec).
+The `subComponentName` value tells you exactly which component is nested, enabling descriptive element names and notes that make sub-component boundaries clear while preserving the actual token data developers need.
 
 ---
 
@@ -288,30 +294,42 @@ To verify, compare token sets across axis values. If tokens are identical, the a
 
 ### Rendering Strategies
 
-#### Strategy A — Simple (≤ 6 sections)
+#### Strategy A — Simple (default)
 
-Use when the total number of color-relevant variant combinations is small (≤ 6 sections).
+Default strategy for most components. Use unless Strategy B conditions are met.
 
 - **Layout**: One section per variant, each with preview + single table
 - **Table columns**: `Element | Token | Notes`
-- **When to use**: Most components — buttons, checkboxes, switches, inputs, simple tags
+- **When to use**: Any component where Strategy B's two gates are not both satisfied — buttons, switches, text fields, simple tags, and any component without a non-state multiplier
 
-#### Strategy B — Consolidated (> 6 sections)
+#### Strategy B — Consolidated (requires non-state multiplier + section overflow)
 
-Use when combinations would create too many sections (> 6), typically when a component has both interactive states AND other color-relevant axes, or when mode-controlled colors multiply the section count.
+Use only when a non-state color-relevant multiplier exists AND Strategy A would produce > 6 sections. Without a non-state multiplier, Strategy B collapses into a single mega-section with many state columns — always use Strategy A in that case.
 
 - **Layout**: One section per color-relevant NON-state axis value × mode combination (e.g., "Primary / Gray", "Secondary / Orange")
 - **Table columns**: `Element | {State1} | {State2} | ... | {StateN} | Notes`
 - **States become column headers** instead of separate sections
-- **When to use**: Complex components with many type × mode × state combinations (e.g., Tag with 2 types × 11 modes × 5 states → consolidate to 22 sections with state columns)
+- **When to use**: Components with a non-state multiplier (mode-controlled collection with 2+ modes, or a non-state color-relevant axis with 2+ values) where Strategy A sections exceed 6
 
-#### Decision Logic
+#### Decision Logic (Two-Gate Model)
 
-1. Identify color-relevant axes (tokens differ across values)
-2. Identify the state axis (values like Enabled, Hover, Pressed, Disabled)
-3. Count total planned sections: product of all color-relevant NON-state axis value counts × number of modes (if mode-controlled)
-4. If ≤ 6 → **Strategy A**; if > 6 → **Strategy B**
-5. The agent may override when one layout would clearly be more readable
+1. Identify color-relevant axes (tokens differ across values) and the state axis (values like Enabled, Hover, Pressed, Disabled)
+2. **Gate 1 — Viability:** A non-state color-relevant multiplier must exist:
+   - A mode-controlled collection with 2+ modes (e.g., Tag's 11 color modes), OR
+   - A non-state color-relevant axis with 2+ values (e.g., Type: Primary/Secondary)
+   - **If no non-state multiplier exists → Strategy A** (regardless of section count)
+3. **Gate 2 — Benefit:** Calculate Strategy A section count = product of ALL color-relevant axis value counts (including states) × number of modes (if mode-controlled)
+   - If Strategy A sections ≤ 6 → **Strategy A**
+   - If Strategy A sections > 6 → **Strategy B** (states become columns)
+4. **Soft guidance:** If state columns would exceed 6-7, consider whether Strategy A with many sections would be more readable
+
+| Component  | States | Non-state multiplier | Gate 1 | Gate 2  | Result                      |
+| ---------- | ------ | -------------------- | ------ | ------- | --------------------------- |
+| Text Field | 11     | None                 | FAIL   | --      | **A** (11 sections)         |
+| Button     | 4      | None                 | FAIL   | --      | **A** (4 sections)          |
+| Tag        | 5      | 2 types × 11 modes   | PASS   | 110 > 6 | **B** (22 sections, 5 cols) |
+| Badge      | 3      | 5 modes              | PASS   | 15 > 6  | **B** (5 sections, 3 cols)  |
+| Switch     | 4      | None                 | FAIL   | --      | **A** (4 sections)          |
 
 ### Mode-Controlled + Interactive Pattern
 
@@ -322,7 +340,7 @@ Some components have BOTH mode-controlled colors AND interactive states. Example
 1. Each mode must be rendered as its own section(s) — do NOT collapse modes into `generalNotes` only
 2. Create **one section per Type x Mode combination**: e.g., 2 types x 11 modes = 22 sections named "Primary / Gray", "Primary / Orange", ..., "Secondary / Gray", etc.
 3. Use `modeDetection.modeTokenMap` from the extraction output to resolve generic tokens (e.g., `Primary/tagBackground`) to their semantic aliases per mode (e.g., `Tag/Gray/backgroundPrimary` for Gray mode)
-4. Strategy B applies — states become column headers within each section's table
+4. Apply the two-gate model from the Decision Logic section. For components with many modes (e.g., Tag with 11), Gate 1 passes (modes are a non-state multiplier) and Gate 2 typically passes (section count far exceeds 6), so Strategy B applies — states become column headers. For components with few modes (e.g., 2 modes × 3 states = 6 sections), Gate 2 may not pass — use Strategy A
 5. The `generalNotes` should still explain the mode system at a high level, but every mode's tokens must appear in their own sections
 6. Each section's preview shows all state instances with the correct color mode applied via `setExplicitVariableModeForCollection`
 
@@ -338,7 +356,7 @@ Each `variant` entry in the JSON becomes a **visual section** in the rendered ou
 | **Interactive, one visual variant** (text field, switch, slider) | One variant **per state** (Enabled, Hover, Pressed, etc.) | One table named "Spec" per variant |
 | **Interactive, multiple visual variants** (button: Default/Negative/Primary, checkbox: Default/isNegative) | One variant **per combination** of visual variant + state | One table named "Spec" per variant |
 | **Mode-controlled colors** (tag, badge, alert) | One variant **per mode** (Default, Success, Warning), or per Type × Mode combination if types exist | One table named "Spec" per variant |
-| **Mode-controlled + interactive** (tag with states, badge with hover) | Strategy B: one variant **per Type × Mode combination** (e.g., "Primary / Gray"), states as columns | One table with multi-column layout per variant |
+| **Mode-controlled + interactive** (tag with states, badge with hover) | Apply two-gate model: if non-state multiplier exists AND Strategy A sections > 6 → Strategy B (one variant per Type × Mode, states as columns); otherwise Strategy A (one variant per state × mode combination) | Strategy B: one multi-column table per variant. Strategy A: one "Spec" table per variant |
 
 ### Why states become variants
 
@@ -352,7 +370,7 @@ Each variant renders as its own section with a preview. When a component has sta
 
 If states were nested as tables under a single variant, all state tables would appear under one preview, making it hard to see which tokens apply to which visual state.
 
-**Exception (Strategy B):** When section count exceeds the threshold, states are consolidated into columns within a single table to avoid too many sections. Each section still gets its own preview showing **all state instances side by side with labels** (Enabled, Hover, Pressed, etc.) for both light and dark themes. For mode-controlled components, each preview instance has the correct color mode applied via `setExplicitVariableModeForCollection`.
+**Exception (Strategy B):** When both gates pass (non-state multiplier exists AND Strategy A sections > 6), states are consolidated into columns within a single table to avoid too many sections. Each section still gets its own preview showing **all state instances side by side with labels** (Enabled, Hover, Pressed, etc.). For mode-controlled components, each preview instance has the correct color mode applied via `setExplicitVariableModeForCollection`.
 
 ### Naming variants
 
@@ -389,14 +407,14 @@ Determine states from what you see in Figma, not from a fixed list:
 | State matrix (Enabled/Hover/Disabled rows) | Interactive states? Yes | One variant per state, each with one "Spec" table |
 | Frames named "Default", "Negative" + states | Multiple visual variants with states? | One variant per combination: "Default / Enabled", "Default / Hover", etc. |
 | Frames named "Default", "Negative" without states | Multiple visual variants, no states? | One variant per visual variant, each with one "Spec" table |
-| Extraction entries with `isSubComponent: true` | Nested component? Yes | Use `subComponentName` to emit reference entry, don't duplicate tokens |
+| Extraction entries with `subComponentName` | Nested component? Yes | Include actual tokens; use `subComponentName` for richer notes and element names |
 | Hex color with no token reference | Hardcoded color | Use hex, note in `generalNotes` |
 | Same element in multiple states | Consistent naming | Use identical element name across variant entries |
 | Variable collection named "[Component] color" | Component-specific color modes? | One variant per Type × Mode combination — render ALL modes, not just one |
 | Tag, Badge, Alert, or status component | Likely has semantic color variants | Check `figma_get_variables` for component-specific color collection; render all modes |
 | Component shows one color but description mentions multiple | Color variants may be mode-controlled | Check `figma_get_variables`; mode names reveal color options; render all modes |
 | Size, Density, or Shape axes with identical tokens | Color-irrelevant axis? | Skip — pick one representative value, don't create sections |
-| Mode-controlled + interactive states → > 6 sections | Too many sections? | Use Strategy B: consolidate states into columns, one section per Type × Mode |
+| Mode-controlled + interactive states AND non-state multiplier exists | Strategy B viable? | Strategy B if non-state multiplier exists AND Strategy A sections > 6; otherwise Strategy A |
 | 4+ axes with 50+ total variants | Complex component? | Run axis classification first, filter color-irrelevant axes |
 
 ## Example: Consolidated Component (Strategy B)
@@ -514,7 +532,7 @@ Note: This produces one section per Type × Mode combination (e.g., 2 types × 1
 ## Do NOT
 
 - **Do NOT invent token names.** Only use tokens found in Figma data.
-- **Do NOT duplicate sub-component tokens.** Reference the component instead.
+- **Do NOT discard sub-component tokens.** Show actual tokens with `subComponentName` context in notes.
 - **Do NOT leave notes empty.** Every element needs a brief description.
 - **Do NOT include elements that don't have color.** Skip layout containers, spacers.
 - **Do NOT document states not shown in Figma.** Only document what exists.
@@ -560,7 +578,7 @@ Note: Light/Dark theme does not need to be checked. Semantic tokens handle theme
 
 **Every mode must be rendered as its own section(s).** Do not document modes only in `generalNotes` — each mode's resolved semantic tokens must appear in a dedicated variant section.
 
-**Strategy A (simple, ≤ 6 sections):** When colors are mode-controlled and the total section count is small (modes × types ≤ 6), create a separate variant entry for each mode:
+**Strategy A (when both gates are not met):** When colors are mode-controlled but the two-gate model does not indicate Strategy B (e.g., modes × types ≤ 6), create a separate variant entry for each mode:
 
 ```json
 {
@@ -577,7 +595,7 @@ Note: Light/Dark theme does not need to be checked. Semantic tokens handle theme
 }
 ```
 
-**Strategy B (consolidated, > 6 sections):** When modes × types × other color-relevant axes exceed 6 sections, use Strategy B. Create one section per Type × Mode combination with states as columns. For example, a Tag with 2 types × 11 modes = 22 sections:
+**Strategy B (when both gates pass):** When the two-gate model indicates Strategy B (non-state multiplier exists AND Strategy A sections > 6), create one section per Type × Mode combination with states as columns. For example, a Tag with 2 types × 11 modes = 22 sections:
 
 ```json
 {
@@ -758,13 +776,13 @@ Before proceeding to the rendering steps, verify:
 | ☐ **All modes rendered** | Every mode in the collection has its own section(s) — not collapsed into `generalNotes` only |
 | ☐ **Complexity analyzed** | Ran axis classification to identify color-irrelevant axes (Size, Density, Shape) and chose rendering strategy (A or B) |
 | ☐ **Color-irrelevant axes excluded** | No sections for axes where tokens are identical across values (e.g., Size, Density) |
-| ☐ **Rendering strategy appropriate** | Strategy A for ≤ 6 sections; Strategy B for > 6 sections (states as columns) |
+| ☐ **Rendering strategy appropriate** | Strategy A unless non-state multiplier exists AND Strategy A sections > 6; Strategy B only when both gates pass |
 | ☐ **Variant structure matches component type** | Static → one variant; interactive single-visual → one variant per state; interactive multi-visual → one variant per combination; mode-controlled → one variant per mode; consolidated → one variant per non-state axis value |
 | ☐ **States are variants, not nested tables** (Strategy A) | Each state is its own variant entry (gets its own preview), not multiple tables under a single variant |
 | ☐ **States are columns, not sections** (Strategy B) | States appear as column headers in the consolidated table, not as separate variant sections |
 | ☐ **Token names are clean** | No raw CSS variable syntax (`var(--content/contentPrimary)` → `contentPrimary`); no path prefixes left |
 | ☐ **Element names consistent across states** | Same element uses the same name in every variant (e.g., "Background" is not renamed to "Fill" in Hover) |
-| ☐ **No duplicate sub-component tokens** | Entries with `isSubComponent: true` are emitted as references (e.g., `"token": "–"`, `"notes": "Follows Button component styling"` using `subComponentName`), not fully documented |
+| ☐ **Sub-component tokens shown with context** | Entries with `subComponentName` include their actual tokens; `subComponentName` is used for richer notes and element names (e.g., `"Button container fill"`) — tokens are never discarded |
 | ☐ **Notes on every element** | Every element has a 3-8 word description; no empty notes or bare `"–"` |
 | ☐ **`generalNotes` is color-specific only** | No size, layout, prop, or behavior information — only color/token implementation notes. Omitted entirely if nothing color-specific to note |
 | ☐ **No invented tokens** | Every token name was found in Figma data, not guessed |
@@ -779,7 +797,7 @@ Before proceeding to the rendering steps, verify:
 
 - **Empty notes:** Never use `"–"` alone; every element needs a brief description
 - **Inconsistent element names:** Use the same name across states (don't rename "Background" to "Fill" in Hover)
-- **Duplicating sub-components:** Don't list a Button's tokens inside a Section heading; reference it instead
+- **Discarding sub-component data:** Don't replace sub-component tokens with "Follows X styling" references; show actual tokens with sub-component context in notes
 - **Hardcoded hex values:** If you see `#000000` instead of a token, use the hex but note it in `generalNotes`
 - **Missing states:** Document all states visible in Figma, not just Enabled
 - **Inventing tokens:** Only use tokens you can find in the Figma data; don't guess token names
@@ -790,6 +808,6 @@ Before proceeding to the rendering steps, verify:
 - **Curly quotes:** Use straight quotes `"` not `""`—JSON requires ASCII
 - **Missing component color modes:** Not checking `figma_get_variables` for components like Tag, Badge, or Alert that likely have semantic color variants (Success, Warning, Error) controlled via variable modes
 - **Rendering only one mode:** When a component has multiple color modes (e.g., 11 Tag color modes), every mode must have its own section(s) with resolved semantic tokens — do not document only the default mode and describe the rest in `generalNotes`
-- **Missing boolean-gated elements:** Not merging `booleanDelta.delta` when `deltaCount > 0`. The consolidated extraction automatically discovers elements hidden behind boolean toggles (INSTANCE_SWAP swaps, deferred fills, nested frames) by diffing an all-booleans-enabled instance against the baseline
-- **Ignoring sub-component tags:** Not using `isSubComponent` / `subComponentName` from extraction data to emit reference entries for nested components. These fields are deterministic — do not rely on AI guesswork from layer names alone
+- **Missing boolean-gated elements:** Not merging `booleanDelta.delta` when `deltaCount > 0`. The consolidated extraction automatically discovers elements hidden behind boolean toggles (INSTANCE_SWAP swaps, deferred fills, nested frames) by diffing an all-booleans-enabled instance against the baseline. The extraction also enables nested instance booleans (sub-component boolean props) and force-shows all hidden descendants via `directUnhide`, so elements behind nested toggles (icons, clear buttons, prefix/suffix content) are fully discovered
+- **Discarding sub-component tokens:** Not showing actual tokens for entries with `subComponentName`. Always include real token data — use `subComponentName` for richer notes and element names, never as a signal to replace tokens with references. These fields are deterministic — do not rely on AI guesswork from layer names alone
 
