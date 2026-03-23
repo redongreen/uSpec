@@ -1,8 +1,8 @@
 # uSpec
 
-An AIKit that automates design system documentation — from Figma to finished specs, powered by AI agent skills.
+Generate design system documentation — from Figma to finished specs, powered by AI agent skills.
 
-uSpec is an AIKit that connects your AI coding agent to Figma through the Figma Console MCP. Agent skills extract component structure, design tokens, variables, and styles directly from your file and render structured documentation right in Figma. No manual spec writing required.
+uSpec connects your AI coding agent to Figma through the Figma Console MCP. Agent skills extract component structure, design tokens, variables, and styles directly from your file and render structured documentation right in Figma. No manual spec writing required.
 
 Works with **Cursor**, **Claude Code**, and **Codex**.
 

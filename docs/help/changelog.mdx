@@ -3,6 +3,29 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V1.4 — March 2026" description="Updated create-color with consolidated extraction and AI reasoning">
+  ## uSpec V1.4
+
+  The `create-color` skill now uses a single consolidated extraction script and a clearer AI interpretation layer — replacing the previous multi-step flow with a faster, more accurate pipeline.
+
+  ### Consolidated extraction script
+
+  - A single `figma_execute` call (Step 4b) replaces the previous multi-step flow (token extraction + separate boolean enrichment + separate axis classification), handling everything in one pass
+  - The script walks the component tree, resolves color variable bindings, classifies variant axes by token fingerprint, detects boolean-gated elements, and discovers mode-controlled collections
+
+  ### Sub-component tagging
+
+  - Nested instances are now tagged with their parent component set name, producing richer and more descriptive element labels in the output tables
+
+  ### Nested boolean enablement
+
+  - Live preview instances now show all optional elements (icons, prefix/suffix, clear button, hints) by recursively enabling boolean properties on nested instances, so the artwork matches the documented tokens
+
+  ### Updated AI interpretation layer
+
+  - Step 4c strategy selection logic is clearer — the two-gate model (variant count and token similarity) now has explicit thresholds and reasoning guidance for choosing Strategy A vs Strategy B
+</Update>
+
 <Update label="V1.3 — March 2026" description="Improved create-voice skill output and token usage">
   ## uSpec V1.3
 

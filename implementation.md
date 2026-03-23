@@ -17,7 +17,7 @@
 
 ## Overview
 
-uSpec is an AIKit that generates documentation specifications for UI components. Most skills extract component data via MCP and render annotations directly in Figma using `figma_execute`. The motion skill is an exception — it reads pre-computed data from an After Effects export script rather than inspecting Figma components.
+uSpec generates documentation specifications for UI components. Most skills extract component data via MCP and render annotations directly in Figma using `figma_execute`. The motion skill is an exception — it reads pre-computed data from an After Effects export script rather than inspecting Figma components.
 
 1. **Anatomy** - Numbered markers on a component instance with an attribute table
 2. **Property** - Variant axes and boolean toggles with instance previews
@@ -168,6 +168,8 @@ All skills render directly in Figma via `figma_execute`, following a shared patt
 
 **Structure extraction (Structure):** `create-structure` uses the same two-tier extraction model. **Tier 1 (deterministic scripts):** Steps 4b (enhanced extraction: dimensions, tokens, sub-components, collapsed dimensions) and 4d (cross-variant dimensional comparison) are `figma_execute` scripts that measure every variant, resolve token bindings, walk sub-component trees, and build the raw comparison data. **Tier 2 (AI reasoning):** Step 6 is an AI interpretation layer that builds the section plan, writes design-intent notes, detects anomalies, and judges completeness before the deterministic rendering step fills the template.
 
+**Color extraction (Color):** `create-color` uses the same two-tier extraction model. **Tier 1 (deterministic script):** Step 4b is a single consolidated `figma_execute` script that walks the component tree, resolves color variable bindings, classifies variant axes by token fingerprint, detects boolean-gated elements (with nested boolean enablement), tags sub-component instances with their parent component set name, and discovers mode-controlled collections — all in one call. **Tier 2 (AI reasoning):** Step 4c interprets the extraction output — chooses the rendering strategy (Strategy A vs B via the two-gate model), builds the variant plan, resolves mode-specific token aliases, and maps elements to tokens.
+
 **Clone visibility:** All cloned sections explicitly set `visible = true` after cloning, since template sources are hidden.
 
 | Skill | Template | Sections Generated |
@@ -281,7 +283,7 @@ docs/
 | `.cursor/skills/create-anatomy/SKILL.md` | Anatomy: extraction, marker rendering, attribute table |
 | `.cursor/skills/create-property/SKILL.md` | Property: variant axis and boolean toggle exhibits |
 | `.cursor/skills/create-voice/SKILL.md` | Screen reader: merge analysis, platform sections, property tables |
-| `.cursor/skills/create-color/SKILL.md` | Color: variant sections, element-to-token mapping tables |
+| `.cursor/skills/create-color/SKILL.md` | Color: consolidated extraction (token resolution, axis classification, boolean gating, sub-component tagging, mode discovery), AI strategy selection, element-to-token mapping tables |
 | `.cursor/skills/create-api/SKILL.md` | API: main table, sub-component tables, configuration examples |
 | `.cursor/skills/create-structure/SKILL.md` | Structure: dynamic columns, hierarchy indicators, dimensional tables |
 | `.cursor/skills/create-changelog/SKILL.md` | Changelog: template import, entry cloning, bullet formatting |
