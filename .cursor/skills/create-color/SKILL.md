@@ -67,10 +67,15 @@ Read [agent-color-instruction.md](../../color/agent-color-instruction.md)
 
 ### Step 2: Verify MCP Connection
 
-If a Figma link is provided, verify the connection:
-- `figma_get_status` — Confirm Figma Desktop is running with debug flag and Desktop Bridge plugin is active
+If a Figma link is provided, read `mcpProvider` from `uspecs.config.json` and verify the connection:
 
-If connection fails, guide user through setup before proceeding.
+**If `figma-console`:**
+- `figma_get_status` — Confirm Desktop Bridge plugin is active
+- If connection fails: *"Please open Figma Desktop and run the Desktop Bridge plugin. Then try again."*
+
+**If `figma-mcp`:**
+- Connection is verified implicitly on the first `use_figma` call. No explicit check needed.
+- If the first call fails: *"Please verify your FIGMA_API_KEY is set correctly in your MCP configuration."*
 
 ### Step 3: Read Template Key
 

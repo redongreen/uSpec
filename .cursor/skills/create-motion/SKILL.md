@@ -77,11 +77,15 @@ Read [agent-motion-instruction.md](../../motion/agent-motion-instruction.md)
 
 ### Step 2: Verify MCP Connection
 
-Check that Figma Console MCP is connected:
-- `figma_get_status` — Confirm Desktop Bridge plugin is active
+Read `mcpProvider` from `uspecs.config.json` to determine which Figma MCP to use.
 
-If connection fails, guide user:
-> Please open Figma Desktop and run the Desktop Bridge plugin. Then try again.
+**If `figma-console`:**
+- `figma_get_status` — Confirm Desktop Bridge plugin is active
+- If connection fails: *"Please open Figma Desktop and run the Desktop Bridge plugin. Then try again."*
+
+**If `figma-mcp`:**
+- Connection is verified implicitly on the first `use_figma` call. No explicit check needed.
+- If the first call fails: *"Please verify your FIGMA_API_KEY is set correctly in your MCP configuration."*
 
 ### Step 3: Read Template Key
 

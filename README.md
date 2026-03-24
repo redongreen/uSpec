@@ -2,7 +2,7 @@
 
 Generate design system documentation — from Figma to finished specs, powered by AI agent skills.
 
-uSpec connects your AI coding agent to Figma through the Figma Console MCP. Agent skills extract component structure, design tokens, variables, and styles directly from your file and render structured documentation right in Figma. No manual spec writing required.
+uSpec connects your AI coding agent to Figma through a Figma MCP server. Agent skills extract component structure, design tokens, variables, and styles directly from your file and render structured documentation right in Figma. No manual spec writing required. Supports both [Figma Console MCP](https://github.com/southleft/figma-console-mcp) (Southleft) and [native Figma MCP](https://github.com/figma/figma-mcp) (Figma).
 
 Works with **Cursor**, **Claude Code**, and **Codex**.
 
