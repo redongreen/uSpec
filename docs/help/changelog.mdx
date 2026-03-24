@@ -3,6 +3,39 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V1.4.1 — March 2026" description="Dual MCP support across all documentation">
+  ## uSpec V1.4.1
+
+  Documentation now covers both Figma MCP providers — Figma Console MCP (Southleft) and native Figma MCP (Figma) — across the entire docs site.
+
+  ### Dual MCP documentation
+
+  - All references to "Figma Console MCP" replaced with MCP-agnostic phrasing throughout spec pages, diagrams, and prerequisites
+  - Architecture overview in How It Works rewritten to show both MCP paths in a single diagram
+  - Mermaid diagrams across all 7 spec pages and the How It Works page updated to use generic "Figma MCP" nodes
+  - Removed tool-specific labels (`figma_execute`) from diagram nodes — tool names are implementation details
+
+  ### Expanded troubleshooting
+
+  - Figma connection troubleshooting restructured into Console MCP and Native Figma MCP tabs
+  - Added native MCP troubleshooting for connection issues, token validation errors, and file/node resolution
+  - Updated multiple-agent guidance to cover both MCP models
+
+  ### Pre-verification callout
+
+  - Added a prominent warning between MCP setup and firstrun in Getting Started — test your MCP connection before running firstrun
+  - MCP-specific verification instructions with links to each provider's documentation
+
+  ### MCP documentation freshness notices
+
+  - Added notes throughout setup and troubleshooting pages reminding readers that MCP providers update their instructions frequently
+  - Direct links to [Figma Console MCP docs](https://docs.figma-console-mcp.southleft.com/) and [native Figma MCP docs](https://github.com/figma/figma-mcp) wherever configuration is discussed
+
+  ### Global navigation
+
+  - Removed the Figma Console MCP anchor from the global nav — with dual MCP support, a single provider link is misleading
+</Update>
+
 <Update label="V1.4 — March 2026" description="Updated create-color with consolidated extraction and AI reasoning">
   ## uSpec V1.4
 

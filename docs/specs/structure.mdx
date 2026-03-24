@@ -12,7 +12,7 @@ Structure specs document component measurements such as heights, widths, padding
 ## What you need
 
 - A **Figma link** to the component
-- **Figma Console MCP** connected via the Desktop Bridge plugin
+- **Figma MCP** connected (Console MCP with Desktop Bridge, or native Figma MCP)
 - Any additional context about density modes, size variants, or specific sub-components to include
 
 <Tip>
@@ -84,7 +84,7 @@ The structure skill uses a two-tier architecture: deterministic scripts handle d
 ```mermaid
 flowchart LR
     A[You] -->|Figma link| B[Agent Skill]
-    B -->|Deterministic scripts| C[Console MCP]
+    B -->|Deterministic scripts| C[Figma MCP]
     C -->|Raw data| D[AI Interpretation]
     D -->|Section plan| E[Deterministic Render]
     E -->|Annotation frame| F[Figma Output]
@@ -92,7 +92,7 @@ flowchart LR
 
 <Steps>
   <Step title="Extract">
-    Deterministic scripts measure dimensions, padding, gaps, token bindings, sub-components, and cross-variant comparisons via the Console MCP.
+    Deterministic scripts measure dimensions, padding, gaps, token bindings, sub-components, and cross-variant comparisons via the Figma MCP.
   </Step>
   <Step title="Interpret">
     AI builds the section plan, writes design-intent notes, detects anomalies, and judges completeness.

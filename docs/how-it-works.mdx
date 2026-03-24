@@ -10,11 +10,11 @@ uSpec connects your AI agent and Figma into a single pipeline. You provide a com
 ```mermaid
 flowchart LR
     A[You] -->|Figma link| B[Agent Skill]
-    B -->|Extract + Render| C[Console MCP]
+    B -->|Extract + Render| C[Figma MCP]
     C -->|Documentation frame| D[Figma Output]
 ```
 
-Every skill extracts component data and renders documentation directly in Figma via the Console MCP. The internal steps differ depending on what each skill needs to analyze. The diagrams below show what happens inside each skill.
+Every skill extracts component data and renders documentation directly in Figma via the MCP. The internal steps differ depending on what each skill needs to analyze. The diagrams below show what happens inside each skill.
 
 ---
 
@@ -89,7 +89,7 @@ Every skill loads an instruction file, reads platform-specific or domain-specifi
 ```mermaid
 flowchart TB
     Skill[SKILL.md] --> Instruction[agent-anatomy-instruction.md]
-    Skill --> MCP[Figma Console MCP]
+    Skill --> MCP[Figma MCP]
 
     MCP --> Extract[Extract children, layers, and properties]
     Instruction --> Classify[Classify elements and enrich notes]
@@ -108,7 +108,7 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    Skill[SKILL.md] --> MCP[Figma Console MCP]
+    Skill[SKILL.md] --> MCP[Figma MCP]
 
     MCP --> Extract[Extract properties and variant axes]
     MCP --> Modes[Detect variable mode properties]
@@ -132,7 +132,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     Skill[SKILL.md] --> Instruction[agent-api-instruction.md]
-    Skill --> MCP[Figma Console MCP]
+    Skill --> MCP[Figma MCP]
 
     Instruction --> Analyze[Analyze properties]
     MCP --> Props[Extract variant properties]
@@ -150,7 +150,7 @@ flowchart TB
     MainTable --> Examples[Generate configuration examples]
     SubTables --> Examples
     Examples --> Checklist[Audit against checklist]
-    Checklist --> Render[Render in Figma via figma_execute]
+    Checklist --> Render[Render in Figma]
     Render --> Validate[Screenshot validation]
 ```
 
@@ -163,7 +163,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     Skill[SKILL.md] --> Instruction[agent-structure-instruction.md]
-    Skill --> MCP[Figma Console MCP]
+    Skill --> MCP[Figma MCP]
 
     MCP --> Extract["Tier 1: Deterministic extraction"]
     Extract --> Dims[Dimensions, tokens, sub-components]
@@ -188,7 +188,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     Skill[SKILL.md] --> Instruction[agent-color-instruction.md]
-    Skill --> MCP[Figma Console MCP]
+    Skill --> MCP[Figma MCP]
 
     Instruction --> Analyze[Analyze color usage]
     MCP --> Tokens[Extract design tokens]
@@ -209,7 +209,7 @@ flowchart TB
     Analyze --> Strategy
     StratA --> Checklist[Audit against checklist]
     StratB --> Checklist
-    Checklist --> Render[Render in Figma via figma_execute]
+    Checklist --> Render[Render in Figma]
     Render --> Validate[Screenshot validation]
 ```
 
@@ -226,7 +226,7 @@ flowchart TB
     Skill --> TB[talkback.md]
     Skill --> AR[aria.md]
 
-    Instruction --> MCP[Figma Console MCP]
+    Instruction --> MCP[Figma MCP]
     MCP --> Extract[Extract component structure]
 
     Extract --> Merge[Merge analysis]
@@ -238,7 +238,7 @@ flowchart TB
     Focus --> Gen
 
     Gen --> Checklist[Audit against checklist]
-    Checklist --> Render[Render in Figma via figma_execute]
+    Checklist --> Render[Render in Figma]
     Render --> Validate[Screenshot validation]
 ```
 
@@ -253,7 +253,7 @@ flowchart TB
     AE[After Effects] -->|"Run export-timeline.jsx"| JSON[JSON on clipboard]
     JSON -->|Paste or file ref| Skill[SKILL.md]
     Skill --> Instruction[agent-motion-instruction.md]
-    Skill --> MCP[Figma Console MCP]
+    Skill --> MCP[Figma MCP]
 
     Instruction --> Parse[Parse and validate JSON]
     JSON --> Parse
@@ -301,20 +301,31 @@ flowchart TB
         Prompt --> Skill --> Agent
     end
 
-    subgraph Figma["Figma Desktop"]
+    subgraph Figma["Figma"]
         direction TB
         File[Figma file]
         Output[Documentation frames]
     end
 
-    subgraph MCP["Figma Console MCP"]
-        Bridge[Desktop Bridge]
+    subgraph MCP["Figma MCP"]
+        direction TB
+        Console["Console MCP + Desktop Bridge"]
+        Native["Native Figma MCP"]
     end
 
-    Agent <-->|Component data, tokens, styles| Bridge
-    Agent -->|Render documentation| Bridge
-    Bridge <-->|WebSocket| File
+    Agent <-->|Component data, tokens, styles| MCP
+    Agent -->|Render documentation| MCP
+    MCP <-->|Read + write| File
     File --> Output
 ```
 
-The Figma Console MCP acts as the bridge between your agent and Figma Desktop. It connects via WebSocket through the Desktop Bridge plugin, giving the agent real-time access to your file data without requiring manual export. Every skill renders through the MCP bridge, regardless of which host you use.
+uSpec supports two Figma MCP providers — choose the one that fits your setup:
+
+- **Figma Console MCP** (by Southleft) connects via a Desktop Bridge plugin running inside Figma Desktop, communicating over WebSocket. It exposes 59+ tools for design creation and variable management.
+- **Native Figma MCP** (by Figma) connects directly to Figma's API with read and write access. No Desktop Bridge plugin required.
+
+Both providers give the agent real-time access to component data, tokens, styles, and screenshots. Every skill renders through the MCP, regardless of which provider or host you use. See [Getting Started](/getting-started#2-set-up-figma-mcp) for setup instructions.
+
+<Note>
+  MCP providers update their capabilities and setup instructions frequently. For the latest details, see the [Figma Console MCP docs](https://docs.figma-console-mcp.southleft.com/) or the [native Figma MCP docs](https://github.com/figma/figma-mcp).
+</Note>

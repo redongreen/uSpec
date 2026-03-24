@@ -64,46 +64,99 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
   </Tab>
 
   <Tab title="Figma connection" icon="plug">
-    <AccordionGroup>
-      <Accordion title="Agent can't connect to Figma">
-        **Symptom**: The agent reports it cannot access your Figma file.
+    <Note>
+      MCP providers update their setup and troubleshooting guides frequently. If the solutions below don't resolve your issue, check the provider's documentation for the latest instructions:
+      [Figma Console MCP docs](https://docs.figma-console-mcp.southleft.com/) · [Native Figma MCP docs](https://github.com/figma/figma-mcp)
+    </Note>
 
-        **Solutions**:
-        - Confirm Figma Desktop is running (not the web version)
-        - Check that the Desktop Bridge plugin is open and active in your Figma file
-        - Ask your agent to "Check Figma status" to diagnose the connection
-        - Restart the Desktop Bridge plugin if it's unresponsive
-      </Accordion>
-      <Accordion title="Desktop Bridge not connecting">
-        **Symptom**: The Desktop Bridge plugin is open but the agent can't connect.
+    <Tabs>
+      <Tab title="Console MCP">
+        <AccordionGroup>
+          <Accordion title="Agent can't connect to Figma">
+            **Symptom**: The agent reports it cannot access your Figma file.
 
-        **Solutions**:
-        - Close and reopen the Desktop Bridge plugin in Figma
-        - Make sure only one instance of Figma Desktop is running
-        - Verify your Figma access token is configured correctly:
+            **Solutions**:
+            - Confirm Figma Desktop is running (not the web version)
+            - Check that the Desktop Bridge plugin is open and active in your Figma file
+            - Ask your agent to "Check Figma status" to diagnose the connection
+            - Restart the Desktop Bridge plugin if it's unresponsive
+            - Verify your `FIGMA_ACCESS_TOKEN` is set correctly in your MCP configuration
 
-        <Tabs>
-          <Tab title="Cursor">
-            Check your Cursor MCP settings or `.cursor/mcp.json`
-          </Tab>
-          <Tab title="Claude Code">
-            Check `.mcp.json` at the project root
-          </Tab>
-          <Tab title="Codex">
-            Check `.codex/config.toml`
-          </Tab>
-        </Tabs>
-      </Accordion>
-      <Accordion title="Unexpected behavior with multiple agents">
-        **Symptom**: Output appears on the wrong page, node references break, or specs are corrupted when running two agents at the same time.
+            For detailed setup and troubleshooting, see the [Figma Console MCP documentation](https://docs.figma-console-mcp.southleft.com/).
+          </Accordion>
+          <Accordion title="Desktop Bridge not connecting">
+            **Symptom**: The Desktop Bridge plugin is open but the agent can't connect.
 
-        **Why this happens**: The Figma Console MCP supports multiple simultaneous connections (ports 9223–9232), but Figma Desktop has a single active page. When two agents navigate to different pages, they override each other's context, causing broken references and interleaved writes.
+            **Solutions**:
+            - Close and reopen the Desktop Bridge plugin in Figma
+            - Make sure only one instance of Figma Desktop is running
+            - Verify your Figma access token is configured correctly:
 
-        **Solutions**:
-        - Run **one agent at a time** per Figma file — finish one skill before starting the next
-        - If you need parallel generation, use **separate Figma files** so each agent has its own page context
-      </Accordion>
-    </AccordionGroup>
+            <Tabs>
+              <Tab title="Cursor">
+                Check your Cursor MCP settings or `.cursor/mcp.json`
+              </Tab>
+              <Tab title="Claude Code">
+                Check `.mcp.json` at the project root
+              </Tab>
+              <Tab title="Codex">
+                Check `.codex/config.toml`
+              </Tab>
+            </Tabs>
+          </Accordion>
+          <Accordion title="Unexpected behavior with multiple agents">
+            **Symptom**: Output appears on the wrong page, node references break, or specs are corrupted when running two agents at the same time.
+
+            **Why this happens**: The Console MCP supports multiple simultaneous connections (ports 9223–9232), but Figma Desktop has a single active page. When two agents navigate to different pages, they override each other's context, causing broken references and interleaved writes.
+
+            **Solutions**:
+            - Run **one agent at a time** per Figma file — finish one skill before starting the next
+            - If you need parallel generation, use **separate Figma files** so each agent has its own page context
+          </Accordion>
+        </AccordionGroup>
+      </Tab>
+      <Tab title="Native Figma MCP">
+        <AccordionGroup>
+          <Accordion title="Agent can't connect to Figma">
+            **Symptom**: The agent reports it cannot access your Figma file or the MCP server isn't responding.
+
+            **Solutions**:
+            - Confirm the MCP server is running — check your terminal or your agent's MCP panel for connection status
+            - Verify your `FIGMA_API_KEY` is set correctly in your MCP configuration
+            - Test with a simple command like *"List pages in my file"* with a Figma link
+            - Make sure the token has read and write scopes
+
+            For detailed setup and troubleshooting, see the [Figma MCP documentation](https://github.com/figma/figma-mcp).
+          </Accordion>
+          <Accordion title="Token validation errors">
+            **Symptom**: The agent connects but returns authentication or permission errors.
+
+            **Solutions**:
+            - Regenerate your personal access token at [figma.com/developers/api#access-tokens](https://www.figma.com/developers/api#access-tokens)
+            - Ensure the token has **read and write** scopes enabled
+            - Check that the token hasn't expired — Figma tokens can be set to expire
+            - Confirm the environment variable name matches your MCP configuration (`FIGMA_API_KEY`)
+          </Accordion>
+          <Accordion title="File or node not found">
+            **Symptom**: The agent can connect but reports it can't find the specified file or node.
+
+            **Solutions**:
+            - Verify the `fileKey` in your Figma URL — it's the string between `/design/` and the file name
+            - Check that the `node-id` parameter is correct — convert dashes to colons (e.g., `100-200` becomes `100:200`)
+            - Confirm you have access to the file with the account that generated the token
+          </Accordion>
+          <Accordion title="Unexpected behavior with multiple agents">
+            **Symptom**: Specs are corrupted or incomplete when running multiple agents simultaneously.
+
+            **Why this happens**: The native Figma MCP uses the REST API, so it doesn't have the same port-sharing model as the Console MCP. However, concurrent writes to the same file can still cause conflicts.
+
+            **Solutions**:
+            - Run **one agent at a time** per Figma file — finish one skill before starting the next
+            - If you need parallel generation, use **separate Figma files** so each agent has its own context
+          </Accordion>
+        </AccordionGroup>
+      </Tab>
+    </Tabs>
   </Tab>
 
 </Tabs>
@@ -126,7 +179,7 @@ The agent can only document what it can see in Figma or what you describe. If st
 
 If the output has the right structure but lacks detail:
 
-- **Check your MCP connection**: ask your agent to "Check Figma status". If the connection is down, the agent can't read your component data
+- **Check your MCP connection**: ask your agent to verify the Figma connection (e.g., *"Check Figma status"* for Console MCP, or *"List pages in my file"* with a link for native MCP). If the connection is down, the agent can't read your component data
 - **Verify the Figma link**: make sure the node-id points to the actual component, not a parent frame
 - **Re-run with more context**: describe the component's parts and their relationships
 

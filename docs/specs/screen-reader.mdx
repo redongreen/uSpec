@@ -12,7 +12,7 @@ Screen reader specs document how assistive technologies should announce and inte
 ## What you need
 
 - A **Figma link** to the component
-- **Figma Console MCP** connected via the Desktop Bridge plugin
+- **Figma MCP** connected (Console MCP with Desktop Bridge, or native Figma MCP)
 - A description of states, behaviors, or interactive parts that aren't visible in the design
 
 <Tip>
@@ -107,7 +107,7 @@ The screen reader skill is heavily AI-driven — the agent determines merge beha
 ```mermaid
 flowchart LR
     A[You] -->|Figma link| B[Agent Skill]
-    B -->|Extract data| C[Console MCP]
+    B -->|Extract data| C[Figma MCP]
     C -->|Component data| B
     B -->|Render| C
     C -->|Annotation frame| D[Figma Output]
@@ -115,7 +115,7 @@ flowchart LR
 
 <Steps>
   <Step title="Extract">
-    The skill reads child layers, element types, and interactive properties from the component via the Console MCP.
+    The skill reads child layers, element types, and interactive properties from the component via the Figma MCP.
   </Step>
   <Step title="Analyze merge behavior">
     The agent determines which visual parts are independent focus stops, which merge into another element's announcement, and which are hidden from screen readers.

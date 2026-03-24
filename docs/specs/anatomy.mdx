@@ -25,7 +25,7 @@ The skill also generates per-child sections for nested component instances, anno
 ## What you need
 
 - A **Figma link** to a component set or standalone component
-- **Figma Console MCP** connected via the Desktop Bridge plugin
+- **Figma MCP** connected (Console MCP with Desktop Bridge, or native Figma MCP)
 
 ## How to use
 
@@ -83,7 +83,7 @@ The anatomy skill splits evenly between deterministic rendering (markers, tables
 ```mermaid
 flowchart LR
     A[You] -->|Figma link| B[Agent Skill]
-    B -->|Extract data| C[Console MCP]
+    B -->|Extract data| C[Figma MCP]
     C -->|Component data| B
     B -->|Render| C
     C -->|Annotation frame| D[Figma Output]
@@ -91,7 +91,7 @@ flowchart LR
 
 <Steps>
   <Step title="Extract">
-    The skill reads child layers, element types, visibility, and property definitions (booleans, variant axes, instance swaps) from the component via the Console MCP.
+    The skill reads child layers, element types, visibility, and property definitions (booleans, variant axes, instance swaps) from the component via the Figma MCP.
   </Step>
   <Step title="Classify and enrich">
     The agent classifies each element's role (optional slot, fixed sub-component, content element, structural/decorative) and writes semantic notes. It also determines which sub-components warrant their own per-child sections and which should be skipped.

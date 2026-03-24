@@ -36,7 +36,7 @@ Bar labels show value transitions (e.g., "0% -> 115%") while easing type is comm
 
 - **After Effects** with the composition open
 - The **`export-timeline.jsx`** script (included in the `motion/` folder)
-- **Figma Console MCP** connected via the Desktop Bridge plugin
+- **Figma MCP** connected (Console MCP with Desktop Bridge, or native Figma MCP)
 - Optionally, a **Figma destination link** to place the annotation on a specific page
 
 ## How to use
@@ -109,7 +109,7 @@ The motion skill is primarily deterministic — the After Effects export script 
 flowchart LR
     AE[After Effects] -->|"export-timeline.jsx"| JSON[JSON data]
     JSON -->|Paste or file ref| Skill[Agent Skill]
-    Skill -->|Render| MCP[Console MCP]
+    Skill -->|Render| MCP[Figma MCP]
     MCP -->|Annotation frame| Figma[Figma Output]
 ```
 

@@ -29,7 +29,7 @@ The property skill documents every configurable property of a component — vari
 ## What you need
 
 - A **Figma link** to a component set or standalone component
-- **Figma Console MCP** connected via the Desktop Bridge plugin
+- **Figma MCP** connected (Console MCP with Desktop Bridge, or native Figma MCP)
 
 ## How to use
 
@@ -88,7 +88,7 @@ The property skill is primarily deterministic — scripts handle property extrac
 ```mermaid
 flowchart LR
     A[You] -->|Figma link| B[Agent Skill]
-    B -->|Extract data| C[Console MCP]
+    B -->|Extract data| C[Figma MCP]
     C -->|Component data| B
     B -->|Render| C
     C -->|Annotation frame| D[Figma Output]
@@ -96,7 +96,7 @@ flowchart LR
 
 <Steps>
   <Step title="Extract">
-    The skill reads `componentPropertyDefinitions`, `variantProperties`, and child layer data from the component set via the Console MCP.
+    The skill reads `componentPropertyDefinitions`, `variantProperties`, and child layer data from the component set via the Figma MCP.
   </Step>
   <Step title="Detect variable modes">
     Variable collections (shape, density) are identified by looking for collections named after the component.

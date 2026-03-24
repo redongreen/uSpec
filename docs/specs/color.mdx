@@ -12,7 +12,7 @@ Color annotation specs document which design tokens are used for backgrounds, te
 ## What you need
 
 - A **Figma link** to the component
-- **Figma Console MCP** connected via the Desktop Bridge plugin
+- **Figma MCP** connected (Console MCP with Desktop Bridge, or native Figma MCP)
 - Any additional context about variants, states, or which color modes to include
 
 <Tip>
@@ -86,7 +86,7 @@ The color skill balances deterministic token extraction and table rendering with
 ```mermaid
 flowchart LR
     A[You] -->|Figma link| B[Agent Skill]
-    B -->|Extract data| C[Console MCP]
+    B -->|Extract data| C[Figma MCP]
     C -->|Component data| B
     B -->|Render| C
     C -->|Annotation frame| D[Figma Output]
@@ -94,7 +94,7 @@ flowchart LR
 
 <Steps>
   <Step title="Extract">
-    The skill reads fills, strokes, and variable bindings from the component via the Console MCP.
+    The skill reads fills, strokes, and variable bindings from the component via the Figma MCP.
   </Step>
   <Step title="Map tokens">
     Each color-bearing element is matched to its design token, across all states and variants.

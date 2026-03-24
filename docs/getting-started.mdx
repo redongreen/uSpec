@@ -132,6 +132,12 @@ uSpec connects an AI coding agent to Figma through an MCP (Model Context Protoco
 
 uSpec supports two Figma MCP providers. Choose one based on your setup:
 
+<Note>
+  MCP providers update their setup instructions frequently. The configuration examples below are a starting point — always check the provider's documentation for the latest installation steps and options:
+  - **Figma Console MCP**: [docs.figma-console-mcp.southleft.com](https://docs.figma-console-mcp.southleft.com/)
+  - **Native Figma MCP**: [github.com/figma/figma-mcp](https://github.com/figma/figma-mcp)
+</Note>
+
 <Tabs>
   <Tab title="Figma Console MCP">
     The [Figma Console MCP](https://github.com/southleft/figma-console-mcp) (by Southleft) connects your agent to Figma Desktop via a Desktop Bridge plugin, giving it access to component data, variables, styles, and screenshots.
@@ -211,7 +217,7 @@ uSpec supports two Figma MCP providers. Choose one based on your setup:
     </Tabs>
 
     <Tip>
-      This uses the NPX setup, which gives you all 59+ tools including design creation and variable management. For alternative installation methods, troubleshooting, and the latest configuration options, see the [Figma Console MCP documentation](https://docs.figma-console-mcp.southleft.com/).
+      This uses the NPX setup, which gives you all 59+ tools including design creation and variable management. Setup instructions may change between releases — for the latest configuration options, alternative installation methods, and troubleshooting, see the [Figma Console MCP documentation](https://docs.figma-console-mcp.southleft.com/).
     </Tip>
 
     #### Connect to Figma Desktop
@@ -300,7 +306,7 @@ uSpec supports two Figma MCP providers. Choose one based on your setup:
     </Tabs>
 
     <Tip>
-      The native Figma MCP supports `use_figma` for running Plugin API JavaScript, `get_screenshot` for visual capture, and `search_design_system` for finding components and variables. For the full tool list and setup options, see the [Figma MCP documentation](https://github.com/figma/figma-mcp).
+      The native Figma MCP supports `use_figma` for running Plugin API JavaScript, `get_screenshot` for visual capture, and `search_design_system` for finding components and variables. Setup instructions may change between releases — for the latest configuration options and full tool list, see the [Figma MCP documentation](https://github.com/figma/figma-mcp).
     </Tip>
 
     #### Verify the connection
@@ -319,6 +325,19 @@ uSpec supports two Figma MCP providers. Choose one based on your setup:
     </Check>
   </Tab>
 </Tabs>
+
+<Warning>
+  **Test your MCP connection before proceeding.** Run a simple command in your agent to confirm Figma access is working. If the MCP isn't connected, `firstrun` will fail when it tries to read your template library.
+
+  <Tabs>
+    <Tab title="Console MCP">
+      Open the Desktop Bridge plugin in Figma, then ask your agent: *"Check Figma status"*. You should see an active connection. If it doesn't connect, see the [Figma Console MCP documentation](https://docs.figma-console-mcp.southleft.com/) for setup verification.
+    </Tab>
+    <Tab title="Native Figma MCP">
+      Ask your agent: *"List pages in my file"* with a Figma link. The agent should return the page names. If it fails, verify your `FIGMA_API_KEY` and see the [Figma MCP documentation](https://github.com/figma/figma-mcp) for setup verification.
+    </Tab>
+  </Tabs>
+</Warning>
 
 ---
 

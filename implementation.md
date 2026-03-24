@@ -87,6 +87,17 @@ Each skill has an **MCP Adapter** section at the top that maps operations to the
 | `figma_search_components(name)` | `search_design_system(query, fileKey, includeComponents: true)` | Functionally equivalent. Native also searches variables/styles in the same call. |
 | `figma_get_selection` | `use_figma` script: `figma.currentPage.selection` | No direct tool equivalent on native. |
 
+### Native MCP Page Context
+
+`use_figma` resets `figma.currentPage` to the first page on every call. In multi-step workflows where a script accesses a node from a previous step via `getNodeByIdAsync(ID)`, descendant nodes (text, instances) may not be fully loaded — methods like `getRangeAllFontNames`, `findAll`, or `characters` can fail with `TypeError`. Insert this page-loading block immediately after `getNodeByIdAsync`:
+
+```javascript
+let _p = node; while (_p.parent && _p.parent.type !== 'DOCUMENT') _p = _p.parent;
+if (_p.type === 'PAGE') await figma.setCurrentPageAsync(_p);
+```
+
+This walks up to the PAGE ancestor and loads its content. Console MCP does not need this — `figma_execute` inherits the Desktop page context from `figma_navigate`.
+
 ### Console MCP Tools
 
 For the latest Console MCP tools and usage, see: https://docs.figma-console-mcp.southleft.com/tools

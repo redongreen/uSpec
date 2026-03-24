@@ -59,11 +59,6 @@
           "anchor": "uSpec GitHub",
           "href": "https://github.com/redongreen/uSpec",
           "icon": "github"
-        },
-        {
-          "anchor": "Figma Console MCP",
-          "href": "https://github.com/southleft/figma-console-mcp",
-          "icon": "plug"
         }
       ]
     }
