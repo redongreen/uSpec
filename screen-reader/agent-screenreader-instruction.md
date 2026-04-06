@@ -6,7 +6,7 @@ You are an accessibility expert generating screen reader specifications for Voic
 
 ## Task
 
-Analyze a UI component from a Figma link, image, or description. Produce screen reader specifications — focus order, component anatomy, and platform-specific accessibility properties organized by state.
+Analyze a UI component from a Figma link, image, or description. Produce screen reader specifications — focus order and platform-specific accessibility properties organized by state.
 
 **Before starting, read:** `voiceover.md`, `talkback.md`, `aria.md`.
 
@@ -54,7 +54,7 @@ A part is **NOT** a focus stop if:
 - It's a **live region** — content appears reactively but the user doesn't navigate to it (error messages, status updates, toast notifications)
 - It's **decorative** — dividers, background shapes, non-functional icons
 
-**Conditional focus stops**: Some elements are focus stops only in certain states (e.g., a clear button appears only when text is entered). During merge analysis, flag these as conditional and note which state makes them visible. The rendering script uses visibility-aware focus stop resolution for the Focus Order artwork — elements that are hidden in the default variant and not surfaced by boolean-enable will trigger a richest-variant fallback. Ensure conditional focus stops are documented in states where they actually appear.
+**Conditional focus stops**: Some elements are focus stops only in certain states (e.g., a clear button appears only when text is entered). During merge analysis, flag these as conditional and note which state makes them visible. This includes slot-hosted controls: a slot may be present in the tree, but the documented focus stop may only exist when that slot is filled with a specific interactive component. The rendering script uses visibility-aware focus stop resolution for the Focus Order artwork — elements that are hidden in the default variant and not surfaced by boolean-enable will trigger a richest-variant fallback. Ensure conditional focus stops are documented only in states and slot scenarios where they actually appear.
 
 **Merge mechanisms by platform:**
 
@@ -123,7 +123,7 @@ For each focusable part in each state, document the platform-specific properties
 
 ## Focus Order Section
 
-For compound components (2+ focusable parts), add a **focus order section** as the first section in each state. This provides a platform-agnostic overview of the traversal sequence before diving into platform-specific details.
+For compound components (2+ focusable parts), add a top-level **focus order section** shown once before the per-state platform sections. This provides a platform-agnostic overview of the traversal sequence before diving into platform-specific details.
 
 ### When to Use
 
@@ -142,6 +142,10 @@ The focus order section uses the same table format as platform sections, but:
 - `name` is the focus stop name (e.g., "Input field", "Trailing icon button")
 - `announcement` is a brief description of the stop
 - The `properties` describe what visual parts merge into this stop and how
+
+When a focus stop depends on slot content, choose the scenario first:
+- If the default slot child already exposes the focus stop, document that default configuration.
+- If the focus stop only exists when the slot is populated with a different interactive component, document a representative preferred fill and ensure the preview/rendered artwork uses that same slot-populated configuration.
 
 ### Example
 
@@ -200,9 +204,9 @@ Order: Name -> Role -> State. Prefer native HTML over ARIA.
 ```typescript
 interface ScreenReaderData {
   componentName: string;
-  compSetNodeId: string;            // Figma node ID of the component set (from extraction)
-  rootSize: { w: number; h: number }; // Default variant dimensions (from extraction)
-  elements: FocusElement[];         // All direct children with bounding boxes (from extraction)
+  compSetNodeId: string;            // Figma node ID of the target component or component set (from extraction)
+  elements: FocusElement[];         // Flattened structural elements from extraction, including slot descendants when present
+  slotDefs?: SlotDefinition[];      // SLOT metadata from extraction: preferred instances, default children, visibility binding
   variantAxes: VariantAxis[];       // Variant property axes with options and defaults (from extraction)
   guidelines: string;
   focusOrder?: FocusOrderData;    // Top-level, shown once (compound components only)
@@ -220,21 +224,56 @@ interface FocusElement {
   name: string;
   bbox: { x: number; y: number; w: number; h: number };
   slotIndex?: number;               // present when extracted from a composable slot with identically-named siblings
-  isFocusStop: boolean;             // true if this element is an actual focus stop (set during merge analysis)
+  isFocusStop?: boolean;            // assigned during merge analysis, not returned by the raw extraction script
+}
+
+interface SlotDefinition {
+  propName: string;
+  rawKey: string;
+  description?: string;
+  visibleRawKey?: string | null;
+  visiblePropName?: string | null;
+  preferredInstances?: SlotPreferredInstance[];
+  defaultChildren?: SlotDefaultChild[];
+}
+
+interface SlotPreferredInstance {
+  componentKey: string;
+  componentName: string;
+  componentId: string;
+  isComponentSet?: boolean;
+  componentSetId?: string | null;
+  componentSetName?: string | null;
+}
+
+interface SlotDefaultChild {
+  name: string;
+  nodeType: string;
+  mainComponentId?: string;
+  mainComponentKey?: string;
+  contextualOverrides?: Record<string, string | boolean>;
 }
 
 interface FocusOrderData {
   title: string;                  // Always "Focus order"
   description?: string;           // Optional description shown under the title (e.g., merge summary)
   tables: TableData[];            // One table per actual focus stop in traversal order
+  slotInsertions?: SlotInsertion[]; // Optional slot population plan for focus-order artwork
 }
 
 interface StateData {
   state: string;                  // State name: "enabled", "disabled", "Tab selected"
   description?: string;           // Optional description for this state
   variantProps: Record<string, string>;  // Variant axis values for this state's preview instance
-  artworkLabels: string[];        // Realistic labels for artwork preview, replacing "Label" placeholders in document order
+  slotInsertions?: SlotInsertion[];      // Optional slot population plan for this state's preview
   sections: SectionData[];        // Platform sections only: VoiceOver, TalkBack, ARIA
+}
+
+interface SlotInsertion {
+  slotName: string;
+  componentNodeId: string;         // local COMPONENT or COMPONENT_SET node ID
+  nestedOverrides?: Record<string, string | boolean>;
+  textOverrides?: Record<string, string>;
 }
 
 interface SectionData {
@@ -261,17 +300,18 @@ interface PropertyItem {
 | Field | Rule |
 |-------|------|
 | `componentName` | Type: "Button", "Tooltip", "Tab bar", "Text field", etc. |
-| `compSetNodeId` | Figma node ID of the component set, from the extraction script. |
-| `rootSize` | `{ w, h }` of the default variant, from the extraction script. |
-| `elements` | Array of direct children with bounding boxes from extraction. Each element has `isFocusStop` set during merge analysis. |
+| `compSetNodeId` | Figma node ID of the target component or component set, from the extraction script. |
+| `elements` | Array of extracted structural elements with bounding boxes. This may include slot descendants, not just the first visible child level. `isFocusStop` is assigned later during merge analysis; the raw extraction script does not set it. |
+| `slotDefs` | Optional array of SLOT metadata from extraction. Use it to determine whether focus stops come from default slot content or from a representative preferred interactive fill. |
 | `variantAxes` | Array of variant property axes from extraction. Each axis has `name`, `options`, and `defaultValue`. |
 | `guidelines` | Bullet points. First bullet should describe focus order for compound components. Cover: edge cases, platform differences, focus behavior. |
-| `focusOrder` | **Top-level, optional.** Only for compound components (2+ focusable/announced parts). Shown once as an overview, not repeated per state. Note: even when `focusOrder` is omitted, every `TableData` still needs `focusOrderIndex`. |
+| `focusOrder` | **Top-level, optional.** Only for compound components (2+ focusable/announced parts). Shown once as an overview, not repeated per state. Note: even when `focusOrder` is omitted, every `TableData` still needs `focusOrderIndex`. If focus order depends on non-default slot content, attach `slotInsertions` so the artwork matches the documented scenario. |
 | `focusOrder.title` | Always `"Focus order"` |
 | `focusOrder.tables` | One table per step: `focusOrderIndex` is the step number (1, 2), `name` is the element name (e.g., "Input field"), `announcement` is the element description |
 | `state` | Component state: "enabled", "disabled", "error", "Tab selected", "Tooltip visible" |
 | `description` | Optional. Brief description of what's different about this state. |
 | `variantProps` | `Record<string, string>` — variant axis values for this state's preview instance. Matched from `stateVariantProps` (Step 5F). Defaults to `{}` when the state is behavioral (e.g., "focused") rather than a Figma variant. |
+| `slotInsertions` | Optional slot population plan for a focus-order or state preview. Use when the documented focus stops require preferred slot content rather than the default slot child. Standardize preview-content changes through `textOverrides` and `slotInsertions` rather than a separate artwork-label field. |
 | `sections` | Array of platform sections only: VoiceOver (iOS), TalkBack (Android), ARIA (Web). |
 | `title` | Section title. Use exact names: `"VoiceOver (iOS)"`, `"TalkBack (Android)"`, `"ARIA (Web)"` |
 | `tables` | One or more tables per section. For platforms: one table per component part. |
@@ -290,13 +330,12 @@ interface PropertyItem {
 
 ### Tables Within Platform Sections
 
-For compound components, each platform section contains **one table per component part**, listed in focus traversal order:
+For compound components, each platform section contains **one table per actual focus stop**, listed in focus traversal order. Merged label, hint, helper text, and other supporting parts stay inside that stop's property rows rather than becoming separate tables:
 
 ```
 VoiceOver (iOS)
-  ├── Table: "Label" — how iOS announces the label
-  ├── Table: "Input" — how iOS announces the input field
-  └── Table: "Hint text" — how iOS announces the hint
+  ├── Table: "Input field" — label and hint are documented as merged properties on the input
+  └── Table: "Trailing icon button" — separate interactive action when present
 ```
 
 For simple components (one focusable element), each platform section has **one table**:
@@ -328,6 +367,7 @@ For grouped controls (tab bar, radio group, button group), don't document every 
 | List item (icon + title + subtitle) | All merge into one stop | 1 stop: list item (+ trailing action if present = 2 stops) | `focusOrder` only if trailing action; per-stop platform tables |
 | Tooltip (trigger + bubble) | Bubble is live region, not a focus stop | 1 stop: trigger | No `focusOrder`; document bubble as live region |
 | Card (title + description + actions) | Title + description merge into card if card is clickable | Card link + each action button | `focusOrder` if 2+ stops; per-stop platform tables |
+| Parent component with action slot | Parent body merges as one stop; slot-hosted control breaks out when the slot is filled with an interactive component | Parent body + slot action | Choose a representative slot-filled scenario, then document `focusOrder` and platform tables against that populated configuration |
 | State adds new element (error message) | Error announced as live region or replaces hint | Focus stops unchanged | Note in guidelines; update affected platform tables |
 
 ---
@@ -344,7 +384,7 @@ For grouped controls (tab bar, radio group, button group), don't document every 
 | Simple component with no compound parts | Omit `focusOrder` entirely; just use 3 platform sections per state |
 | Merged parent with one breakout child | If a container uses `mergeDescendants` but one child is independently interactive, list only the interactive child as a focus stop — the container is not a stop |
 | Ambiguous merge across platforms | If iOS merges parts but Web keeps them as separate focusable elements, document the superset in `focusOrder` and note platform differences in guidelines |
-| SLOT node in component tree | SLOT is a transparent wrapper — treat it like an auto-layout FRAME for merge analysis. Focus stops are the SLOT's children, not the SLOT itself. A SLOT containing 2 interactive buttons means 2 focus stops. If a SLOT has a boolean visibility binding (`componentPropertyReferences.visible`), the children may appear/disappear between states — account for this in per-state focus order |
+| SLOT node in component tree | SLOT is a transparent wrapper — treat it like an auto-layout FRAME for merge analysis. Focus stops are the SLOT's children, not the SLOT itself. A SLOT containing 2 interactive buttons means 2 focus stops. If a SLOT has a boolean visibility binding (`componentPropertyReferences.visible`), the children may appear/disappear between states — account for this in per-state focus order. If the documented stop only exists when the slot is filled with a different preferred component, reason from that representative slot-filled scenario and carry the matching `slotInsertions` into the preview |
 | Disabled / non-focusable state | The component is removed from the focus order entirely — focus stop count is 0. Document the state's platform properties (`.notEnabled` trait, `disabled()`, `aria-disabled`) but do not list any focus order entries. Artwork shows the component preview without markers, outlines, or connecting lines. |
 
 ---
@@ -368,12 +408,15 @@ For grouped controls (tab bar, radio group, button group), don't document every 
 - **Missing per-stop tables:** Each actual focus stop needs its own table in each platform section — document merged parts as properties within the stop's table
 - **Confusing visual parts with focus stops:** Run the merge analysis before listing focus stops. A text field has 3 visual parts but typically 1 focus stop (the input)
 - **Redundant state entries:** States that differ only visually (border color, cursor, fill) but have identical focus stops, roles, labels, and ARIA attributes should be grouped into a single entry, not documented separately
+- **Treating slot visibility as sufficient:** A visible slot does not guarantee the documented interactive control exists. If the focus stop depends on preferred slot content, choose that concrete slot-filled scenario and use matching `slotInsertions` in the preview.
 
 ---
 
-## Pre-Output Validation Checklist
+## Validation Checklist
 
-Before rendering in Figma, verify your structured data against these checks:
+Use these checks in sequence: first validate the structured data before rendering, then validate the rendered preview after Step 10-11.
+
+### Before Rendering in Figma
 
 | Check | What to Verify |
 |-------|----------------|
@@ -392,10 +435,17 @@ Before rendering in Figma, verify your structured data against these checks:
 | ☐ **Guidelines describe merging** | For compound components, guidelines explain what merges and what the user actually lands on |
 | ☐ **Straight quotes** | JSON uses ASCII `"` not curly quotes `""` |
 | ☐ **No placeholders** | All values use actual text from the component, not `<label>` — applies to both table data AND artwork preview labels |
-| ☐ **Preview placeholder has component** | Each state's `Preview placeholder` contains a centered component preview (instance, or detached frame after label modification) |
-| ☐ **Markers match focus stops** | Numbered markers correspond 1:1 to the focus order entries — rendered for every state that has at least one focus stop, even single-stop components. States with zero focus stops (e.g., Disabled) show only the component preview without markers. |
-| ☐ **Markers positioned correctly** | Marker #1 is left of component, even numbers above, odd numbers below — with connecting lines to their target elements |
 | ☐ **`elements` populated** | `elements` array has entries from extraction with `isFocusStop` set based on merge analysis (when Figma link provided) |
+
+### After Rendering in Figma
+
+| Check | What to Verify |
+|-------|----------------|
+| ☐ **Preview placeholder has component** | Each state's `Preview placeholder` contains a centered live component preview |
+| ☐ **Markers match focus stops** | Numbered markers correspond 1:1 to the focus order entries — rendered for every state that has at least one focus stop, even single-stop components. States with zero focus stops (e.g., Disabled) show only the component preview without markers. |
+| ☐ **Slot-hosted stops are real in preview** | When a focus stop depends on slot content, the rendered preview uses the same default child or `slotInsertions` scenario that the tables describe. Do not document a slot-hosted control that the preview instance does not actually contain. |
+| ☐ **Per-state preview visibility matches the state** | Per-state previews do not auto-enable every boolean. Use `variantProps` and `slotInsertions` so the rendered state matches the focus stops and visibility described in the tables. |
+| ☐ **Markers positioned correctly** | Marker placement follows the nearest-edge plus collision-avoidance algorithm, and each connector points to the correct focus stop |
 
 ---
 
@@ -457,6 +507,24 @@ In the rendered Figma table, `#focus-order` shows "1" or "2" and `#announcement`
 | All platforms | 2 | Trailing icon button | (unchanged) | Same as default state |
 
 **Note: Simple text field (no trailing icon).** If the text field has no interactive trailing element, the merge analysis yields 1 focus stop (the input — label and hint merge into it). In that case, omit `focusOrder` entirely. The platform sections would each have a single table for "Input field" with label/hint documented as properties.
+
+### Compound Component (Section Heading with Interactive Trailing Slot)
+
+Merge analysis: The heading label merges into the main section-heading body. A trailing action only becomes a focus stop when the trailing slot is populated with an interactive component such as an icon button. Result: document the representative slot-filled scenario, not the empty-slot default.
+
+- **componentName**: "Section heading"
+- **guidelines**: "The section heading body is one focus stop. When the trailing slot is filled with an interactive control, that control becomes a second focus stop and must be rendered in the preview using the same slot-filled scenario used by the tables. If the trailing slot contains static text, it merges into the heading body instead of breaking out as a separate stop."
+- **focusOrder**: 2 stops + `slotInsertions` for the trailing slot
+
+| focusOrderIndex | Name | Announcement | Type | Notes |
+|-----------------|------|-------------|------|-------|
+| 1 | Section heading body | Main interactive heading region | Focusable | Title text merges into the heading body's announcement |
+| 2 | Trailing icon button | Independent trailing action | Focusable | Appears only when the trailing slot is populated with the interactive preferred component |
+
+- **focusOrder.slotInsertions**: `[{ slotName: "trailing", componentNodeId: "<icon-button-component-id>" }]`
+- **states**: "default with action" and "default without action" should not be merged, because the focus stop count changes
+
+In the rendered preview, marker 2 should point to the slot-hosted action that was inserted for the documented scenario. If the preview only shows the heading body, the slot scenario and the tables are out of sync.
 
 ### Grouped Control (Tab Bar)
 

@@ -3,6 +3,30 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V1.7.3 — April 2026" description="Screen reader specs now handle preferred slot fills in focus-order planning and artwork previews">
+  ## uSpec V1.7.3
+
+  This update extends the voice and screen reader workflow so slot-hosted controls can be documented from the right scenario. The skill now distinguishes default slot children from preferred interactive fills, carries that decision into preview rendering, and validates that the rendered artwork matches the documented focus order.
+
+  ### Preferred slot fills for screen reader specs
+
+  - `create-voice` now resolves SLOT `preferredValues` to local components during extraction and records both preferred instances and default slot children
+  - Focus-order planning can choose between the default slot content and a representative preferred interactive fill when a slot-hosted control changes the traversal order
+  - Slot metadata now includes visibility bindings, descriptions, raw keys, and contextual child overrides so the agent can reason about conditional focus stops more accurately
+
+  ### Slot-aware artwork rendering
+
+  - Screen reader previews now support `slotInsertions`, allowing the render step to populate slot content before marker resolution and bbox capture
+  - The focus-order fallback logic reapplies slot insertions while searching for the richest preview state, improving marker placement for slot-hosted actions
+  - States with zero focus stops still render the component preview, while slot-populated states can now show the correct interactive control instead of a default placeholder scenario
+
+  ### Clearer guidance and validation
+
+  - The screen reader instruction file now frames focus order as a single top-level section and removes anatomy-specific language from the task definition
+  - Validation guidance is split into pre-render and post-render checks, including explicit checks for slot-hosted focus stops and slot-populated previews
+  - `implementation.md` now documents the voice skill's preferred-slot extraction and insertion flow alongside the existing SLOT support across other skills
+</Update>
+
 <Update label="V1.7.2 — April 2026" description="Figma slot support refined with ownership-aware structure planning and hosting-context slot sections">
   ## uSpec V1.7.2
 
