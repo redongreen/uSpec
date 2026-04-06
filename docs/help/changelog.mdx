@@ -3,6 +3,32 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V1.7.2 — April 2026" description="Figma slot support refined with ownership-aware structure planning and hosting-context slot sections">
+  ## uSpec V1.7.2
+
+  This update sharpens the structure skill's Figma slot support. Section planning now resolves ownership before rendering, so parent-owned roles stay on the sub-component path while true preferred slot content gets slot-specific documentation. Slot content sections also stay focused on hosting context and placement-specific deltas instead of duplicating another component's full structure spec.
+
+  ### Ownership-aware structure planning
+
+  - Section planning now treats `subComponents`, `slotContents`, `enrichedTree`, and `layoutTree` as discovery inputs instead of final section types
+  - New ownership resolution classifies each candidate onto exactly one path: `subComponent`, `slotContent`, or composition/root-only
+  - Parent-owned structural roles remain sub-components even when they are placed through a slot or slot-like composition
+  - Generic library-owned preferred content stays on the `slotContent` path, and overlapping candidates are deduplicated before any sections are emitted
+
+  ### Clearer slot content boundaries
+
+  - Slot content sections now render only for preferred instances that still classify as `slotContent` after ownership resolution
+  - `slotContext` is the primary source for hosting-container properties such as sizing mode, padding, and alignment
+  - The preferred component's measured `self` values are used only for placement-specific deltas caused by slot context, not as a second full structure spec
+  - Section descriptions now explicitly defer component internals to the referenced component spec
+
+  ### Stronger validation and authoring guidance
+
+  - Validation checks now confirm that every instance still classified as a sub-component is covered after ownership resolution
+  - Slot-related validation also checks that each surfaced instance is documented on exactly one section path
+  - Structure guidance adds clearer examples for container-only rows in slot sections and for single-path ownership decisions
+</Update>
+
 <Update label="V1.7.1 — April 2026" description="Slot-aware previews, sub-component token ownership, composition Pattern B, and slot mutation safety">
   ## uSpec V1.7.1
 

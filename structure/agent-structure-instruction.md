@@ -219,6 +219,24 @@ For sub-components like `leadingContent` that can contain buttons, switches, ico
 **Boundary rule (universal):** Whenever you write "See X spec" in a section description, you are deferring X's internals to its own spec. From that point, document only the **hosting container** — the slot or frame that holds X (its sizing mode, padding, spacing, alignment, clipsContent). Do NOT document X's own internal properties (padding, cornerRadius, borderWidth, iconSize, etc.) in that section. This rule applies to all section types: sub-component sections, slot content sections, and any custom section for a default slot child or nested component.
 4. **Sub-component section previews show the sub-component directly** — not the parent. When a section documents a sub-component (e.g., Label), its preview creates instances from the sub-component's own component set. This shows four Label instances at different sizes, not four full Text Field instances. The sub-component's component set ID (`subCompSetId`) and boolean overrides (`booleanOverrides`) are pre-resolved by the extraction in the `subComponents` array — no separate exploration step needed.
 
+### Ownership Decision Rule
+
+Use this rule during section planning, before row generation:
+
+- If an instance is a **parent-owned structural role** in the component architecture, give it its own `subComponent` section even if it is placed via a slot or slot-like composition.
+- If an instance is **library-owned** or generic **preferred slot content**, keep it on the `slotContent` path: document only hosting context and slot-imposed deltas, then reference the nested component's own spec.
+- Treat **file-locality** as a supporting signal, not the primary rule. Ownership and engineering responsibility win over whether the instance happens to be defined in the same file.
+
+**Conflict precedence:**
+- **Owned structural role** wins over slot placement.
+- **Preferred/library slot content** wins over reusable-but-incidental file locality.
+- If ownership is ambiguous, default to hosting-context-only documentation rather than duplicating a second full structure spec.
+
+**Mixed-case tie-breaker:** If an instance appears both as slot-related content and as a structurally important part of the parent's anatomy, choose the section path once during planning:
+- If engineering would implement it as part of this component's owned structure, keep it on the `subComponent` path.
+- If engineering would treat it as reusable consumer content placed into the slot, keep it on the `slotContent` path.
+- Never document the same instance as both `subComponent` and `slotContent` in the same spec.
+
 ### Sub-Component Discovery
 
 The extraction handles sub-component discovery automatically. The `subComponents` array in the extraction output contains full data for each discovered sub-component:
@@ -372,7 +390,7 @@ Do **not** use this for states that simply change existing numeric property valu
 
 ## Slot Content Sections
 
-Components with native Figma SLOT nodes can have **preferred instances** — a curated list of components approved for use in each slot (e.g., a ListItem's leading slot accepts Checkbox, Avatar, Icon). When the extraction discovers SLOT properties with `preferredValues`, create a dedicated structure section per preferred component to document its dimensional properties **in the slot context**.
+Components with native Figma SLOT nodes can have **preferred instances** — a curated list of components approved for use in each slot (e.g., a ListItem's leading slot accepts Checkbox, Avatar, Icon). When the extraction discovers SLOT properties with `preferredValues`, create a dedicated structure section per preferred component to document only the **hosting context and slot-imposed dimensional deltas** for that placement. These sections are **not** mini structure specs for the preferred component itself.
 
 ### When to use
 
@@ -382,29 +400,42 @@ Add slot content sections when:
 
 Do **not** create slot content sections for slots without `preferredValues` — those are unconstrained and don't have specific dimensional guidance to document.
 
+If a preferred slot instance is actually a **parent-owned structural role** for this component, classify it as a `subComponent` instead of a `slotContent` section and document it fully on the sub-component path.
+
 ### How to structure
 
-Each slot content section follows the same table format as a sub-component section:
+Each slot content section uses the same **section shell** as other spec sections (title, description, columns, preview), but the **row ownership rule is stricter** than a sub-component section:
 - **Section name:** `"{slotName} — {componentName}"` (e.g., "Leading content — Checkbox")
 - **Section description:** `"Dimensional properties when {componentName} is placed in the {slotName} slot."` Add cross-references: "See Checkbox spec for component internals."
 - **Columns:** Match the parent's size axis (e.g., Spec | Large | Medium | Small | Notes)
 - **Preview:** Instances of the preferred component at each parent size, sourced from the preferred component's own component set
 - **Data source:** `slotContentDimensions.{slotName}.{componentName}` — contains `self` (the preferred component's measurements after auto-layout reflow) and `slotContext` (the SLOT node's measurements after content insertion)
 
+**Allowed row types in a slot content section:**
+- **Container / hosting rows** when the preferred component's placement introduces a meaningful hosting context to document (e.g., slot padding, contextual widthMode/heightMode, min/max constraints, alignment overrides)
+- **Placement deltas** from `self` only when the preferred component's measured values differ from its standalone defaults **because of the slot**
+- **Reference rows** like `"Text button instance"` or `"Checkbox instance"` with notes such as `"See Button spec for component internals"`
+
+**Disallowed row types in a slot content section:**
+- The preferred component's own internal structure rows (padding, cornerRadius, borderWidth, iconSize, label typography, internal spacing, etc.)
+- Full `self` dumps that mirror the preferred component's standalone structure spec
+- Repeating constant slot container rows that already belong in the composition section
+
 ### What dimensions to document
 
-The `self` measurements capture the preferred component's contextual dimensions — these may differ from its standalone defaults due to auto-layout constraints from the parent:
+The `self` measurements capture the preferred component's contextual dimensions — use them only as a **diff source** against the preferred component's own spec. They are relevant only when the slot changes the preferred component's standalone defaults, for example:
 - **Padding overrides** — optical alignment padding applied when the component sits inside the slot
 - **Constrained sizes** — min/max dimensions imposed by the slot or parent auto-layout
-- **Alignment** — vertical/horizontal alignment of the content within the slot
+- **Alignment overrides** — placement-specific alignment caused by the slot context
 
 The `slotContext` measurements capture the SLOT node itself:
-- **Slot padding** — inner padding of the slot container
-- **Slot dimensions** — min/max width/height of the slot
+- **Slot padding** — inner padding of the hosting container
+- **Slot dimensions** — min/max width/height of the hosting container
+- **Contextual sizing/alignment** — hosting widthMode, heightMode, and alignment when these are relevant to the preferred component's placement
 
-**Slot container property ownership:** The slot container's own structural properties (sizing mode, alignment, clipsContent) are constant regardless of what content is placed inside. These belong as **group rows in the composition section** — not repeated in each slotContent section. SlotContent sections document only what is **unique to a specific preferred component** being placed in the slot: dimensional differences from the component's standalone defaults caused by slot context constraints (e.g., auto-layout reflow, constrained sizes, alignment overrides).
+**Slot container property ownership:** The slot container's own structural properties (sizing mode, alignment, clipsContent) are usually constant regardless of what content is placed inside. These belong as **group rows in the composition section**. In a `slotContent` section, only repeat hosting-container properties when they are needed to explain the preferred component's placement in that specific context (for example, contextual padding or a constraint that applies to this preferred component and not the slot generally).
 
-**Boundary rule for preferred components:** When a slot content section references another component's spec ("See X spec for component internals"), document only what is **unique to this preferred component's placement** — dimensional differences from the component's standalone defaults caused by the slot's auto-layout constraints (e.g., reflow causing different width/height, alignment overrides). Slot container properties (sizing mode, alignment, clipsContent) belong in the composition section, not here. Do NOT document the preferred component's own internal properties from `self` (padding, cornerRadius, minWidth, iconSize) — those belong to the component's own spec. Only document `self` measurements when they **differ from the component's standalone defaults** due to slot context constraints.
+**Boundary rule for preferred components:** When a slot content section references another component's spec ("See X spec for component internals"), document only what is **unique to this preferred component's placement** — the hosting container and any dimensional differences from the component's standalone defaults caused by the slot's auto-layout constraints (e.g., reflow causing different width/height, padding overrides, alignment overrides). Do NOT document the preferred component's own internal properties from `self` (padding, cornerRadius, minWidth, iconSize, label typography, internal spacing) — those belong to the component's own spec. If the preferred component's measured `self` values match its standalone defaults, omit them and use a reference row instead.
 
 ### Design-intent notes
 
@@ -413,24 +444,45 @@ Notes for slot content sections should explain the contextual relationship:
 | Instead of this | Write this |
 |---|---|
 | "Checkbox size" | "Compact density variant — optically aligned with primary text baseline" |
-| "Padding" | "4px inner padding for optical centering within 40px slot height" |
-| "Width" | "Fixed 24px to match leading icon grid across all slot content types" |
+| "Padding" | "Inner padding for optical centering within the slot height" |
+| "Width" | "Fixed width matches the leading icon grid across all slot content types" |
 
-### Example
+### Wrong vs right example
 
-**Leading content — Checkbox**
+**Classification example**
 
-- Section name: "Leading content — Checkbox"
-- Description: "Dimensional properties when Checkbox is placed in the leading content slot. See Checkbox spec for component internals."
-- Preview: Checkbox instances at each parent size (Large, Medium, Small)
-- Columns: Spec | Large | Medium | Small | Notes
+- `Section heading -> trailing Button from library` -> `slotContent` section with hosting-context rows only, then reference the Button spec
+- `Text field -> Label / Input / Hint text` -> `subComponent` sections, even if the parent uses slot-like composition to place them
+- `Section heading -> trailingStatusChip` that exists specifically for this component -> `subComponent` section, because the parent owns that structural role
 
-| Spec | Large | Medium | Small | Notes |
-|---|---|---|---|---|
-| Checkbox | – | – | – | Preferred slot content |
-| ├─ width | 32 | 32 | 24 | Fixed width matches slot grid |
-| ├─ height | 32 | 32 | 24 | 1:1 aspect ratio maintained |
-| └─ verticalAlignment | center | center | center | Centered in slot height |
+**Wrong — Trailing content — Text button**
+
+- Section name: "Trailing content — Text button"
+- Description: "Dimensional properties when Text button is placed in the trailing content slot. See Button spec for component internals."
+
+| Spec | Default | Notes |
+|---|---|---|
+| Text button | – | CTA-style trailing pattern for the slot |
+| ├─ widthMode | hug | Duplicates button structure |
+| └─ fixedHeight | 30 | Duplicates button structure |
+
+This is wrong because it restates the nested button's own structure instead of the hosting context.
+
+**Right — Trailing content — Text button**
+
+- Section name: "Trailing content — Text button"
+- Description: "Dimensional properties when Text button is placed in the trailing content slot. See Button spec for component internals."
+- Preview: Text button instances at each parent size
+- Columns: Spec | Default | Notes
+
+| Spec | Default | Notes |
+|---|---|---|
+| Container | – | Container hosting the text button |
+| ├─ paddingStart | 12 | Optical inset applied by the slot context |
+| ├─ paddingEnd | 12 | Mirrors the leading inset for centered placement |
+| ├─ widthMode | hug | Adapts to button label length inside the slot |
+| └─ heightMode | hug | Container height follows the hosted instance |
+| Text button instance | – | See Button component API |
 
 ### Grouping and ordering
 
@@ -640,6 +692,8 @@ Both the extraction and cross-variant data provide pre-formatted `display` strin
 - **Adding platform units:** Using "dp", "px", or "pt" — just use plain numbers
 - **Over-documenting:** Including every property instead of the meaningful dimensional ones
 - **Under-referencing:** Documenting nested component internals instead of saying "See X spec"
+- **Letting extraction arrays decide section types by themselves:** `subComponents`, `slotContents`, and `enrichedTree` are discovery sources, not final section types. Resolve ownership first, then emit the section.
+- **Documenting the same instance twice:** If an item appears both as a structural sub-component and as slot-related content, classify it once and emit either a `subComponent` section or a `slotContent` section — never both.
 - **Empty or missing preview:** Not populating the `#Preview` frame with labeled variant instances for the section
 - **Identical previews across sections:** Every section's preview must show instances relevant to that section's axis — a "Size" section should show different sizes, a "Shape" section should show different shapes, a sub-component section should show the sub-component visible at each size. Never use the same default variant for all previews.
 - **Ignoring `display` strings:** Manually formatting `"token-name (value)"` instead of using the `display` field from extraction data. The extraction already provides correctly formatted display strings.
@@ -647,7 +701,7 @@ Both the extraction and cross-variant data provide pre-formatted `display` strin
 - **Physical directions instead of logical:** Using `paddingLeft`/`paddingRight` in table rows instead of `paddingStart`/`paddingEnd`. The extraction normalizes to logical directions — use them.
 - **Missing variable modes:** Finding a token binding but not checking if it has multiple mode values (e.g., Density modes). Always use `figma_get_variables` to check if tokens vary by mode.
 - **Missing typography composite:** Not using the `typography` composite from extraction. If `styleName` exists, emit one `textStyle` row. If inline properties exist, emit individual rows. Never both.
-- **Generic notes:** Writing "Tap target" instead of "Meets WCAG 2.5.8 minimum touch target (44px) with 12px optical margin". Notes should explain design intent ("why this value?"), not just describe the property.
+- **Generic notes:** Writing "Tap target" instead of "Meets WCAG 2.5.8 minimum touch target with optical margin". Notes should explain design intent ("why this value?"), not just describe the property.
 - **No cross-section patterns:** Building each section independently without synthesizing patterns across sections. The AI interpretation layer should identify shared token families, symmetrical slot designs, and scaling strategies.
 - **Ignoring anomalies:** Not flagging scaling inconsistencies, token misconfiguration, or asymmetric padding. The extraction data makes these visible — call them out in notes.
 - **Incomplete sections:** Not verifying that every auto-layout container and sub-component from the extraction has its own section or is covered by a parent section.
@@ -670,7 +724,8 @@ Both the extraction and cross-variant data provide pre-formatted `display` strin
 | Figma variant axis "Density" | Do values differ only numerically? | Single section with Compact/Default/Spacious columns |
 | Figma variant axis "Size" | Same properties across all sizes? | Single section with Large/Medium/Small/XSmall columns |
 | Shape variants (Rectangular/Rounded) | Only corner radius differs? | Section with shape columns, OR separate section if complex |
-| Leading/trailing content slots | Are there slot-specific spacing rules? | Sub-component section for each slot |
+| Leading/trailing content slots | Are there slot-specific spacing rules or preferred slot content? | Slot content section per preferred instance, documenting only hosting context and slot-imposed deltas |
+| Slot contains a parent-owned role instance | Is it structurally owned by this component, even if placed through a slot? | Treat it as a sub-component first; slot placement is secondary |
 | Variable bound to spacing value | What's the token name? Does it have multiple modes? | Use `figma_get_variables` to check `valuesByMode`; if multi-mode, add columns for each mode |
 | Hardcoded pixel value | No variable binding? | Format as plain number `"N"` without units |
 | Container with multiple children | Do children have their own spacing? | Use `isSubProperty: true` for child properties |
@@ -697,7 +752,7 @@ Both the extraction and cross-variant data provide pre-formatted `display` strin
 
 | Situation | Action |
 |-----------|--------|
-| Variant has no spacing differences | Skip that variant axis; only document meaningful differences |
+| Variant has no spacing differences | Keep the axis as columns when it communicates intentional consistency; only skip if the axis is structurally irrelevant and would not help an engineer understand the component |
 | Value is "auto" or "fill" | Document as `"auto"` or `"fill"` — these are valid dimensional values |
 | Spacing controlled by variable mode | Use mode names as columns (Compact/Default/Spacious); note in `generalNotes`: "Density controlled by variable mode" |
 | Same value across all variants, or no dimension-affecting axes | Still document in columns — shows intentional consistency. Use the component's primary functional axis as columns if no size/density/shape axes exist (e.g., checked/unchecked, expanded/collapsed). Never collapse to a single "Default" column. |
@@ -742,11 +797,12 @@ Both the extraction and cross-variant data provide pre-formatted `display` strin
 
 General notes: "Density controlled by variable mode. All slot dimensions adapt accordingly."
 
-### List item container section
+### List item composition section
 
-- Section name: "List item container"
+- Section name: "List item composition"
 - Preview: One List item instance per density column (Compact, Default, Spacious) showing row height and padding
 - Columns: Spec | Compact | Default | Spacious | Notes
+- This is the structural overview section for the component. Do not create a second standalone container section in addition to it.
 
 | Spec | Compact | Default | Spacious | Notes |
 |---|---|---|---|---|
@@ -822,7 +878,7 @@ Before rendering into Figma, verify:
 | ☐ **Variable modes checked** | Used `figma_get_variables` to check if any bound tokens have multiple mode values (Density, Theme, etc.) |
 | ☐ **Sub-components discovered** | The `subComponents` array from extraction includes all INSTANCE children found in the enriched tree (with all parent booleans enabled). Each has `subCompSetId`, `subCompVariantAxes`, and `booleanOverrides` pre-resolved. |
 | ☐ **Cross-variant data complete** | The cross-variant comparison measured all sub-components across all size values. `subComponentDimensions` has entries for every sub-component at every size. |
-| ☐ **Section plan validated** | The AI interpretation layer built, validated, and adjusted the section plan. Every auto-layout container and sub-component is covered. |
+| ☐ **Section plan validated** | The AI interpretation layer built, validated, and adjusted the section plan. Every auto-layout container and every instance that remains classified as a `subComponent` after ownership resolution is covered. |
 | ☐ **Design-intent notes** | Notes answer "why this value?" not just "what is this property?". Scaling patterns, WCAG compliance, optical corrections are explained. |
 | ☐ **Anomalies flagged** | Scaling inconsistencies, token misconfiguration, asymmetric padding, missing token bindings are noted in relevant rows or `generalNotes`. |
 | ☐ **Completeness judged** | All dimensional properties from extraction are covered. Gaps are noted in `generalNotes`. |
@@ -844,7 +900,8 @@ Before rendering into Figma, verify:
 | ☐ **Composition section** | If component has 2+ structural zones (sub-components with size variants, or a mix of slots and content areas), a composition section comes first. It serves as the structural overview and documents host container properties — no separate "container" section. |
 | ☐ **Behavior variant previews** | Default configuration only for the preview; border/stroke differences documented as table rows |
 | ☐ **State-conditional sections** | States that introduce new properties or change border/stroke have their own section (detected by `stateComparison` from the cross-variant data) |
-| ☐ **Slot content sections** | Every preferred component in `slotContents` with `slotContentDimensions` data has its own `slotContent` section. Sections are grouped by slot (leading → trailing) and placed after sub-component sections, before state-conditional sections. |
+| ☐ **Slot content sections** | Every preferred component in `slotContents` with `slotContentDimensions` data that remains classified as `slotContent` after ownership resolution has its own `slotContent` section. Sections are grouped by slot (leading → trailing) and placed after sub-component sections, before state-conditional sections. |
+| ☐ **Single-path ownership** | If an instance surfaced through multiple discovery paths, it was classified once and documented on exactly one section path (`subComponent`, `slotContent`, or composition/root-only). |
 | ☐ **Cross-section patterns** | `generalNotes` includes system-wide patterns (shared token families, symmetrical slot designs, density scaling strategies) |
 | ☐ **Component references documented** | INSTANCE children have an `iconName` row (using `parentSetName`) before the `iconSize` row. Absent children use `"–"`. |
 
