@@ -3,6 +3,40 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V1.7.4 — April 2026" description="Evidence-based API reasoning with ownership hints, override promotion, and compound component guidance">
+  ## uSpec V1.7.4
+
+  The API skill now separates deterministic evidence from AI reasoning with a structured evidence model, ownership hints, and an explicit override promotion pass. The instruction file adds compound component ownership rules, nested property grouping heuristics, and a worked Text Field example demonstrating state decomposition and child override promotion.
+
+  ### Evidence-based API reasoning
+
+  - New `ownershipHints` array in the extraction script collects deterministic ownership cues from root properties, child overrides, text nodes, and variable collections — each hint includes `evidenceType`, `suggestedExposure`, and a `rationale`
+  - New Step 4c requires assembling a structured `ComponentEvidence` object before reasoning about the API — keeping raw facts separate from semantic interpretation
+  - `relevantVariableCollections` are now extracted inline during property extraction, with component-name and generic-property matching to discover mode-controlled capabilities like density and shape
+  - The instruction file introduces a `ComponentEvidence` TypeScript interface as the required intermediate model between extraction and API generation
+
+  ### Override promotion pass
+
+  - Step 5 now includes a mandatory override promotion pass: every `composableChildren` override key is classified as parent-owned, child-only, or shared
+  - Master boolean + sub-boolean combinations are merged into single enums (e.g., `leadingContent: none, icon, text, iconAndText`) instead of being exposed as separate boolean properties
+  - New validation checklist items verify that parent-owned properties are not buried in sub-component tables and that broad state axes are decomposed
+
+  ### Compound component guidance
+
+  - New "Critical Rules" quick-reference section at the top of the instruction file highlights the five most commonly violated rules
+  - New ownership rules table for compound components with tie-breaker heuristics (parent vs child vs both)
+  - New "Choosing Top-Level vs Nested Rows" section with heuristics for `isSubProperty` usage
+  - New "Do NOT" section replaces the former "Common Property Categories" with explicit anti-patterns
+  - New worked example: Text Field with state axis decomposition, promoted child overrides, and sub-component tables
+
+  ### API library updates
+
+  - Added compound component ownership guidance with decision table and examples
+  - Added nested property grouping patterns (`trailingContentType` → nested `label`, `variant`)
+  - Added `showCharacterCount` to the Text field canonical API
+  - Added `validationState` enum guidance for components with multiple validation-like states
+</Update>
+
 <Update label="V1.7.3 — April 2026" description="Screen reader specs now handle preferred slot fills in focus-order planning and artwork previews">
   ## uSpec V1.7.3
 

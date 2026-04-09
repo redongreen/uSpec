@@ -88,6 +88,33 @@ Do NOT mirror this as `hasLeadingArtwork: boolean` + a separate type property. I
 - Boolean `false` → `none`
 - Boolean `true` → the selected type value
 
+### Compound Component Ownership
+
+When a component is made of fixed children or nested slot content, decide ownership based on the public API contract rather than the raw Figma tree.
+
+| Situation | Document on parent API | Document in sub-component table |
+|----------|-------------------------|---------------------------------|
+| Property changes the component's external contract or common usage | Yes | Optional if child mechanics need explanation |
+| Property only describes child implementation details | No | Yes |
+| Parent exposes a child capability and engineers need both views | Yes | Yes |
+| Property is only a contextual default inside the child | No | Yes |
+
+Examples:
+- Text field: `showCharacterCount`, `maxLength`, `isInvalid`, and `errorMessage` belong on the parent API even if the visuals live in `Label`, `Input`, or `Hint text`
+- Button: `leadingContentType` belongs on the parent API; icon/avatar/button configuration belongs in sub-component tables
+- List item: slot type selection belongs on the parent API; the selected slot content's configuration belongs in the sub-component table
+
+### Nested Property Grouping
+
+Use nested rows (`isSubProperty`) when several rows describe one higher-level capability and the template benefits from grouping them visually.
+
+Examples:
+- `trailingContentType` -> nested `label`, `variant`
+- `validation` -> nested `isInvalid`, `errorMessage`
+- `characterCount` -> nested `showCharacterCount`, `maxLength`
+
+If a property stands alone in code or in everyday engineering usage, keep it as a top-level row instead of forcing nesting.
+
 ---
 
 ## Button
@@ -126,6 +153,7 @@ ARIA: `textbox` (native `<input>`)
 | `isInvalid` (validationState) | boolean | `true, false` | `false` |
 | `errorMessage` | string / slot | | |
 | `description` (helperText, hintText) | string / slot | | |
+| `showCharacterCount` | boolean | `true, false` | `false` |
 | `onChange` | function | | |
 | `inputType` (type) | enum | `text, password, email, number, tel, url, search` | `text` |
 | `maxLength` | number | | |
@@ -134,6 +162,10 @@ ARIA: `textbox` (native `<input>`)
 | `autoFocus` | boolean | `true, false` | `false` |
 
 Sub-components (fixed): Label, Input, Hint/Helper text.
+
+Field-level properties such as `isInvalid`, `errorMessage`, `description`, `showCharacterCount`, and `maxLength` belong on the main API even when the visual rendering is delegated to fixed child components.
+
+When the Figma design distinguishes multiple validation-like states (error, success, incomplete, complete), use a `validationState` enum rather than a boolean `isInvalid`.
 
 ---
 

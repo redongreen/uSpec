@@ -10,6 +10,18 @@ Analyze a UI component from Figma. Output JSON documenting all configurable prop
 
 ---
 
+## Critical Rules (Quick Reference)
+
+These are the rules most often violated. Check them before and after generating output.
+
+1. **Promote child properties that affect the parent contract.** If a composable child's toggle changes what the parent component looks like to an engineer, it belongs on the parent API — not buried in a sub-component table. Walk every `composableChildren` override and decide: parent, child, or both.
+2. **Merge booleans into enums.** Never expose a boolean + type pair or a master boolean + sub-booleans as separate properties. Merge into a single enum with `none` as the off-state.
+3. **Decompose broad State axes.** Split transient states (drop them) from persistent states (extract as booleans or an enum). Never copy a mixed State axis verbatim.
+4. **Always check variable collections** for mode-controlled properties (density, shape). These are invisible in variant names and instance panels.
+5. **Use engineer-friendly names.** Do not copy Figma names verbatim. Remove version numbers (e.g., "2.0"), convert to camelCase, remove redundant component prefixes.
+
+---
+
 ## Inputs
 
 ### Figma Link
@@ -42,6 +54,53 @@ Gather component data using the MCP tools specified in the SKILL.md workflow (St
 
 If you only look at variant names, you'll miss the instance properties. If you skip variable inspection, you'll miss mode-controlled properties like shape or density.
 
+### Deterministic Inputs vs AI Reasoning
+
+Treat the workflow as two layers:
+
+- **Deterministic inputs** from the skill workflow:
+  - raw variant axes and values,
+  - raw boolean, slot, instance-swap, and child-instance properties,
+  - variable collections and modes,
+  - text node names and default strings,
+  - contextual overrides on nested components,
+  - ownership hints gathered from root definitions, child overrides, text nodes, and variable collections.
+- **AI reasoning** in this instruction file:
+  - translate raw Figma structures into an engineer-friendly API,
+  - decide parent vs child ownership,
+  - decompose broad state axes,
+  - decide when to use top-level properties, nested properties, or sub-component tables,
+  - normalize names against `api-library.md`.
+
+Use deterministic evidence for facts. Use AI reasoning for interpretation. Do not infer facts that can be gathered directly from Figma, and do not copy raw Figma structures through verbatim when the API should be more semantic.
+
+### Required Intermediate Model
+
+Before generating `ApiOverviewData`, normalize the deterministic inputs into a working `ComponentEvidence` object:
+
+```typescript
+interface ComponentEvidence {
+  componentName: string;
+  variantAxes: Array<{ name: string; options: string[]; defaultValue?: string }>;
+  booleanProps: Array<{ name: string; defaultValue?: boolean | string; associatedLayer?: string | null; rawKey?: string }>;
+  instanceSwapProps: Array<{ name: string; defaultValue?: string; rawKey?: string }>;
+  slotProps: Array<{ name: string; description?: string; preferredInstances?: unknown[]; defaultChildren?: unknown[] }>;
+  composableChildren: Array<{ componentName: string; contextualOverrides: Record<string, string | boolean>; parentLayer?: string }>;
+  relevantVariableCollections: Array<{ name: string; modes: string[] }>;
+  textNodeMap: Array<{ name: string; characters: string; parentName?: string | null }>;
+  ownershipHints: Array<{
+    propertyName: string;
+    evidenceType: 'rootVariant' | 'rootBoolean' | 'rootInstanceSwap' | 'rootSlot' | 'childOverride' | 'textNode' | 'variableMode';
+    sourceNodeName: string;
+    sourceLayerName?: string | null;
+    suggestedExposure: 'parent' | 'child' | 'child_or_parent' | 'shared';
+    rationale: string;
+  }>;
+}
+```
+
+Reason over this object, not over scattered raw fragments. If a required field is missing, gather more evidence before finalizing the API.
+
 ### Step 2: Identify Properties
 Ask these diagnostic questions:
 
@@ -57,6 +116,12 @@ Ask these diagnostic questions:
    - Use a single enum property with `none` as the first option (e.g., `leadingContentType: none, icon, avatar...`)
    - Avoid separate boolean + enum pattern (e.g., don't use `hasLeadingContent` + `leadingContentType`)
    - **Figma boolean + sub-component variant trap:** Figma often models content slots as a boolean visibility toggle (e.g., `Leading artwork: true/false`) on a sub-component that has its own `Type` variant (e.g., `Icon, Vector, Custom`). Do NOT mirror this as `hasLeadingArtwork: true/false` + a separate type. Instead, merge the boolean off-state into the enum as `none` (e.g., `leadingArtwork: none, icon, vector, custom`). The boolean `false` = `none`; the boolean `true` = whichever type variant is selected.
+   - **Figma master boolean + sub-boolean trap:** Figma sometimes models a content area as a master visibility boolean (e.g., `Leading content: true/false`) with independent sub-booleans inside (e.g., `Leading artwork: true/false`, `Leading text: true/false`). Do NOT expose these as three separate booleans. Instead, merge the master boolean off-state as `none` and the sub-boolean combinations as enum values:
+     - Master `false` → `none`
+     - Master `true`, artwork `true`, text `false` → `icon`
+     - Master `true`, artwork `false`, text `true` → `text`
+     - Master `true`, artwork `true`, text `true` → `iconAndText`
+     - Result: `leadingContent: none, icon, text, iconAndText`
    
 3. **What boolean toggles exist for simple show/hide?**
    → Use booleans only for simple on/off modifiers, not for content slots:
@@ -65,9 +130,17 @@ Ask these diagnostic questions:
 
 4. **Are there variable collections with modes that control this component?**
    → Look for collections named after the component or property (e.g., "Button shape", "Button density")
-   - Common mode-controlled properties: `shape` (rectangular/rounded), `density` (default/compact/spacious)
    - These affect styling but are set at container level, not per-instance
    - Note: Light/Dark theme is handled by semantic tokens automatically; do not document as a property
+
+   Common variable mode properties:
+
+   | Property | Collection Name Pattern | Typical Modes | What It Controls |
+   |----------|------------------------|---------------|------------------|
+   | `shape` | "[Component] shape" | Rectangular, Rounded | Corner radius (sharp vs pill) |
+   | `density` | "[Component] density" or "Density" | Default, Compact, Spacious | Vertical padding, min-height |
+
+   How to document: include the property in `mainTable` with values from mode names, add a note `"Controlled via '[Collection name]' variable mode"`, and use `generalNotes` to explain that engineers set this at the container level, not per-component. See the Button example later in this file for a complete demonstration.
 
 5. **Which properties are required vs optional?**
    → Properties with defaults are optional; properties always present are required
@@ -88,6 +161,19 @@ Ask these diagnostic questions:
 
 10. **What are common configuration patterns?**
    → Create 1-4 examples showing typical use cases
+
+11. **Who owns each property?**
+   → Decide whether the property belongs on the parent API, a sub-component table, or both:
+   - If the property changes the component's external contract, behavior, or common usage, document it on the **parent API**
+   - If the property describes how an always-present child is configured internally, document it in the **sub-component table**
+   - If the parent exposes a child capability and engineers need both views, document the parent-level contract in the main table and the child-specific mechanics in the sub-component table
+   - Use `ownershipHints` as deterministic clues, but do not treat them as final truth. They are evidence for reasoning, not a substitute for judgment.
+
+12. **Should this capability be grouped as nested properties?**
+   → Use `isSubProperty` when several properties belong to one parent capability:
+   - Parent row expresses the top-level capability (e.g., `trailingContentType`, `validation`, `characterCount`)
+   - Child rows express the dependent details (e.g., `label`, `variant`, `errorMessage`, `maxLength`)
+   - If the relationship is weak or the properties stand alone in code, keep them as separate top-level rows
 
 **Quick reference for property value formatting:**
 - Boolean property → values: `"true, false"`
@@ -120,6 +206,27 @@ There are **two patterns** for sub-component tables. Check for both:
 - The description should note the relationship (e.g., "Always-present child. See Label spec for full component details.")
 
 **Key insight:** Sub-component tables document the configuration properties of nested components, whether they're interchangeable slot options (pattern A) or fixed parts of the composition (pattern B). The type selection for slots belongs in the main table.
+
+### Ownership Rules For Compound Components
+
+Use these rules when the component is composed of nested children:
+
+| Situation | Put it on parent API? | Put it in sub-component table? |
+|-----------|------------------------|--------------------------------|
+| Property changes the component's external contract or common usage | Yes | Optional, if child mechanics need explanation |
+| Property only describes internal child configuration | No | Yes |
+| Parent exposes a child capability with user-facing impact | Yes | Yes |
+| Property is purely contextual defaulting inside the child | No | Yes |
+
+Examples:
+- Text field: `isInvalid`, `errorMessage`, `maxLength`, and `showCharacterCount` belong on the **parent API** even if the visual treatment is rendered by Label, Input, or Hint text children.
+- Button: `leadingContentType` belongs on the **parent API**; the icon/avatar/button configuration belongs in the **sub-component table**.
+- List item: slot type selection belongs on the **parent API**; the chosen slot content's detailed configuration belongs in the **sub-component table**.
+
+When deterministic evidence is mixed, use this tie-breaker:
+- prefer **parent** when the property affects the public contract, validation rules, content expectations, or common consumer usage,
+- prefer **child** when the property only describes local implementation of a nested component,
+- use **both** when engineers need a parent-facing contract and a child-specific drill-down.
 
 ---
 
@@ -267,6 +374,21 @@ Use `isSubProperty: true` when a property is a child of another property. This c
 { "property": "label", "values": "string", "required": true, "default": "–", "notes": "Button label text", "isSubProperty": true },
 { "property": "variant", "values": "primary, secondary, tertiary", "required": false, "default": "tertiary", "notes": "Button style variant", "isSubProperty": true }
 ```
+
+### Choosing Top-Level vs Nested Rows
+
+Use these heuristics consistently:
+
+- Use a **top-level row** when the property stands alone in code or is commonly discussed independently by engineers.
+- Use a **nested row** when the property only makes sense in the context of a parent capability.
+- Use a **sub-component table** when the property belongs to a nested component with its own meaningful API surface.
+
+Examples:
+- `trailingContentType` + nested `label` / `variant` rows
+- `validation` + nested `isInvalid` / `errorMessage` rows when the template needs a grouped view
+- `characterCount` + nested `showCharacterCount` / `maxLength` rows when the component exposes both the feature and its limit
+
+The template supports only a single visual indentation level. If the real API has deeper structure, choose the most useful one-level grouping and explain the rest in `notes`.
 
 ---
 
@@ -419,61 +541,6 @@ Select examples that show:
 
 ---
 
-## Variable Mode Properties
-
-Some component properties are controlled via **Figma variable modes** rather than traditional variant properties or boolean toggles. These affect the component's appearance but are set at the container/frame level, not per-instance.
-
-### How to Detect
-
-1. Check the file's variable collections
-2. Look for collections named after the component: `[Component] shape`, `[Component] density`, etc.
-3. Check the modes—these become the property values (e.g., `Rectangular`, `Rounded`)
-
-### Common Variable Mode Properties
-
-| Property | Collection Name Pattern | Typical Modes | What It Controls |
-|----------|------------------------|---------------|------------------|
-| `shape` | "[Component] shape" | Rectangular, Rounded | Corner radius (sharp vs pill) |
-| `density` | "[Component] density" or "Density" | Default, Compact, Spacious | Vertical padding, min-height |
-
-Note: Light/Dark theme does not need to be documented as a property. Semantic tokens handle theme switching automatically.
-
-### How to Document
-
-1. **Include the property in mainTable** with values from mode names
-2. **Add a note** indicating it's controlled via variable mode: `"Controlled via '[Collection name]' variable mode"`
-3. **Use generalNotes** to explain implementation: engineers set this at the container level, not per-component
-
-### Example: Variable Mode Property
-
-Variable collection found:
-```
-"Button shape" collection with modes: ["Rectangular", "Rounded"]
-```
-
-Document as:
-```json
-{
-  "generalNotes": "Shape is controlled via the 'Button shape' variable collection mode, not a component property. Set at the container/frame level.",
-  "mainTable": {
-    "properties": [
-      { "property": "shape", "values": "rectangular, rounded", "required": false, "default": "rectangular", "notes": "Controlled via 'Button shape' variable mode, not per-instance" }
-    ]
-  }
-}
-```
-
-### Why This Matters
-
-Variable mode properties are easy to miss because:
-- They don't appear in variant names
-- They don't appear in instance property panels
-- They only show up when inspecting the file's variable collections
-
-Always check variable collections to catch these properties.
-
----
-
 ## Pre-Output Validation Checklist
 
 Before returning the JSON, verify:
@@ -487,10 +554,15 @@ Before returning the JSON, verify:
 | ☐ **Sub-component ordering** | Fixed sub-components first (visual/DOM order), then slot content types (leading → middle → trailing) |
 | ☐ **Property naming** | All properties use camelCase, engineer-friendly names; original Figma names noted if translation is non-obvious |
 | ☐ **Library cross-check** | Checked `api-library.md` for canonical names on common properties (variant, size, isDisabled, label, leadingIcon, etc.); used library name when Figma name was ambiguous |
-| ☐ **No boolean + enum redundancy** | Content slots use single enum with `none` option, not separate boolean + enum. When Figma uses a boolean toggle on a sub-component with variant types, merge into a single enum |
+| ☐ **Deterministic evidence preserved** | Every factual claim in the API can be traced back to deterministic evidence gathered in the workflow |
+| ☐ **Evidence model assembled** | The reasoning pass was based on a structured `ComponentEvidence` object, not on ad hoc raw observations |
+| ☐ **No boolean + enum redundancy** | Content slots use single enum with `none` option, not separate boolean + enum. When Figma uses a boolean toggle on a sub-component with variant types, merge into a single enum. When a master boolean gates sub-booleans, merge into a combinatorial enum (none, icon, text, iconAndText) |
 | ☐ **Required vs optional** | Properties with defaults are `required: false`; properties without defaults are `required: true` |
 | ☐ **Notes field** | Every property has a `notes` value (use `"–"` if self-explanatory) |
 | ☐ **Hierarchy indicators** | Nested properties have `isSubProperty: true` |
+| ☐ **Ownership resolved** | Parent-level properties are not incorrectly buried inside child tables, and child-only mechanics are not incorrectly promoted |
+| ☐ **Child overrides promoted** | Every `composableChildren` override that affects the parent's external contract (e.g., leading/trailing content toggles, character count) is represented in `mainTable`, not only in sub-component tables. Walk each override key and verify. |
+| ☐ **Broad state axes decomposed** | Mixed Figma state axes have been translated into persistent engineer-facing properties rather than copied through raw |
 | ☐ **Configuration examples** | 1-4 examples showing common, variant, and complex configurations |
 | ☐ **variantProperties for previews** | Each example has `variantProperties` mapping Figma property keys to values for instantiating a live component preview |
 | ☐ **childOverrides match example tables** | When `childOverrides` sets per-child properties, the example table includes corresponding `item N propertyName` rows so the table reflects the preview |
@@ -506,15 +578,18 @@ Before returning the JSON, verify:
 
 ---
 
-## Common Property Categories
+## Do NOT
 
-| Category | Examples |
-|----------|----------|
-| Appearance | size, type, variant, shape |
-| State | isSelected, isDisabled, isLoading, isExpanded |
-| Content | label, title, description, icon |
-| Layout | width, alignment, spacing |
-| Data | value, items, data |
+- **Do NOT copy Figma names or axes verbatim** when a more semantic engineer-facing API is clearer.
+- **Do NOT let raw Figma structure decide ownership automatically.** Decide whether the parent, child, or both should document the capability.
+- **Do NOT bury parent-owned properties inside sub-component tables.**
+- **Do NOT promote every child detail to the parent API.** Keep child-only mechanics in the sub-component tables.
+- **Do NOT treat transient interaction visuals as public API.**
+- **Do NOT skip variable collection inspection.**
+- **Do NOT mirror Figma's boolean + sub-component variant as two separate properties.**
+- **Do NOT leave notes empty.** Use `"–"` only when the property is genuinely self-explanatory.
+- **Do NOT guess defaults.** Use `"–"` if the default cannot be supported by evidence.
+- **Do NOT create more than 4 examples.** Prefer representative examples over exhaustive ones.
 
 ---
 
@@ -535,6 +610,9 @@ Before returning the JSON, verify:
 - **Missing variable mode properties:** Not checking variable collections for mode-controlled properties like shape or density; always check for variable collections named after the component
 - **Missing sub-component configuration:** When a slot has multiple content types, each type may have its own properties—document them in separate sub-component tables
 - **Missing fixed sub-components:** When a component is composed of always-present children (e.g., Label + Input + Hint), each child with configurable properties needs its own sub-component table (Pattern B)
+- **Parent-owned properties trapped in child tables:** If a child-level control changes the parent component's external contract (for example `showCharacterCount`, `maxLength`, `validationState`), document it on the parent API even if the child also needs a detailed table
+- **Child-only mechanics promoted to the parent:** Keep purely local child implementation details in the sub-component table unless the parent explicitly exposes them as part of its contract
+- **Raw Figma state axis copied through:** Convert mixed state axes into persistent booleans or enums instead of listing designer states verbatim
 - **Wrong sub-component naming:** Fixed sub-components use the child name ("Label", "Input"), not the slot pattern ("Leading content — Avatar")
 - **Numbered slots listed individually instead of as array:** When Figma uses `tab1`–`tab8` or `item1`–`item5` with the same sub-component type, collapse into a single array property (e.g., `items: TabItem[]`). Don't list each numbered slot as a separate property
 - **Transient states listed as property values:** Hover, pressed, and focused are runtime states handled by the platform — do not include them as values of a `state` property. Only persistent states (disabled, selected, loading) should be documented as booleans (e.g., `isDisabled`)
@@ -739,4 +817,101 @@ This example demonstrates the **slot content type pattern**: using enums with `n
   ]
 }
 ```
+
+---
+
+## Example: Compound Component with Promoted Child Overrides (Text Field)
+
+This example demonstrates promoting child-instance overrides to the parent API and decomposing a broad State axis. The Text Field is composed of three fixed sub-components (Label, Input, Hint text). Key patterns:
+
+- **State axis decomposition:** The Figma `State` axis mixes transient states (Active, Active-typing, Pressed) with persistent ones. Transient states are dropped. Persistent validation states (Error, Success, Incomplete, Complete) become a `validationState` enum. Remaining persistent states become individual booleans (`isDisabled`, `isReadOnly`, `isLoading`).
+- **Child override promotion:** The Input sub-component has `Leading content`, `Leading artwork`, and `Leading text` booleans. These are promoted to the parent API as a `leadingContent` enum (none, icon, text, iconAndText) because they change the component's external contract. The same applies to trailing content.
+- **Character count promotion:** The Label sub-component's `Character count` boolean is promoted to the parent API as `showCharacterCount` because it affects how the parent component is used.
+
+```json
+{
+  "componentName": "Text field",
+  "generalNotes": "Density is controlled via the 'Density' variable collection mode (default, compact, spacious), not a component property. Set at the container/frame level.",
+  "mainTable": {
+    "properties": [
+      { "property": "size", "values": "large, medium, small, xsmall", "required": false, "default": "large", "notes": "–" },
+      { "property": "validationState", "values": "none, error, success, incomplete, complete", "required": false, "default": "none", "notes": "Mapped from Figma 'State' axis. Controls border color, hint text styling, and validation icons." },
+      { "property": "isDisabled", "values": "true, false", "required": false, "default": "false", "notes": "–" },
+      { "property": "isReadOnly", "values": "true, false", "required": false, "default": "false", "notes": "–" },
+      { "property": "isLoading", "values": "true, false", "required": false, "default": "false", "notes": "Shows loading spinner, disables interaction" },
+      { "property": "density", "values": "default, compact, spacious", "required": false, "default": "default", "notes": "Controlled via 'Density' variable mode, not per-instance" },
+      { "property": "label", "values": "string", "required": true, "default": "–", "notes": "Label text above the input" },
+      { "property": "placeholder", "values": "string", "required": false, "default": "–", "notes": "Placeholder text shown when input is empty" },
+      { "property": "hintText", "values": "string", "required": false, "default": "–", "notes": "Helper text below the input; shows error message on error" },
+      { "property": "showCharacterCount", "values": "true, false", "required": false, "default": "false", "notes": "Shows character count (e.g., '0/25') in the label area. Promoted from Label child." },
+      { "property": "maxLength", "values": "number", "required": false, "default": "–", "notes": "Maximum character limit; shown when showCharacterCount is true", "isSubProperty": true },
+      { "property": "leadingContent", "values": "none, icon, text, iconAndText", "required": false, "default": "none", "notes": "Content type in the input's leading slot. Promoted from Input child (master boolean + sub-booleans merged into enum)." },
+      { "property": "leadingIcon", "values": "IconName", "required": false, "default": "–", "notes": "Icon from iconography library", "isSubProperty": true },
+      { "property": "leadingText", "values": "string", "required": false, "default": "–", "notes": "Prefix text (e.g., '$')", "isSubProperty": true },
+      { "property": "trailingContent", "values": "none, icon, text, iconAndText", "required": false, "default": "none", "notes": "Content type in the input's trailing slot; validation may override trailing icon", "isSubProperty": false },
+      { "property": "trailingIcon", "values": "IconName", "required": false, "default": "–", "notes": "Icon from iconography library", "isSubProperty": true },
+      { "property": "trailingText", "values": "string", "required": false, "default": "–", "notes": "Suffix text (e.g., 'USD')", "isSubProperty": true }
+    ]
+  },
+  "subComponentTables": [
+    {
+      "name": "Label",
+      "description": "Always-present child. Instance of Label. See Label spec for full details. Defaults below reflect contextual overrides.",
+      "properties": [
+        { "property": "text", "values": "string", "required": true, "default": "–", "notes": "Label text content" },
+        { "property": "showCharacterCount", "values": "true, false", "required": false, "default": "false", "notes": "Contextual default; standalone default is true" },
+        { "property": "showIcon", "values": "true, false", "required": false, "default": "false", "notes": "Shows decorative icon next to label" }
+      ]
+    },
+    {
+      "name": "Input",
+      "description": "Always-present child. Instance of Input. See Input spec for full details. Defaults below reflect contextual overrides.",
+      "properties": [
+        { "property": "placeholder", "values": "string", "required": false, "default": "–", "notes": "Placeholder text shown when empty" },
+        { "property": "showLeadingContent", "values": "true, false", "required": false, "default": "false", "notes": "Master toggle for leading content area. Figma: 'Leading content'" },
+        { "property": "showLeadingIcon", "values": "true, false", "required": false, "default": "true", "notes": "Shows icon in leading area. Figma: 'Leading artwork'", "isSubProperty": true },
+        { "property": "showLeadingText", "values": "true, false", "required": false, "default": "true", "notes": "Shows text prefix in leading area. Figma: 'Leading text'", "isSubProperty": true },
+        { "property": "showTrailingContent", "values": "true, false", "required": false, "default": "false", "notes": "Master toggle for trailing content area. Figma: 'Trailing content'" },
+        { "property": "showTrailingIcon", "values": "true, false", "required": false, "default": "true", "notes": "Shows icon in trailing area. Figma: 'Trailing artwork'", "isSubProperty": true },
+        { "property": "showTrailingText", "values": "true, false", "required": false, "default": "true", "notes": "Shows text suffix in trailing area. Figma: 'Trailing text'", "isSubProperty": true }
+      ]
+    },
+    {
+      "name": "Hint text",
+      "description": "Always-present child. Instance of Hint text. See Hint text spec for full details. Defaults below reflect contextual overrides.",
+      "properties": [
+        { "property": "text", "values": "string", "required": false, "default": "–", "notes": "Helper or error message text" },
+        { "property": "showIcon", "values": "true, false", "required": false, "default": "false", "notes": "Contextual default; standalone default is true. Controlled by validation state." }
+      ]
+    }
+  ],
+  "configurationExamples": [
+    {
+      "title": "Example 1 — Default text field",
+      "variantProperties": { "Size": "Large", "State": "Enabled" },
+      "textOverrides": { "Label": "Email address", "Placeholder": "name@example.com", "Hint text": "We'll never share your email" },
+      "properties": [
+        { "property": "label", "value": "\"Email address\"", "notes": "–" },
+        { "property": "placeholder", "value": "\"name@example.com\"", "notes": "–" },
+        { "property": "hintText", "value": "\"We'll never share your email\"", "notes": "–" }
+      ]
+    },
+    {
+      "title": "Example 2 — Error validation",
+      "variantProperties": { "Size": "Large", "State": "Error" },
+      "textOverrides": { "Label": "Email address", "Hint text": "Please enter a valid email" },
+      "properties": [
+        { "property": "label", "value": "\"Email address\"", "notes": "–" },
+        { "property": "validationState", "value": "error", "notes": "Red border and error icon shown" },
+        { "property": "hintText", "value": "\"Please enter a valid email\"", "notes": "Displays as error message" }
+      ]
+    }
+  ]
+}
+```
+
+**Key decisions illustrated:**
+- `leadingContent` and `trailingContent` live on the **parent API** (not buried in the Input sub-component table) because they change the component's external contract — an engineer constructing a text field needs to know about leading/trailing content at the top level.
+- The Input sub-component table shows the **raw Figma mechanics** (master boolean + sub-booleans) so engineers who inspect Figma understand the underlying structure.
+- `showCharacterCount` is promoted from the Label child to the parent API because it changes how the field is used (character counting is a field-level concern, not a label implementation detail).
 

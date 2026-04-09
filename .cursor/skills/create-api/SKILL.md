@@ -52,9 +52,10 @@ Task Progress:
 - [ ] Step 3: Read template key from uspecs.config.json
 - [ ] Step 4: Gather context (MCP tools + user-provided input)
 - [ ] Step 4b: Run extraction script for deterministic property identification
+- [ ] Step 4c: Build working evidence set (raw facts before interpretation)
 - [ ] Step 5: Identify properties and sub-components
 - [ ] Step 6: Generate structured data (main table, sub-component tables, config examples)
-- [ ] Step 7: Re-read instruction file (Pre-Output Validation Checklist, Common Mistakes) and audit
+- [ ] Step 7: Re-read instruction file (Pre-Output Validation Checklist, Common Mistakes, Do NOT) and audit
 - [ ] Step 8: Import and detach the API template
 - [ ] Step 9: Fill header fields
 - [ ] Step 10: Fill main API table
@@ -101,7 +102,7 @@ Use ALL available sources to maximize context:
 3. `figma_get_file_data` — Get component set structure with variant axes
 4. `figma_get_component` — Get detailed component data for specific instance
 5. `figma_get_component_for_development` — Get component data with visual reference
-6. `figma_get_variables` — Check for variable mode-controlled properties (shape, density)
+6. `figma_get_variables` — Check for variable mode-controlled properties (shape, density). Treat this as required deterministic input, not an optional enrichment step.
 7. `figma_search_components` — Find component by name if needed
 
 ### Step 4b: Run Extraction Script
@@ -122,6 +123,8 @@ const variantAxes = [];
 const booleanProps = [];
 const instanceSwapProps = [];
 const slotProps = [];
+const relevantVariableCollections = [];
+const ownershipHints = [];
 
 for (const [rawKey, def] of Object.entries(propDefs)) {
   const cleanKey = rawKey.split('#')[0];
@@ -130,6 +133,14 @@ for (const [rawKey, def] of Object.entries(propDefs)) {
       name: cleanKey,
       options: def.variantOptions || [],
       defaultValue: def.defaultValue
+    });
+    ownershipHints.push({
+      propertyName: cleanKey,
+      evidenceType: 'rootVariant',
+      sourceNodeName: node.name,
+      sourceLayerName: null,
+      suggestedExposure: 'parent',
+      rationale: 'Defined on the component set as a variant axis.'
     });
   } else if (def.type === 'BOOLEAN') {
     let associatedLayer = null;
@@ -154,6 +165,16 @@ for (const [rawKey, def] of Object.entries(propDefs)) {
       associatedLayer,
       rawKey
     });
+    ownershipHints.push({
+      propertyName: cleanKey,
+      evidenceType: 'rootBoolean',
+      sourceNodeName: node.name,
+      sourceLayerName: associatedLayer,
+      suggestedExposure: associatedLayer ? 'parent_or_child' : 'parent',
+      rationale: associatedLayer
+        ? 'Defined on the root component but associated with a specific layer or child.'
+        : 'Defined directly on the root component.'
+    });
   } else if (def.type === 'INSTANCE_SWAP') {
     let swapTargetName = null;
     if (def.defaultValue) {
@@ -166,6 +187,14 @@ for (const [rawKey, def] of Object.entries(propDefs)) {
       name: cleanKey,
       defaultValue: swapTargetName || def.defaultValue,
       rawKey
+    });
+    ownershipHints.push({
+      propertyName: cleanKey,
+      evidenceType: 'rootInstanceSwap',
+      sourceNodeName: node.name,
+      sourceLayerName: null,
+      suggestedExposure: 'parent',
+      rationale: 'Defined on the root component as an instance swap.'
     });
   } else if (def.type === 'SLOT') {
     const preferred = [];
@@ -187,6 +216,14 @@ for (const [rawKey, def] of Object.entries(propDefs)) {
       preferredInstances: preferred,
       rawKey,
       defaultChildren: []
+    });
+    ownershipHints.push({
+      propertyName: cleanKey,
+      evidenceType: 'rootSlot',
+      sourceNodeName: node.name,
+      sourceLayerName: null,
+      suggestedExposure: 'parent',
+      rationale: 'Defined on the root component as a slot selector.'
     });
   }
 }
@@ -242,6 +279,16 @@ if (slotProps.length === 0 && defaultVariant.children) {
         componentKey: mainComp ? mainComp.key : '',
         contextualOverrides: overrides
       });
+      for (const key of Object.keys(overrides)) {
+        ownershipHints.push({
+          propertyName: key,
+          evidenceType: 'childOverride',
+          sourceNodeName: mainComp ? mainComp.name : child.name,
+          sourceLayerName: child.name,
+          suggestedExposure: 'child_or_parent',
+          rationale: 'Observed as a contextual override on a fixed child instance.'
+        });
+      }
     } else if (child.children) {
       for (const grandchild of child.children) {
         if (grandchild.type === 'INSTANCE') {
@@ -258,6 +305,16 @@ if (slotProps.length === 0 && defaultVariant.children) {
             contextualOverrides: overrides,
             parentLayer: child.name
           });
+          for (const key of Object.keys(overrides)) {
+            ownershipHints.push({
+              propertyName: key,
+              evidenceType: 'childOverride',
+              sourceNodeName: mainComp ? mainComp.name : grandchild.name,
+              sourceLayerName: child.name,
+              suggestedExposure: 'child_or_parent',
+              rationale: 'Observed as a contextual override on a nested child instance.'
+            });
+          }
         }
       }
     }
@@ -279,6 +336,35 @@ for (const tn of allTextNodes) {
     characters: tn.characters,
     parentName: tn.parent ? tn.parent.name : null
   });
+  ownershipHints.push({
+    propertyName: tn.name,
+    evidenceType: 'textNode',
+    sourceNodeName: node.name,
+    sourceLayerName: tn.parent ? tn.parent.name : null,
+    suggestedExposure: 'child_or_parent',
+    rationale: 'Observed as visible text in the default variant.'
+  });
+}
+
+const componentWords = node.name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const collections = await figma.variables.getLocalVariableCollectionsAsync();
+for (const collection of collections) {
+  const nameLower = collection.name.toLowerCase();
+  const matchesComponentName = componentWords.some(w => w.length > 2 && nameLower.includes(w));
+  const matchesGenericProperty = /(density|shape|size|spacing|radius|tone|color|state|variant)/i.test(collection.name);
+  if (!matchesComponentName && !matchesGenericProperty) continue;
+  relevantVariableCollections.push({
+    name: collection.name,
+    modes: collection.modes.map(mode => mode.name)
+  });
+  ownershipHints.push({
+    propertyName: collection.name,
+    evidenceType: 'variableMode',
+    sourceNodeName: node.name,
+    sourceLayerName: null,
+    suggestedExposure: 'parent',
+    rationale: 'Relevant variable collection with multiple modes that may affect the component contract.'
+  });
 }
 
 return {
@@ -290,6 +376,8 @@ return {
   instanceSwapProps,
   slotProps,
   composableChildren,
+  relevantVariableCollections,
+  ownershipHints,
   variantAxesObj,
   defaultProps,
   defaultVariantName: defaultVariant.name,
@@ -304,38 +392,102 @@ Save the returned JSON. This provides:
 - `instanceSwapProps` — each instance swap with `name`, `defaultValue`, and `rawKey`
 - `slotProps` — each native SLOT property with `name`, `description`, `preferredInstances` (approved components for the slot), and `defaultChildren` (instances found in the slot with their `contextualOverrides` — property values set by the designer that may differ from the component's standalone defaults)
 - `composableChildren` — for legacy components without native SLOT nodes: child INSTANCE nodes found in the default variant, each with `componentName`, `componentKey`, `contextualOverrides`, and optional `parentLayer` (the containing frame name). Empty when `slotProps` is populated.
+- `relevantVariableCollections` — variable collections whose names suggest they may affect the component (for example component-specific shape/density collections or global density collections), each with `name` and `modes`
+- `ownershipHints` — deterministic ownership cues gathered from root properties, child overrides, text nodes, and variable collections. These are hints for reasoning, not the final API ownership decision.
 - `defaultProps` — default variant property values for variant matching in configuration examples
 - `defaultVariantName` — for fallback identification
 - `textNodeMap` — array of `{ name, characters, parentName }` for every TEXT node in the default variant. Use the `name` field (not `parentName`) as the key in `textOverrides` and `slotInsertions[].textOverrides`. This eliminates guessing layer names from frame structure or design context output. Layer names are case-sensitive.
 
-Use this structured data in Step 5 to identify properties deterministically rather than relying solely on MCP tool interpretation. When building sub-component tables (Pattern A or B), use `slotProps.defaultChildren.contextualOverrides` or `composableChildren.contextualOverrides` to populate the `default` column with context-specific values rather than the component's global defaults.
+Use this structured data in Step 5 to identify properties deterministically rather than relying solely on MCP tool interpretation. These fields are **facts**, not the final API. Do not copy raw Figma structures through verbatim when the engineer-facing API should be more semantic. When building sub-component tables (Pattern A or B), use `slotProps.defaultChildren.contextualOverrides` or `composableChildren.contextualOverrides` to populate the `default` column with context-specific values rather than the component's global defaults.
 
 When building configuration examples (Step 12), use `slotProps` to populate `slotInsertions`: the slot name comes from `slotProps[].name` (e.g., `"trailing content slot"`), and the `componentNodeId` comes from the preferred instance node IDs discovered during Step 4 context gathering (e.g., the node IDs returned for trailing preferred instances). Use `textOverrides` for any text values shown in the example table that differ from the component's default text — look up the exact TEXT node layer name from `textNodeMap` (e.g., if `textNodeMap` shows `{ name: "section heading", characters: "Section heading", parentName: "title" }`, use `"section heading"` as the key, not `"title"`).
+
+### Step 4c: Build Working Evidence Set
+
+Before reasoning about the API, assemble a working evidence set from Step 4 and Step 4b. Keep deterministic evidence separate from interpretation.
+
+Your working evidence set should include:
+- raw variant axes and values,
+- raw boolean, enum, slot, and instance-swap properties,
+- relevant variable collections and modes,
+- fixed child or slot child composition with contextual overrides,
+- text node names and default strings,
+- ownership hints collected from root definitions, child overrides, text nodes, and variable collections,
+- user-provided context and screenshots,
+- any observed evidence that a child-level capability affects the parent component contract.
+
+Use this evidence set to answer two questions before writing the API:
+1. What facts can be stated directly from Figma?
+2. What API decisions require AI reasoning and normalization?
+
+Facts should come from deterministic evidence. Interpretation should happen in Step 5 using the instruction file.
+The working evidence set should be represented as a structured object matching the `ComponentEvidence` schema in the instruction file before you generate `ApiOverviewData`.
 
 ### Step 5: Identify Properties
 
 Using gathered context and the extraction data from Step 4b, identify:
 
-**A. Variant properties**
+**A. Variant properties** from Figma axes (size, type, hierarchy, layout, behavior, etc.)
+- If a broad axis mixes transient and persistent states, decompose it into engineer-friendly API properties instead of copying the axis verbatim.
+- Drop transient interaction visuals such as hover, pressed, and focus unless the component clearly exposes them as persistent configuration.
 
-**B. Boolean toggles**
+**B. Boolean toggles** from instance inspection
+- Separate simple modifiers (`isDisabled`, `showBadge`) from slot-selection booleans that should become enums with `none`.
+- Check whether a child-level toggle actually changes the parent component contract. If it does, promote it to the parent API.
 
-**C. Variable mode properties**
+**Mandatory: Override Promotion Pass**
 
-**D. Sub-component configurations** (Pattern A: slot content types; Pattern B: fixed sub-components — see instruction file for decision criteria)
+For each entry in `composableChildren`, walk every key in `contextualOverrides` and classify it:
+
+| Override key | Does it change what the parent looks like to a consumer? | Action |
+|---|---|---|
+| Yes (e.g., `Leading content`, `Trailing content`, `Character count`) | Promote to parent API as an enum or boolean |
+| No (e.g., `Size` that mirrors the parent's own size axis) | Keep in sub-component table only |
+| Unclear | Ask: would an engineer set this when USING the parent? If yes, promote. |
+
+When a master boolean (`Leading content: true/false`) gates sub-booleans (`Leading artwork`, `Leading text`), merge them into a single enum on the parent API: `leadingContent: none, icon, text, iconAndText`. The master boolean `false` maps to `none`. See the instruction file's "Figma master boolean + sub-boolean trap" for the full pattern.
+
+Do not skip this pass. The most common failure mode is leaving child-level capabilities buried in sub-component tables when they belong on the parent API.
+
+**C. Variable mode properties** from variable collections and modes
+- Treat density, shape, and similar mode-controlled properties as first-class API inputs when they materially affect the component.
+- Do not omit variable modes just because they are controlled at the container level.
+
+**D. Ownership and nesting decisions**
+- Decide whether each property belongs on the parent API, in a sub-component table, or in both places.
+- Use the parent API for properties that affect the component's external contract, behavior, or common usage.
+- Use sub-component tables for implementation/configuration details of nested children.
+- Use `isSubProperty` when a property is best understood as part of a parent capability rather than a standalone top-level row.
+
+**E. Sub-component configurations** (Pattern A: slot content types; Pattern B: fixed sub-components — see instruction file for decision criteria)
+- Check both fixed children and interchangeable slot content types.
+- For compound components, prefer documenting the user-facing contract on the parent and the child-specific mechanics in the sub-component tables.
 
 ### Step 6: Generate Structured Data
 
 Follow the `ApiOverviewData` schema defined in the instruction file. Build the data as a structured object matching those interfaces.
+
+Before finalizing the object, mentally separate:
+- deterministic facts: what Figma proves,
+- semantic API decisions: how those facts should be exposed to engineers.
+
+Prefer deterministic extraction for facts and AI reasoning for interpretation. Do not ask the model to infer facts that can be gathered directly from Figma. Do not hard-code semantic API decisions into scripts when those decisions require cross-component judgment.
 
 ### Step 7: Audit
 
 Re-read the instruction file, focusing on:
 - **Pre-Output Validation Checklist** — walk through each checkbox
 - **Common Mistakes** section
+- **Do NOT** section
 - **Property Naming** conventions (camelCase, engineer-friendly)
 
 Check your output against each rule. Fix any violations.
+
+During the audit, explicitly verify:
+- every semantic claim is backed by deterministic evidence or is clearly marked as an inference,
+- broad Figma structures have been normalized into an engineer-friendly API,
+- parent-level properties have not been buried inside sub-component tables,
+- nested properties use `isSubProperty` only when the relationship is clear and meaningful.
 
 ### Step 8: Import and Detach Template
 
@@ -582,7 +734,7 @@ rowTemplate.remove();
 return { success: true, subComponent: SUB_NAME };
 ```
 
-After all sub-component tables are rendered, hide the original template:
+**IMPORTANT:** After all sub-component tables are rendered, you MUST hide the original template by running this script. Skipping this leaves a ghost "{Sub-component-title}" row visible in the output:
 
 ```javascript
 const frame = await figma.getNodeByIdAsync('__FRAME_ID__');
@@ -783,7 +935,7 @@ rowTemplate.remove();
 return { success: true, example: EXAMPLE_TITLE };
 ```
 
-After all examples are rendered, hide the original template:
+**IMPORTANT:** After all examples are rendered, you MUST hide the original template by running this script. Skipping this leaves a ghost "{example-title}" row visible in the output:
 
 ```javascript
 const frame = await figma.getNodeByIdAsync('__FRAME_ID__');
