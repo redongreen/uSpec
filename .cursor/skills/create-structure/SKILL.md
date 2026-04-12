@@ -679,10 +679,7 @@ async function measureChildren(container, enableBools) {
     if (!child.visible && !enableBools) continue;
     result[child.name] = await measureNode(child);
     if ('children' in child && child.children.length > 0 && child.type !== 'INSTANCE') {
-      const nested = {};
-      for (const gc of child.children) {
-        if (gc.visible) nested[gc.name] = await measureNode(gc);
-      }
+      const nested = await measureChildren(child, null);
       if (Object.keys(nested).length > 0) result[child.name + '.__children'] = nested;
     }
   }
@@ -1071,7 +1068,7 @@ Add anomaly notes to the relevant row's `notes` field or to `generalNotes` for c
 **E. Completeness judgment:**
 
 Before proceeding, verify:
-- Does every auto-layout container in the extraction have its padding and spacing documented in a section row?
+- Does every auto-layout container in the extraction have its padding and spacing documented in a section row? **Verification procedure:** For each sub-component section, walk `subComponentDimensions[name][size].children` — including all nested `__children` entries. Every entry with non-zero `padding` (uniform, symmetric, or per-side) is an auto-layout container that needs a corresponding group with its own rows. Watch for content areas (e.g., `leadingContent`, `trailingContent`) that have zero padding themselves but contain child wrapper frames (e.g., `icon`, `label`, `clear action`) each with their own padding — each wrapper must be its own group, not collapsed into a note on the parent. When `enrichedTree` is available (not truncated), cross-check it recursively for the same pattern.
 - Does every instance that remains classified as a `subComponent` after Rules 2a-2c have its own section?
 - Are there dimensional properties present in `rootDimensions` or `subComponentDimensions` that were not included in any row?
 - For composition sections: does every sub-component's size mapping cover all parent sizes?

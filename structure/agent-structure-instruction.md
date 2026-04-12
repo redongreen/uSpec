@@ -748,6 +748,7 @@ Both the extraction and cross-variant data provide pre-formatted `display` strin
 - **Missing property-variant sections:** An axis like `variant` may not change children but still introduces a border, changes corner radius, or alters padding. If dimensional properties differ across an axis, document the difference in a state-conditional section.
 - **Duplicating rows for user-provided adjustments:** When the user says "the padding is X," there is one padding row showing X — not a "base padding" row plus an "adjusted padding" row. The user's value replaces the extracted value in the existing row. A note on that row explains the adjustment rule (e.g., "Base 22 minus 2 for optical alignment when icon adjacent"). Never create a parallel property like `paddingWithIcon` alongside `horizontalPadding`.
 - **Incomplete layout coverage:** Documenting only the default layout configuration when the component has multiple structural layouts (detected by Step 4e as a structural axis). Every structural configuration that an engineer must implement gets its own section(s).
+- **Collapsing wrapper frame padding into notes:** When a content area (e.g., `trailingContent`) contains multiple child frames each with their own padding, document each wrapper frame as its own group with a `horizontalPadding` row. Do not collapse them into a single note like "8 h-padding per child" on the parent group header. Every auto-layout frame with non-zero padding needs its own group — the `__children` entries in the cross-variant data make these visible.
 
 ---
 

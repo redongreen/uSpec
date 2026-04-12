@@ -3,6 +3,27 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V1.8.1 — April 2026" description="Recursive nested container measurement and wrapper frame padding coverage in structure specs">
+  ## uSpec V1.8.1
+
+  The structure skill now recursively measures nested auto-layout containers and enforces per-wrapper padding documentation — no more collapsed padding notes on parent groups.
+
+  ### Recursive nested container measurement (Structure)
+
+  - `measureChildren` now calls itself recursively instead of using a flat loop for grandchildren — deeply nested wrapper frames (e.g., icon containers inside `trailingContent`) are fully measured and surfaced as `__children` entries in the cross-variant data
+  - Fixes cases where intermediate auto-layout frames with their own padding were invisible to the completeness check
+
+  ### Wrapper frame padding coverage (Structure)
+
+  - New verification procedure in the completeness judgment: for each sub-component section, walk `__children` entries recursively — every entry with non-zero padding is an auto-layout container that needs its own group with dedicated rows
+  - Catches content areas (e.g., `leadingContent`, `trailingContent`) whose children each have individual padding that was previously collapsed into a single note on the parent
+  - Cross-checks against `enrichedTree` when available for redundant validation
+
+  ### Common mistake guidance (Structure)
+
+  - New "Collapsing wrapper frame padding into notes" entry in the instruction file — documents the anti-pattern of merging per-child padding into a parent group header note instead of giving each wrapper its own group
+</Update>
+
 <Update label="V1.8.0 — April 2026" description="Composite color specs, context-aware property exhibits, non-dimensional axis coverage, and sub-pixel precision">
   ## uSpec V1.8.0
 
