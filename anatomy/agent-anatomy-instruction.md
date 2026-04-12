@@ -39,7 +39,7 @@ Additional extraction-level data:
 - **`booleanProps[]`** — Each with `name`, `defaultValue`, `associatedLayer`, `rawKey`, `boundElementIndex`
 - **`variantAxes[]`** — Each with `name`, `options`, `defaultValue`
 - **`instanceSwapProps[]`** — Each with `name`, `defaultValue`, `rawKey`
-- **`rootVariantVisuals`** — `{ hasFills, hasStrokes, hasEffects, cornerRadius }` for the root variant frame. When `hasFills` or `hasEffects` is true, the variant has a visual layer (statelayer/backplate) that should become a synthetic element. **`hasStrokes` does NOT trigger a separate synthetic element** — strokes on the root variant are a border property of the container frame and should be described in the root container element's note instead.
+- **`rootVariantVisuals`** — `{ hasFills, hasStrokes, hasEffects, cornerRadius }` for the root variant frame. When `hasFills` or `hasEffects` is true, the variant has visual properties (statelayer/backplate). These are folded into the container's note when a container synthetic already exists, or inserted as a standalone synthetic element when no container synthetic covers the root variant. **`hasStrokes` does NOT trigger a separate synthetic element** — strokes on the root variant are a border property of the container frame and should be described in the root container element's note instead.
 - **`traversedFrames[]`** — Frames the wrapper-traversal skipped to reach the child container. Each has `{ name, nodeType, hasFills, hasStrokes, hasEffects, cornerRadius, bbox }`. Frames with fills, strokes, or effects are visually meaningful layers that should become synthetic elements.
 
 ### Step 8b context (per-child level)
@@ -92,15 +92,17 @@ Check `childContainerIsVariant`, `rootVariantVisuals`, and `traversedFrames` fro
    - `shouldCreateSection: false`
    - `notes`: describe the layout role (e.g., `"Root container — horizontal auto-layout hosting the component's slots"` or `"Root container — vertical stack layout"`)
 
-2. **Root variant statelayer:** If `rootVariantVisuals.hasFills` or `rootVariantVisuals.hasEffects` is true, the variant frame itself renders a visual layer (typically a statelayer or backplate). **`hasStrokes` alone does NOT trigger this** — strokes on the root variant are a border on the container frame; describe them in the root container element's note instead. Insert a synthetic element after any root container element with:
-   - `isSynthetic: true`
-   - `name`: infer from context — use `"statelayer"` when the fill has low opacity (overlay), `"backplate"` when it is a solid background
-   - `nodeType: 'FRAME'`
-   - `classification: 'structural'`
-   - `visible: true`
-   - `bbox: { x: 0, y: 0, w: rootSize.w, h: rootSize.h }`
-   - `shouldCreateSection: false`
-   - `notes`: write a semantic note (e.g., `"Statelayer — pressed/hover state overlay, 12px corner radius"`)
+2. **Root variant fills/effects:** If `rootVariantVisuals.hasFills` or `rootVariantVisuals.hasEffects` is true, the variant frame has visual properties. **`hasStrokes` alone does NOT trigger this** — strokes on the root variant are a border on the container frame; describe them in the root container element's note instead.
+   - **If a synthetic container element is already being created for the root variant** (item 1 when `childContainerIsVariant` is false, or item 5 when it is true), fold the fill/effects description into the container's note (e.g., `"Root container — horizontal auto-layout with solid background fill, pill-shaped (99px corner radius)"`). Do NOT create a separate synthetic element. This parallels the existing stroke rule — fills and effects on the root variant are visual properties of the container frame, not separate child layers.
+   - **If no container synthetic exists** (`childContainerIsVariant` is true and item 5 evaluated "skip"), insert a standalone synthetic backplate/statelayer element after any other synthetic elements:
+     - `isSynthetic: true`
+     - `name`: infer from context — use `"statelayer"` when the fill has low opacity (overlay), `"backplate"` when it is a solid background
+     - `nodeType: 'FRAME'`
+     - `classification: 'structural'`
+     - `visible: true`
+     - `bbox: { x: 0, y: 0, w: rootSize.w, h: rootSize.h }`
+     - `shouldCreateSection: false`
+     - `notes`: write a semantic note (e.g., `"Statelayer — pressed/hover state overlay, 12px corner radius"`)
 
 3. **Traversed frames:** For each entry in `traversedFrames` where `hasFills`, `hasStrokes`, or `hasEffects` is true, insert a synthetic element after any root statelayer element with:
    - `isSynthetic: true`
@@ -248,8 +250,9 @@ Rewrite each element's `notes` field following these rules. Use the `classificat
 Synthetic elements represent the root component container or visually-meaningful frames that the wrapper traversal skipped. Write notes that describe their specific role:
 
 - **Root container** (`classification: 'container'`): `"Root container — horizontal auto-layout hosting the component's slots"` or `"Root container — vertical stack layout with {N}px gap"`. Describe the layout mode and what the container organizes. When `rootVariantVisuals.hasStrokes` is true, include the border in this note: `"Root container — circular frame with stroke border, {N}px corner radius"` or `"Root container — horizontal auto-layout with border, {N}px corner radius"`. Do NOT create a separate synthetic element for the stroke.
-- **Statelayer** (root variant with low-opacity fill): `"Statelayer — pressed/hover state overlay, {N}px corner radius"`
-- **Backplate** (root variant with solid fill): `"Backplate — solid background, {N}px corner radius"`
+- **Root container with fill** (container synthetic + `rootVariantVisuals.hasFills` or `hasEffects`): Combine layout description, fill role, corner radius, and layout orchestration into one note. `"Root container — horizontal auto-layout with solid background fill, pill-shaped ({N}px corner radius), manages leading/trailing icon visibility"`. When `hasEffects` is also true: `"…with background fill and state effects overlay"`. Do NOT create a separate backplate/statelayer element — the fill is a visual property of the container frame itself.
+- **Statelayer** (standalone — root variant with low-opacity fill, no container synthetic): `"Statelayer — pressed/hover state overlay, {N}px corner radius"`
+- **Backplate** (standalone — root variant with solid fill, no container synthetic): `"Backplate — solid background, {N}px corner radius"`
 - **Shape container** (traversed frame with fills/strokes): `"Shape container — bordered {component} box, {N}px corner radius"` or `"Shape — filled indicator area, {N}px corner radius"`
 - When both stroke and fill are present: `"Shape container — fill and border change with checked/unchecked state, {N}px corner radius"`
 - Do NOT use generic notes like `"Frame with fills"`, `"Traversed frame"`, or `"Container"`
@@ -301,7 +304,8 @@ When the user provides design notes alongside the Figma link (behavioral descrip
 | Title slot | `slot` | true | "Slot with 1 child" | "Title slot — composable slot. Preferred: Title, Subtitle. Populated by default with a Title instance." |
 | Trailing slot | `slot` | false | "Hidden slot" | "Trailing slot — hidden by default, shown via `trailingContent` toggle. Preferred: Badge, Icon Button." |
 | container (synthetic) | `container` | true | "Container" | "Root container — horizontal auto-layout hosting the component's slots" |
-| statelayer (synthetic) | `structural` | true | "Frame with fills" | "Statelayer — pressed/hover state overlay, 12px corner radius" |
+| container with fill (synthetic) | `container` | true | "Container" + separate "Backplate" | "Root container — horizontal auto-layout with solid background fill, pill-shaped (99px corner radius), manages icon visibility" |
+| statelayer (standalone synthetic) | `structural` | true | "Frame with fills" | "Statelayer — pressed/hover state overlay, 12px corner radius" |
 | shape (synthetic) | `structural` | true | "Traversed frame" | "Shape container — bordered checkbox box, fill and border change with state, 6px corner radius" |
 
 ---
@@ -350,7 +354,7 @@ After enriching all elements, verify:
 - [ ] User-provided design context is integrated into relevant notes (not added as standalone text)
 - [ ] When `childContainerIsVariant` is `false`, a synthetic root container element exists at the start of the array. When `childContainerIsVariant` is `true`, the agent has evaluated whether the root container is architecturally meaningful (per item 5) and inserted a synthetic element if so.
 - [ ] `traversedFrames` with visual properties (fills, strokes, or effects) have corresponding synthetic elements in the array
-- [ ] Root variant with fills or effects has a synthetic statelayer/backplate element
+- [ ] Root variant with fills or effects: described in the container note when a container synthetic exists, OR has a standalone synthetic statelayer/backplate element when no container synthetic covers the root variant
 - [ ] All synthetic elements have `isSynthetic: true`, correct `classification` (`container` for root container, `structural` for visual layers), `shouldCreateSection: false`, and bboxes set from `rootSize` (these are initial estimates — the Step 8 rendering script updates them after boolean unhides and slot population cause auto-layout reflow)
 - [ ] Elements are re-indexed sequentially after any synthetic insertions
 - [ ] Every element with bbox fully contained in another annotated element has `inlineMarker: true`

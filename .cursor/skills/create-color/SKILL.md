@@ -135,39 +135,99 @@ async function resolveVariableToken(binding) {
   return null;
 }
 
+async function buildCompositeDetail(fills, styleName, resolveVarFn) {
+  const visibleFills = fills.filter(f => f.visible !== false);
+  if (visibleFills.length < 2) return null;
+  const layers = [];
+  for (let i = visibleFills.length - 1; i >= 0; i--) {
+    const f = visibleFills[i];
+    const layer = { type: f.type === 'SOLID' ? 'solid' : 'gradient', blendMode: f.blendMode || 'NORMAL', opacity: f.opacity };
+    if (f.type === 'SOLID') {
+      layer.hex = rgbToHex(f.color);
+      layer.token = f.boundVariables?.color ? await resolveVarFn(f.boundVariables.color) : null;
+    } else if (f.type.startsWith('GRADIENT_')) {
+      layer.gradientType = f.type;
+      if (f.gradientTransform) {
+        layer.angleDegrees = Math.round(Math.atan2(f.gradientTransform[0][1], f.gradientTransform[0][0]) * (180 / Math.PI));
+      }
+      layer.stops = [];
+      if (f.gradientStops) {
+        for (const stop of f.gradientStops) {
+          const s = { position: Math.round(stop.position * 1000) / 1000, color: 'rgba(' + Math.round(stop.color.r * 255) + ', ' + Math.round(stop.color.g * 255) + ', ' + Math.round(stop.color.b * 255) + ', ' + (Math.round(stop.color.a * 1000) / 1000) + ')' };
+          s.token = stop.boundVariables?.color ? await resolveVarFn(stop.boundVariables.color) : null;
+          layer.stops.push(s);
+        }
+      }
+    } else if (f.type === 'IMAGE') {
+      layer.type = 'image';
+    }
+    layers.push(layer);
+  }
+  return { styleName, layers };
+}
+
 async function extractColorBindings(node, path) {
   const entries = [];
   const elementName = path || node.name;
 
   if (node.fills && Array.isArray(node.fills)) {
+    let fillStyleName = null;
+    if (node.fillStyleId && node.fillStyleId !== '' && typeof node.fillStyleId === 'string') {
+      try { const style = await figma.getStyleByIdAsync(node.fillStyleId); if (style) fillStyleName = style.name; } catch {}
+    }
+    let fillEntryAdded = false;
     for (const fill of node.fills) {
       if (fill.visible === false) continue;
       if (fill.type === 'SOLID') {
         const hex = rgbToHex(fill.color);
-        let token = fill.boundVariables?.color
-          ? await resolveVariableToken(fill.boundVariables.color)
-          : null;
-        if (!token && node.fillStyleId && node.fillStyleId !== '' && typeof node.fillStyleId === 'string') {
-          try { const style = await figma.getStyleByIdAsync(node.fillStyleId); if (style) token = style.name; } catch {}
+        let token = fillStyleName || null;
+        if (!token && fill.boundVariables?.color) {
+          token = await resolveVariableToken(fill.boundVariables.color);
         }
         const prop = node.type === 'TEXT' ? 'text fill' : 'fill';
-        entries.push({ element: elementName, property: prop, hex, token, opacity: fill.opacity });
+        const entry = { element: elementName, property: prop, hex, token, opacity: fill.opacity };
+        if (fillStyleName && !fillEntryAdded) {
+          const composite = await buildCompositeDetail(node.fills, fillStyleName, resolveVariableToken);
+          if (composite) entry.compositeDetail = composite;
+          fillEntryAdded = true;
+        }
+        entries.push(entry);
+      }
+    }
+    if (fillStyleName && !fillEntryAdded) {
+      const visibleFills = node.fills.filter(f => f.visible !== false);
+      if (visibleFills.length > 0) {
+        const hex = visibleFills[0].type === 'SOLID' ? rgbToHex(visibleFills[0].color) : '';
+        const entry = { element: elementName, property: node.type === 'TEXT' ? 'text fill' : 'fill', hex, token: fillStyleName, opacity: 1 };
+        const composite = await buildCompositeDetail(node.fills, fillStyleName, resolveVariableToken);
+        if (composite) entry.compositeDetail = composite;
+        entries.push(entry);
+        fillEntryAdded = true;
       }
     }
   }
 
   if (node.strokes && Array.isArray(node.strokes)) {
+    let strokeStyleName = null;
+    if (node.strokeStyleId && node.strokeStyleId !== '' && typeof node.strokeStyleId === 'string') {
+      try { const style = await figma.getStyleByIdAsync(node.strokeStyleId); if (style) strokeStyleName = style.name; } catch {}
+    }
+    let strokeEntryAdded = false;
     for (const stroke of node.strokes) {
       if (stroke.visible === false) continue;
       if (stroke.type === 'SOLID') {
         const hex = rgbToHex(stroke.color);
-        let token = stroke.boundVariables?.color
-          ? await resolveVariableToken(stroke.boundVariables.color)
-          : null;
-        if (!token && node.strokeStyleId && node.strokeStyleId !== '' && typeof node.strokeStyleId === 'string') {
-          try { const style = await figma.getStyleByIdAsync(node.strokeStyleId); if (style) token = style.name; } catch {}
+        let token = strokeStyleName || null;
+        if (!token && stroke.boundVariables?.color) {
+          token = await resolveVariableToken(stroke.boundVariables.color);
         }
-        entries.push({ element: elementName, property: 'stroke', hex, token, opacity: stroke.opacity });
+        const entry = { element: elementName, property: 'stroke', hex, token, opacity: stroke.opacity };
+        if (strokeStyleName && !strokeEntryAdded) {
+          const composite = await buildCompositeDetail(node.strokes, strokeStyleName, resolveVariableToken);
+          if (composite) entry.compositeDetail = composite;
+          strokeEntryAdded = true;
+        }
+        entries.push(entry);
       }
     }
   }
@@ -461,7 +521,7 @@ Save the returned JSON. This consolidated extraction provides:
 - `variantAxes` — variant axis names and their options, for mapping variant sections to Figma property keys
 - `propertyDefs` — exact Figma property keys (including `#nodeId` suffixes) for `setProperties()` when placing preview instances
 - `variantCount` / `sampledCount` / `skippedAxes` — extraction scope metadata
-- `variantColorData` — per-variant array of `colorEntries`, each with `element`, `property` (fill, text fill, stroke, drop shadow, inner shadow, or effect style), `hex`, `token`, `opacity`, and optional `subComponentName` (string) identifying which nested component the entry belongs to (e.g., `"Button"`). Always show the actual token; use `subComponentName` for richer notes. When `property` is `"effect style"`, the entry represents a composed effect style (e.g., a shadow style) — the `token` is the style name and individual shadow layers are not emitted
+- `variantColorData` — per-variant array of `colorEntries`, each with `element`, `property` (fill, text fill, stroke, drop shadow, inner shadow, or effect style), `hex`, `token`, `opacity`, and optional `subComponentName` (string) identifying which nested component the entry belongs to (e.g., `"Button"`). Always show the actual token; use `subComponentName` for richer notes. When `property` is `"effect style"`, the entry represents a composed effect style (e.g., a shadow style) — the `token` is the style name and individual shadow layers are not emitted. **Token resolution priority:** paint/stroke style names (`fillStyleId`, `strokeStyleId`) take precedence over variable bindings (`boundVariables.color`). A composite style (e.g., `composite/button-primary/background`) wrapping a semantic variable is common — the style name is the correct token. **Composite styles:** When a fill/stroke style has 2+ visible paint layers, the entry includes a `compositeDetail` object with `styleName` and `layers[]` (ordered top-to-bottom). Each layer has `type` (`solid`, `gradient`, or `image`), `blendMode`, `opacity`, and type-specific fields: `hex`/`token` for solids; `gradientType`, `angleDegrees`, `stops[]` (each with `position`, `color` as rgba string, `token`) for gradients
 - `axisClassification` — per-axis classification with `isState`, `colorRelevant`, and `tokenSetsByValue`
 - `booleanDelta` — elements discovered behind boolean toggles (`deltaCount`, `delta` entries, `booleanPropsToggled`)
 - `modeDetection` — mode-controlled collection info (`hasModeCollection`, `collectionName`, `collectionId`, `modes`, `modeIds`, `modeTokenMap`)
@@ -482,6 +542,10 @@ Using the consolidated extraction output from Step 4b, perform the following int
 2. **Merge boolean delta**: If `booleanDelta.deltaCount > 0`, merge the `booleanDelta.delta` entries into the default variant's color entries. These represent elements hidden behind boolean toggles.
 3. **Annotate sub-component entries**: Entries with `subComponentName` come from nested instances. Include their actual tokens — use the sub-component name to write descriptive notes (e.g., `"Button container fill"`). Group sub-component entries together in the table when it aids readability.
 4. **Map elements to tokens**: Using the `variantColorData` entries, build element-to-token mappings. Entries with a non-null `token` field have a resolved variable binding; entries with `token: null` use a hard-coded color (note this in output).
+4a. **Build composite breakdowns**: For each entry that has a `compositeDetail` (multi-layer paint style), construct a `compositeChildren` array on the corresponding `ColorElement`/`ConsolidatedElement`. Iterate layers in the already top-to-bottom order:
+   - **Solid layers**: element = `"Solid fill"`, value = variable token or hex, notes = `"{blendMode} blend, {opacity}% opacity"`. Add `"Top layer."` or `"Bottom layer."` prefix when 2+ layers exist.
+   - **Gradient layers**: element = `"{gradientType} gradient"` (e.g., `"Linear gradient"`), value = `"linear-gradient({angle}deg, ...)"`, notes = `"{blendMode} blend, {opacity}% opacity"` with layer position prefix. Then append one child per stop: element = `"Stop at {position}%"`, value = `"rgba(r, g, b, a)"` or token if bound, notes = position description (e.g., `"Transparent"`, `"Opaque"`).
+   - **Image layers**: element = `"Image fill"`, value = `"image"`, notes = blend mode and opacity.
 5. **Capture Figma property keys**: Use `propertyDefs` and `variantAxes` from the extraction to map variant section names to correct Figma property values for `setProperties()`.
 6. **Choose rendering strategy**: See Step 4c-i below.
 7. **Build variant plan**: See Step 4c-ii below.
@@ -608,7 +672,7 @@ Use the rendering strategy determined in Step 4c-i. Run **one `figma_execute` ca
 
 #### Strategy A: Simple Layout
 
-For each variant in the data, run the following script. Replace all `__PLACEHOLDER__` values with actual data. `__TABLES_JSON__` is the tables array for this variant (each element has `element`, `token`, `notes`).
+For each variant in the data, run the following script. Replace all `__PLACEHOLDER__` values with actual data. `__TABLES_JSON__` is the tables array for this variant (each element has `element`, `token`, `notes`, and optionally `compositeChildren` — an array of `{ element, value, notes }` objects for multi-layer style breakdowns).
 
 - `__COMPONENT_SET_NODE_ID__` is the node ID of the component set (from Step 4b extraction: `compSetNodeId`). Set to `''` if not available.
 - `__VARIANT_PROPERTIES_JSON__` is an object mapping **Figma property keys** (exactly as returned by `componentPropertyDefinitions`) to values for this variant. Set to `{}` if not available.
@@ -809,6 +873,17 @@ for (let t = 0; t < TABLES.length; t++) {
   const colorTable = tableClone.findOne(n => n.name === '#color-table');
   const rowTemplate = colorTable.findOne(n => n.name === '#element-row-template');
 
+  function showIndicator(row, isLast) {
+    const ind = row.findOne(n => n.name === '#hierarchy-indicator');
+    if (ind) {
+      ind.visible = true;
+      const wg = ind.findOne(n => n.name === 'within-group');
+      const last = ind.findOne(n => n.name === '#hierarchy-indicator-last');
+      if (wg) wg.visible = !isLast;
+      if (last) last.visible = isLast;
+    }
+  }
+
   for (const element of tableData.elements) {
     const row = rowTemplate.clone();
     colorTable.appendChild(row);
@@ -831,6 +906,32 @@ for (let t = 0; t < TABLES.length; t++) {
       const txt = notesFrame.findOne(n => n.type === 'TEXT');
       if (txt) txt.characters = element.notes;
     }
+
+    if (element.compositeChildren && element.compositeChildren.length > 0) {
+      for (let ci = 0; ci < element.compositeChildren.length; ci++) {
+        const child = element.compositeChildren[ci];
+        const childRow = rowTemplate.clone();
+        colorTable.appendChild(childRow);
+        childRow.name = 'Row ' + child.element;
+        showIndicator(childRow, ci === element.compositeChildren.length - 1);
+
+        const cElem = childRow.findOne(n => n.name === '#element-name');
+        if (cElem) {
+          const txt = cElem.findOne(n => n.type === 'TEXT');
+          if (txt) txt.characters = child.element;
+        }
+        const cToken = childRow.findOne(n => n.name === '#state-name');
+        if (cToken) {
+          const txt = cToken.findOne(n => n.type === 'TEXT');
+          if (txt) txt.characters = child.value;
+        }
+        const cNotes = childRow.findOne(n => n.name === '#element-notes');
+        if (cNotes) {
+          const txt = cNotes.findOne(n => n.type === 'TEXT');
+          if (txt) txt.characters = child.notes;
+        }
+      }
+    }
   }
 
   rowTemplate.remove();
@@ -846,7 +947,7 @@ For each variant in the data, run the following script. Replace all `__PLACEHOLD
 
 - `__STATE_COLUMNS_JSON__` is the ordered array of state names that become column headers (e.g. `["Enabled", "Hover", "Pressed", "Active", "Disabled"]`).
 - `__STATE_AXIS_NAME__` is the Figma variant axis name for states (e.g. `"State"`).
-- `__TABLES_JSON__` is the tables array for this variant. Each element has `element`, `tokensByState` (object mapping state name → token), and `notes`.
+- `__TABLES_JSON__` is the tables array for this variant. Each element has `element`, `tokensByState` (object mapping state name → token), `notes`, and optionally `compositeChildren` — an array of `{ element, value, notes }` objects for multi-layer style breakdowns.
 - `__COLLECTION_ID__` is the variable collection ID for mode-controlled colors (e.g. `"VariableCollectionId:6006:13874"`). Set to `''` if not mode-controlled.
 - `__MODE_ID__` is the variable mode ID for this section (e.g. `"6006:2"` for Gray). Set to `''` if not mode-controlled.
 - `__FONT_FAMILY__` is the `fontFamily` value from `uspecs.config.json` (default: `Inter`).
@@ -1092,21 +1193,21 @@ for (let t = 0; t < TABLES.length; t++) {
 
   const rowTemplate = colorTable.findOne(n => n.name === '#element-row-template');
 
-  for (const element of tableData.elements) {
-    const row = rowTemplate.clone();
-    colorTable.appendChild(row);
-    row.name = 'Row ' + element.element;
-
-    const elemFrame = row.findOne(n => n.name === '#element-name');
-    if (elemFrame) {
-      const txt = elemFrame.findOne(n => n.type === 'TEXT');
-      if (txt) txt.characters = element.element;
+  function showIndicator(row, isLast) {
+    const ind = row.findOne(n => n.name === '#hierarchy-indicator');
+    if (ind) {
+      ind.visible = true;
+      const wg = ind.findOne(n => n.name === 'within-group');
+      const last = ind.findOne(n => n.name === '#hierarchy-indicator-last');
+      if (wg) wg.visible = !isLast;
+      if (last) last.visible = isLast;
     }
+  }
 
+  function expandStateCols(row, values) {
     const stateCell = row.findOne(n => n.name === '#state-name');
     const notesFrame = row.findOne(n => n.name === '#element-notes');
     const notesCellIndex = notesFrame ? row.children.indexOf(notesFrame) : -1;
-
     if (stateCell) {
       const cellClones = [];
       for (let s = 0; s < N; s++) {
@@ -1123,14 +1224,53 @@ for (let t = 0; t < TABLES.length; t++) {
         cellClones[s].name = 'state-val-' + s;
         cellClones[s].layoutSizingHorizontal = 'FILL';
         const txt = cellClones[s].findOne(n => n.type === 'TEXT');
-        if (txt) txt.characters = element.tokensByState[STATE_COLUMNS[s]] || 'none';
+        if (txt) txt.characters = values[s] || 'none';
       }
     }
+    if (notesFrame) notesFrame.layoutSizingHorizontal = 'FILL';
+  }
 
+  for (const element of tableData.elements) {
+    const row = rowTemplate.clone();
+    colorTable.appendChild(row);
+    row.name = 'Row ' + element.element;
+
+    const elemFrame = row.findOne(n => n.name === '#element-name');
+    if (elemFrame) {
+      const txt = elemFrame.findOne(n => n.type === 'TEXT');
+      if (txt) txt.characters = element.element;
+    }
+
+    const stateValues = STATE_COLUMNS.map(s => element.tokensByState[s] || 'none');
+    expandStateCols(row, stateValues);
+
+    const notesFrame = row.findOne(n => n.name === '#element-notes');
     if (notesFrame) {
-      notesFrame.layoutSizingHorizontal = 'FILL';
       const txt = notesFrame.findOne(n => n.type === 'TEXT');
       if (txt) txt.characters = element.notes;
+    }
+
+    if (element.compositeChildren && element.compositeChildren.length > 0) {
+      for (let ci = 0; ci < element.compositeChildren.length; ci++) {
+        const child = element.compositeChildren[ci];
+        const childRow = rowTemplate.clone();
+        colorTable.appendChild(childRow);
+        childRow.name = 'Row ' + child.element;
+        showIndicator(childRow, ci === element.compositeChildren.length - 1);
+
+        const cElem = childRow.findOne(n => n.name === '#element-name');
+        if (cElem) {
+          const txt = cElem.findOne(n => n.type === 'TEXT');
+          if (txt) txt.characters = child.element;
+        }
+        const childStateValues = STATE_COLUMNS.map(() => child.value);
+        expandStateCols(childRow, childStateValues);
+        const cNotes = childRow.findOne(n => n.name === '#element-notes');
+        if (cNotes) {
+          const txt = cNotes.findOne(n => n.type === 'TEXT');
+          if (txt) txt.characters = child.notes;
+        }
+      }
     }
   }
 
@@ -1139,17 +1279,6 @@ for (let t = 0; t < TABLES.length; t++) {
 
 tableTemplate.remove();
 return { success: true, variant: VARIANT_NAME };
-```
-
-#### After All Variants: Hide Template
-
-After all variants are rendered (regardless of strategy), hide the original `#variant-template`:
-
-```javascript
-const frame = await figma.getNodeByIdAsync('__FRAME_ID__');
-const variantTemplate = frame.findOne(n => n.name === '#variant-template');
-if (variantTemplate) variantTemplate.visible = false;
-return { success: true };
 ```
 
 ### Step 12: Visual Validation
@@ -1161,6 +1290,7 @@ return { success: true };
    - **Strategy B previews**: Each variant's preview container shows **all state instances side by side with labels** (e.g., Enabled, Hover, Pressed, Active, Disabled)
    - **Strategy A previews**: Each variant's preview container shows a labeled component instance
    - For mode-controlled components, preview instances display the correct color mode
+   - **Composite breakdowns**: Elements with multi-layer styles show nested child rows with hierarchy indicators (vertical line + elbow for middle children, elbow-only for last child). Top-level rows have indicators hidden.
    - General notes are visible or hidden as expected
 3. If issues are found, fix via `figma_execute` and re-capture (up to 3 iterations)
 
@@ -1177,6 +1307,7 @@ Color spec complete: https://www.figma.com/design/{fileKey}/?node-id={frameId}
 - The color annotation template key is stored in `uspecs.config.json` under `templateKeys.colorAnnotation` and is configured via `@firstrun`.
 - The target node can be either a `COMPONENT_SET` (multi-variant) or a standalone `COMPONENT` (single variant). The extraction script detects the type and returns `isComponentSet` accordingly. When the node is a standalone component, it is treated as a single-entry variant array and there are no variant axes. Preview instance creation in Step 11 uses the component directly for standalone components.
 - Three-level cloning: variants → tables → rows. Each variant section is cloned from `#variant-template`, each table from `#color-table-template`, and each row from `#element-row-template`.
+- **Template defaults:** `#variant-template` is hidden by default (`visible=false`) — cloned variants must be set to `visible=true`. No post-render hiding step is needed. The `#hierarchy-indicator` frame inside `#element-row-template` is also hidden by default with both vectors (`within-group`, `#hierarchy-indicator-last`) hidden — only composite child rows need to show it.
 - Preview instructions: The `#preview-instruction-light` frame contains multiple TEXT nodes. The second TEXT node (index 1) receives the preview text formatted as "{ComponentName} {VariantName}".
 - The extraction script (Step 4b) supports smart sampling via `SKIP_AXES` — pass color-irrelevant axes and their default values to avoid extracting redundant variants. For components with few variants (≤ 10), extracting all variants is fine.
 - The instruction file (`color/agent-color-instruction.md`) contains the data structure reference, examples, and element-to-token mapping rules that guide the analysis phase.

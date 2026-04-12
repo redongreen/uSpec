@@ -3,6 +3,53 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V1.8.0 — April 2026" description="Composite color specs, context-aware property exhibits, non-dimensional axis coverage, and sub-pixel precision">
+  ## uSpec V1.8.0
+
+  The color skill now specs composite paint styles — gradients, multi-layer fills, and blended overlays — with nested hierarchy rows breaking down each layer. The property skill gains a new exhibit planning system with context axis rendering, sparse matrix chapters, and a dedicated instruction file. Structure now diffs every variant axis for structural or property-level changes, and measurements preserve sub-pixel precision.
+
+  ### Composite style support (Color)
+
+  - New `buildCompositeDetail` function in the extraction script detects paint styles with 2+ visible fill layers and emits a `compositeDetail` object with layer stacking order, blend modes, opacities, and gradient stops
+  - Token resolution priority updated: paint/stroke style names (`fillStyleId`, `strokeStyleId`) now take precedence over variable bindings (`boundVariables.color`), matching how effect styles are already handled
+  - AI interpretation builds `compositeChildren` arrays on elements — solid layers, gradient layers with per-stop detail, and image layers — rendered as nested rows with hierarchy indicators (`#hierarchy-indicator` frame toggled per child row)
+  - Both Strategy A (simple) and Strategy B (state-consolidated) rendering scripts support composite child rows with `showIndicator` for middle/last-child visual connectors
+  - Instruction file adds composite breakdown guidance, worked examples, rendering rules, and validation checklist items
+
+  ### Exhibit planning and context axis rendering (Property)
+
+  - New Step 1 reads a dedicated instruction file (`agent-property-instruction.md`) containing data validation, exhibit planning, pre-render checklist, common mistakes, and do-not rules — previously inline in SKILL.md
+  - Step 4e now includes exhibit planning (Phase B) that produces an `exhibitPlan` array routing each property to the correct rendering template
+  - New **context axis** system: when a variant axis qualifies as a visual context (e.g., `variant: primary/subtle`), all other illustrated chapters render grouped rows per context value using new `6a-ctx` and `6b-ctx` templates
+  - New **6a-matrix** template for sparse variant matrices — absolute-positioned grid with N/A placeholders for missing combinations, plus standalone chapters for both axes
+  - Step renumbering (1–11) with a new Step 5 audit pass that re-reads the instruction file's pre-render checklist before rendering
+  - All implementation notes moved from the SKILL.md Notes section to the instruction file, reducing SKILL.md scope to pure orchestration
+
+  ### Non-dimensional axis coverage (Structure)
+
+  - New Step 4e runs a diff script measuring root and direct children across every variant axis not already covered by size/density/shape extraction
+  - Step 6 classifies each axis as structural (children differ → separate sections per configuration), property-variant (dimensional properties differ → state-conditional section), or visual-only (skip)
+  - New Step 6b runs targeted follow-up extractions for structural axes, giving each configuration complete dimensional data across all sizes
+  - Instruction file adds non-dimensional variant axis guidance, decision table entries, and common mistake warnings for skipped diffs and missing property-variant sections
+  - User-provided value adjustments now replace extracted values in existing rows with explanatory notes instead of creating duplicate rows
+
+  ### Sub-pixel precision (Structure)
+
+  - All rounding functions updated from `Math.round()` to a `rv()` helper that preserves one decimal place (`Math.round(v * 10) / 10`) — values like 1.5px stay 1.5 instead of rounding to 2
+  - Applied across both Step 4b enhanced extraction and Step 4d cross-variant comparison scripts
+  - Instruction file updated: "Preserve one decimal place; whole numbers stay whole"
+
+  ### Anatomy refinements
+
+  - Root variant fills/effects now fold into the container note when a container synthetic already exists, instead of always creating a separate statelayer/backplate element
+  - Ghost overlays for failed slot insertions deferred to after auto-layout reflow so they use final positioning
+  - `instAbsX`/`instAbsY` recomputed after centering to fix absolute transform drift
+
+  ### Element naming (Color)
+
+  - Fill-bearing elements now consistently use a property qualifier: "Container fill" instead of "Container", "Background fill" instead of "Background" — removes ambiguity when the same element also has a stroke
+</Update>
+
 <Update label="V1.7.4 — April 2026" description="Evidence-based API reasoning with ownership hints, override promotion, and compound component guidance">
   ## uSpec V1.7.4
 

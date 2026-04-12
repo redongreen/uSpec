@@ -30,6 +30,7 @@ User-provided: component name, specific dimensional properties to document, sub-
 |----------|--------|
 | Description incomplete | Infer from Figma inspection; note assumptions in `sectionDescription` |
 | Figma contradicts description | Figma measurements win |
+| User provides value adjustments (e.g., "reduce padding by 2 when icon shown") | The user's value IS the property value. Replace the extracted Figma value in the existing property row — do not create a second row or group for it. Add a note on the row explaining the adjustment rule (e.g., "Optical alignment: base 22 minus 2 when icon adjacent"). |
 
 ---
 
@@ -205,6 +206,35 @@ Not all variants should be table columns. Use this framework:
 - **Columns work for:** Density (Compact/Default/Spacious) — same properties, different dp values
 - **Sections work for:** Configuration variants (with vs without trailing content) — different property sets
 - **Separate section for:** State that introduces new properties (e.g., selected state adds an inner border not present in default)
+
+---
+
+## Non-Dimensional Variant Axes
+
+The extraction script (Steps 4b–4d) only varies dimension-affecting axes (size, density, shape). All other variant axes need a separate diff check (Step 4e) to determine if they carry structural or dimensional significance. The AI interpretation layer in Step 6 classifies each axis into one of three categories:
+
+### Structural axis
+Children differ across values — different names, count, or visibility. Each structurally distinct configuration needs its own full extraction and section(s).
+
+**Examples:** `layout` (label vs icon-only), `loading` (content vs spinner), `type` (single-line vs multi-line).
+
+If the component also has a size axis, each configuration is documented across all sizes. For instance, a button with `layout=label` and `layout=icon-only` produces two sets of sections, each showing dimensions at Large / Medium / Small / XSmall.
+
+### Property-variant axis
+Same children, but dimensional properties differ — `strokeWeight` appears/disappears, `cornerRadius` changes, padding differs, sizing mode changes.
+
+**Examples:** `variant=secondary` adds a border that `primary` doesn't have; a configuration axis that changes corner radius.
+
+Gets a state-conditional section documenting which values differ and how. Group values with identical properties as columns.
+
+### Visual-only axis
+Same children, same dimensional properties. Only fills, effects, opacity, or colors change. **Skip** — no section needed.
+
+### AI reasoning for edge cases
+- A 0.5px rounding difference is noise — skip it.
+- `strokeWeight` going from 0 to 1 is meaningful — document it.
+- If multiple values along an axis share the same diff (e.g., `secondary` and `backgroundSafe` both add the same border), group them as columns rather than separate sections.
+- If a property change is ambiguous, flag it in `generalNotes`.
 
 ---
 
@@ -714,6 +744,10 @@ Both the extraction and cross-variant data provide pre-formatted `display` strin
 - **Reporting measured pixel dimensions on HUG-sized containers:** The extraction returns both measured `width`/`height` and `layoutSizingHorizontal`/`layoutSizingVertical`. When the sizing mode is `HUG`, the pixel value is an artifact of current content, not a design constraint. Document `widthMode: hug` instead. Reserve pixel `width`/`height` rows for `FIXED`-sized nodes only. For `FILL`-sized nodes, document `widthMode: fill`.
 - **Saying "See X spec" while documenting X's internals:** When **any section** references another component's spec ("See X spec"), only document the hosting context — the container or slot that holds the component (sizing mode, padding, spacing, alignment). Do not re-document the component's own internal properties (padding, cornerRadius, minWidth, iconSize, borderWidth) — those belong to the component's own spec. This applies equally to slot content sections, sub-component sections, and sections for default slot children. If `self` measurements match the component's standalone defaults, they belong in the component's own spec, not here.
 - **Creating a separate "container" section instead of a composition section:** When a component has 2+ structural zones (slots, sub-components, content areas), the host container's properties (padding, spacing, alignment, heightMode) belong as group rows in the **composition section** — not in a dedicated "container" section. The composition section serves as both the structural map and the host container documentation. A separate container section fragments the overview an engineer needs to understand the layout.
+- **Skipping non-dimensional axis diffs:** Only extracting size/density/shape variants without running Step 4e to check if other axes (layout, loading, variant, type, configuration) change children or dimensional properties. Always run the diff script and reason about every axis.
+- **Missing property-variant sections:** An axis like `variant` may not change children but still introduces a border, changes corner radius, or alters padding. If dimensional properties differ across an axis, document the difference in a state-conditional section.
+- **Duplicating rows for user-provided adjustments:** When the user says "the padding is X," there is one padding row showing X — not a "base padding" row plus an "adjusted padding" row. The user's value replaces the extracted value in the existing row. A note on that row explains the adjustment rule (e.g., "Base 22 minus 2 for optical alignment when icon adjacent"). Never create a parallel property like `paddingWithIcon` alongside `horizontalPadding`.
+- **Incomplete layout coverage:** Documenting only the default layout configuration when the component has multiple structural layouts (detected by Step 4e as a structural axis). Every structural configuration that an engineer must implement gets its own section(s).
 
 ---
 
@@ -745,6 +779,9 @@ Both the extraction and cross-variant data provide pre-formatted `display` strin
 | SLOT node as direct child of the host container | Does the layout tree show the SLOT node as a structurally significant child (has sizing mode, alignment, clipsContent)? | Document the slot container's properties as **group rows in the composition section** (not a separate container section). Do NOT repeat them in each slotContent section — they are constant regardless of slot content. |
 | INSTANCE child (icon, badge, illustration) inside a container | Does `parentSetName` identify which component is used? Is it present in all variants? | Add an `iconName` row with `parentSetName`, then `iconSize`. Use `"–"` in columns where the child is absent. |
 | `layoutSizingHorizontal: HUG` or `layoutSizingVertical: HUG` on a container | Is the measured width/height a design constraint or an artifact of default content? | Document `widthMode: hug` / `heightMode: hug`. Do NOT report the measured pixel value — it changes with content. Only use pixel `width`/`height` rows for `FIXED`-sized nodes, or `minWidth`/`maxWidth` when constraints are set. |
+| Non-dimensional variant axis (e.g., layout, loading, variant, type, configuration) | Does Step 4e show different children or different dimensional properties across values? | Classify using AI reasoning: structural (different children → full separate sections per configuration), property-variant (same children, different properties → state-conditional section), or visual-only (skip). |
+| Axis where some values add a stroke/border, change cornerRadius, change padding, or change sizing mode | Which values differ and how? Can values with the same properties be grouped? | Property-variant axis — create a state-conditional section with differing values as columns, documenting only the properties that change. |
+| User provides a value adjustment rule (e.g., "padding -2 when icon shown") | Is this an override of the extracted Figma values? | The user's value replaces the extracted value in the existing property row. One row, one value, with a note explaining the rule. No duplicate rows or separate sections. |
 
 ---
 
@@ -760,7 +797,7 @@ Both the extraction and cross-variant data provide pre-formatted `display` strin
 | Sub-component has its own density variants | Reference sub-component's spec; don't duplicate its structure table |
 | Corner radius uses "full" for pill shape | Document as `"full"` with note: "Uses half of minHeight" |
 | Value differs between platforms | Document the design spec value; note platform differences in notes |
-| Figma shows decimals (e.g., 12.5) | Round to nearest integer unless precision matters |
+| Figma shows decimals (e.g., 12.5) | Preserve one decimal place (e.g., 1.5 stays 1.5); whole numbers stay whole |
 | Token name unclear or ambiguous | Use the exact Figma variable name; engineers can map it |
 | Optical measurement differs from actual | Document the actual values; add note explaining the optical result (e.g., "Optically 12 from outside: 8 container padding + 4 inner padding") |
 | Composed spacing from nested containers | Document each container's value separately; note how they combine visually |

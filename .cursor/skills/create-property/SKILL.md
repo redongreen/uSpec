@@ -34,7 +34,7 @@ const targetPage = pages.find(p => p.name === '__PAGE_NAME__');
 if (targetPage) await figma.setCurrentPageAsync(targetPage);
 ```
 
-Replace `__PAGE_NAME__` with the actual page name (determined during Step 5 when the template is placed). This loads the page content so child nodes are accessible.
+Replace `__PAGE_NAME__` with the actual page name (determined during Step 7 when the template is placed). This loads the page content so child nodes are accessible.
 
 **`figma-mcp` font loading:** `getRangeAllFontNames` is not available in the `use_figma` sandbox and will throw `TypeError`. Replace it with `tn.fontName` (returns `{ family, style }` for single-font text, or `figma.mixed` for mixed-font text). `findAll` and `findOne` work normally after `setCurrentPageAsync` — they do not need replacement.
 
@@ -70,22 +70,28 @@ Copy this checklist and update as you progress:
 
 ```
 Task Progress:
-- [ ] Step 1: Verify MCP connection
-- [ ] Step 2: Read template key from uspecs.config.json
-- [ ] Step 3: Navigate to the component and extract property data
-- [ ] Step 3a: Detect variant-gated booleans (deterministic + interpretation)
-- [ ] Step 3b: Detect variable mode properties (shape, density) — AI search
-- [ ] Step 3c: Discover local child component properties + boolean linkage (deterministic)
-- [ ] Step 3d: Normalize child properties (deterministic script)
-- [ ] Step 3e: AI validation layer — cross-check extraction output before rendering
-- [ ] Step 4: Navigate to destination (if different file)
-- [ ] Step 5: Import and detach the Property template
-- [ ] Step 6: Fill header fields
-- [ ] Step 7: Build property exhibits with component instances
-- [ ] Step 8: Visual validation (limited role — confirms rendering, not primary safety net)
+- [ ] Step 1: Read instruction file
+- [ ] Step 2: Verify MCP connection
+- [ ] Step 3: Read template key from uspecs.config.json
+- [ ] Step 4: Navigate to the component and extract property data
+- [ ] Step 4a: Detect variant-gated booleans (deterministic + interpretation)
+- [ ] Step 4b: Detect variable mode properties (shape, density) — AI search
+- [ ] Step 4c: Discover local child component properties + boolean linkage (deterministic)
+- [ ] Step 4d: Normalize child properties (deterministic script)
+- [ ] Step 4e: AI validation layer + context axis identification — cross-check extraction output before rendering
+- [ ] Step 5: Re-read instruction file (Pre-Render Validation Checklist, Common Mistakes, Do NOT) and audit
+- [ ] Step 6: Navigate to destination (if different file)
+- [ ] Step 7: Import and detach the Property template
+- [ ] Step 8: Fill header fields
+- [ ] Step 9: Build property exhibits with component instances
+- [ ] Step 10: Visual validation
 ```
 
-### Step 1: Verify MCP Connection
+### Step 1: Read Instructions
+
+Read [agent-property-instruction.md](../../property/agent-property-instruction.md)
+
+### Step 2: Verify MCP Connection
 
 Read `mcpProvider` from `uspecs.config.json` to determine which Figma MCP to use.
 
@@ -97,7 +103,7 @@ Read `mcpProvider` from `uspecs.config.json` to determine which Figma MCP to use
 - Connection is verified implicitly on the first `use_figma` call. No explicit check needed.
 - If the first call fails: *"Please verify your FIGMA_API_KEY is set correctly in your MCP configuration."*
 
-### Step 2: Read Template Key
+### Step 3: Read Template Key
 
 Read the file `uspecs.config.json` and extract:
 - The `propertyOverview` value from the `templateKeys` object → save as `PROPERTY_TEMPLATE_KEY`
@@ -106,7 +112,7 @@ Read the file `uspecs.config.json` and extract:
 If the template key is empty, tell the user:
 > The property template key is not configured. Run `@firstrun` with your Figma template library link first.
 
-### Step 3: Extract Property Data
+### Step 4: Extract Property Data
 
 Navigate to the component file and run the extraction script via `figma_execute`.
 
@@ -225,11 +231,11 @@ return {
 
 Save the returned JSON — you will use it in subsequent steps.
 
-### Step 3a: Detect Variant-Gated Booleans
+### Step 4a: Detect Variant-Gated Booleans
 
 Some boolean properties only have a visual effect under specific variant axis values. For example, a "Dismiss button" boolean may only control a layer that exists in the `Behavior=Interactive` variant, not in `Behavior=Static`. When the default variant lacks the target layer, toggling the boolean produces identical-looking previews.
 
-After extracting properties in Step 3, run this script to resolve each boolean's target layer across all variant axis values. Replace `TARGET_NODE_ID` with the actual node ID:
+After extracting properties in Step 4, run this script to resolve each boolean's target layer across all variant axis values. Replace `TARGET_NODE_ID` with the actual node ID:
 
 ```javascript
 const TARGET_NODE_ID = '__NODE_ID__';
@@ -327,11 +333,11 @@ The script now returns an `interpretedBooleans` array alongside the raw `boolLay
 For each boolean in `interpretedBooleans`:
 
 - **`requiredVariantOverrides === null`** — No action needed. The boolean works on the default variant. Render normally in 6b.
-- **`requiredVariantOverrides` is an object** — The boolean is **variant-gated**. Store the `requiredVariantOverrides` on the boolean entry from Step 3's `booleanProps`. In 6b, use these overrides when looking up the base variant for instance creation. The description should note the dependency (e.g., "Requires Behavior = Interactive").
+- **`requiredVariantOverrides` is an object** — The boolean is **variant-gated**. Store the `requiredVariantOverrides` on the boolean entry from Step 4's `booleanProps`. In 6b, use these overrides when looking up the base variant for instance creation. The description should note the dependency (e.g., "Requires Behavior = Interactive").
 
 No AI reasoning is needed — the script has already resolved which booleans are variant-gated and what overrides they require.
 
-### Step 3b: Detect Variable Mode Properties
+### Step 4b: Detect Variable Mode Properties
 
 Some component properties (e.g., shape, density) are controlled via **Figma variable modes** at the container level, not per-instance. These do not appear in `componentPropertyDefinitions` and will be missed by the extraction script above.
 
@@ -373,11 +379,11 @@ variableModeProps: [
 
 If no matching collections are found, set `variableModeProps` to an empty array and proceed.
 
-### Step 3c: Discover Local Child Component Properties
+### Step 4c: Discover Local Child Component Properties
 
 Some components contain nested child instances (e.g., a Button inside a Section Heading) that have their own configurable properties. These are not captured by the parent's `componentPropertyDefinitions`. This step walks the default variant's children recursively to find local child components and extract their properties.
 
-Run this script via `figma_execute`, replacing `TARGET_NODE_ID` with the actual node ID. **Pass the parent's `booleanProps` array** (from Step 3) as `PARENT_BOOLEANS` so the script can resolve controlling boolean linkage deterministically:
+Run this script via `figma_execute`, replacing `TARGET_NODE_ID` with the actual node ID. **Pass the parent's `booleanProps` array** (from Step 4) as `PARENT_BOOLEANS` so the script can resolve controlling boolean linkage deterministically:
 
 ```javascript
 const TARGET_NODE_ID = '__NODE_ID__';
@@ -500,7 +506,7 @@ for (const child of childComponents) {
 return { childComponents, controllingBooleanNames };
 ```
 
-Replace `__PARENT_BOOLEANS_JSON__` with the `booleanProps` array from Step 3 (e.g., `[{"name":"Trailing content","defaultValue":false,"rawKey":"Trailing content#6051:1","associatedLayer":"trailingContent v2"}]`).
+Replace `__PARENT_BOOLEANS_JSON__` with the `booleanProps` array from Step 4 (e.g., `[{"name":"Trailing content","defaultValue":false,"rawKey":"Trailing content#6051:1","associatedLayer":"trailingContent v2"}]`).
 
 Save the returned `childComponents` array and `controllingBooleanNames` array. Each child entry now contains:
 - `name`: the layer name in the parent (e.g., "trailingContent v2")
@@ -516,18 +522,18 @@ The `controllingBooleanNames` array contains all matched boolean names — these
 
 If `childComponents` is empty, proceed — there are no local child components to exhibit.
 
-### Step 3d: Normalize Child Properties (Deterministic Script)
+### Step 4d: Normalize Child Properties (Deterministic Script)
 
-This is a deterministic data-processing step — no Figma calls needed. Run the following script via `figma_execute`, passing in the extracted data from Steps 3, 3c. It performs all four sub-analyses (coupled axes, container-gated booleans, unified slots, sibling booleans) and returns the full normalization plan.
+This is a deterministic data-processing step — no Figma calls needed. Run the following script via `figma_execute`, passing in the extracted data from Steps 4, 4c. It performs all four sub-analyses (coupled axes, container-gated booleans, unified slots, sibling booleans) and returns the full normalization plan.
 
-Replace `__PARENT_VARIANT_AXES_JSON__` with the `variantAxes` array from Step 3, `__CHILD_COMPONENTS_JSON__` with the `childComponents` array from Step 3c, and `__CONTROLLING_BOOLEAN_NAMES_JSON__` with the `controllingBooleanNames` array from Step 3c:
+Replace `__PARENT_VARIANT_AXES_JSON__` with the `variantAxes` array from Step 4, `__CHILD_COMPONENTS_JSON__` with the `childComponents` array from Step 4c, and `__CONTROLLING_BOOLEAN_NAMES_JSON__` with the `controllingBooleanNames` array from Step 4c:
 
 ```javascript
 const PARENT_AXES = __PARENT_VARIANT_AXES_JSON__;
 const CHILDREN = __CHILD_COMPONENTS_JSON__;
 const CONTROLLING_BOOL_NAMES = __CONTROLLING_BOOLEAN_NAMES_JSON__;
 
-// --- 3d-i: Detect coupled axes ---
+// --- 4d-i: Detect coupled axes ---
 for (const child of CHILDREN) {
   for (const axis of child.variantAxes) {
     axis.coupled = false;
@@ -542,7 +548,7 @@ for (const child of CHILDREN) {
   }
 }
 
-// --- 3d-ii/iii: Container-gated booleans + unified slot chapters ---
+// --- 4d-ii/iii: Container-gated booleans + unified slot chapters ---
 const unifiedSlotChapters = [];
 const unifiedSubBooleanNames = [];
 
@@ -622,7 +628,7 @@ for (const child of CHILDREN) {
   for (const sb of subBools) unifiedSubBooleanNames.push(sb.name);
 }
 
-// --- 3d-iv: Sibling boolean collapsing ---
+// --- 4d-iv: Sibling boolean collapsing ---
 const siblingBoolChapters = [];
 const siblingBoolNames = [];
 const consumedByUnified = new Set(unifiedSubBooleanNames);
@@ -679,10 +685,10 @@ return {
 
 Save the returned data. The script produces:
 
-- **`childComponents`** — Updated with `coupled: true` flags on child variant axes that mirror parent axes (3d-i). In Step 7 (6e-i), skip axes where `coupled === true`.
-- **`unifiedSlotChapters`** — Array of chapter entries for container + sub-boolean combinations (3d-ii/iii). Each entry has `chapterName`, `childName`, `containerBoolName`, `containerBoolRawKey`, `subBooleans`, `previewCombinations`, and `defaultLabel`. Rendered in 6f.
+- **`childComponents`** — Updated with `coupled: true` flags on child variant axes that mirror parent axes (4d-i). In Step 9 (6e-i), skip axes where `coupled === true`.
+- **`unifiedSlotChapters`** — Array of chapter entries for container + sub-boolean combinations (4d-ii/iii). Each entry has `chapterName`, `childName`, `containerBoolName`, `containerBoolRawKey`, `subBooleans`, `previewCombinations`, and `defaultLabel`. Rendered in 6f.
 - **`unifiedSubBooleanNames`** — Array of sub-boolean names consumed by unified slot chapters. These are skipped in 6e-ii.
-- **`siblingBoolChapters`** — Array of chapter entries for sibling boolean combinations (3d-iv). Each entry has `chapterName`, `childName`, `booleans`, `previewCombinations`, and `defaultLabel`. Rendered in 6g.
+- **`siblingBoolChapters`** — Array of chapter entries for sibling boolean combinations (4d-iv). Each entry has `chapterName`, `childName`, `booleans`, `previewCombinations`, and `defaultLabel`. Rendered in 6g.
 - **`siblingBoolNames`** — Array of boolean names consumed by sibling boolean chapters. These are skipped in 6e-ii.
 
 **Label generation rules** (handled by the script):
@@ -695,95 +701,48 @@ Save the returned data. The script produces:
 
 **Graceful fallback**: If a child has only 1 remaining boolean after filtering (not consumed by unified slots), it is NOT added to `siblingBoolChapters` — it stays as a standard boolean chapter rendered in 6e-ii.
 
-### Step 3e: AI Validation Layer
+### Step 4e: AI Validation and Exhibit Planning
 
-After all deterministic extraction is complete (Steps 3, 3a, 3b, 3c, 3d), perform an AI validation pass over the full dataset **before rendering**. This is the designated Tier 2 reasoning step — it catches issues that deterministic scripts cannot detect. Do NOT rely on visual inspection (Step 8) as the primary safety net.
+After all deterministic extraction is complete (Steps 4–4d), perform AI validation and exhibit planning. Follow the **Data Validation** and **Exhibit Planning** sections in the instruction file ([agent-property-instruction.md](../../property/agent-property-instruction.md)).
 
-Review the following and make corrections to the data structures before proceeding to Step 4:
+This step has two phases: **Phase A** (Data Validation) corrects the extraction data, **Phase B** (Exhibit Planning) plans what to render and how. Do NOT rely on visual inspection (Step 10) as the primary safety net — this step is the designated reasoning layer.
 
-#### Integrate user-provided notes
+**Context axis identification** — As the first action in Phase B, follow the "Identify context axes" section in the instruction file. Evaluate each variant axis against the heuristics and select 0–1 context axes (rarely 2). Store the result as `contextAxis`:
 
-If the user provided contextual notes (e.g., "composable slot in code", "single select and multi select behavior", "do not mix variants"), map each note to a specific data action:
+```
+contextAxis: { name: "variant", options: ["primary", "subtle"], defaultValue: "primary" }
+// or null if no axis qualifies
+```
 
-- **Coupling hints** (e.g., "variant controls the sub-component variant") → Override the deterministic coupled-axis result from 3d-i. Mark the child axis as `coupled: true` even if the option names don't match.
-- **Usage constraints** (e.g., "do not mix different sizes") → Attach as description text to the relevant chapter. No data structure change needed.
-- **Code-only properties** (e.g., "single select / multi select behavior") → Note in a relevant chapter description. These cannot be visualized but should be documented.
-- **Property importance hints** (e.g., "see isSelected boolean") → Ensure that property gets its own chapter and is not accidentally skipped by normalization.
+When `contextAxis` is non-null:
+- The context axis's own exhibit plan entry is `presentation: "illustrate"` with `template: "6a"` (standard, non-contextual). This gives engineers a dedicated reference for the axis options.
+- All other `"illustrate"` entries use contextual templates (6a-ctx instead of 6a, 6b-ctx instead of 6b).
+- Composite chapters use the context rowGroup pattern (see 6a-ctx).
+- The `briefDescription` should mention the context axis (e.g., "…available in primary and subtle variants").
 
-#### Cross-check boolean linkage
+Produce the `exhibitPlan` array and `contextAxis` as documented in the instruction file. Also compose the `briefDescription` string for the spec header.
 
-For each child component where `controllingBooleanName` is `null` and `visible === false`, check whether any parent boolean name is semantically related to the child's layer name. The deterministic script in 3c uses exact name matching and normalized substring containment, but some designs use unrelated naming conventions (e.g., boolean "Show actions" controlling a child named "toolbar"). If a semantic match is apparent, manually set `controllingBooleanName` and `controllingBooleanRawKey` on the child entry and add the boolean name to `controllingBooleanNames`.
+After validation and planning, proceed to the pre-render audit.
 
-Conversely, if a deterministic match looks wrong (e.g., "Icon" boolean matched to "Icon button" child when "Icon" controls a different element), override it by setting `controllingBooleanName` back to `null`.
+### Step 5: Audit
 
-#### Validate variable mode relevance
+Re-read the instruction file ([agent-property-instruction.md](../../property/agent-property-instruction.md)), focusing on:
+- **Pre-Render Validation Checklist** — walk through every item
+- **Common Mistakes** section
+- **Do NOT** section
 
-Review the `variableModeProps` from Step 3b. For each collection:
+Check the exhibit plan and corrected data against each rule. Fix any violations before rendering.
 
-- Confirm it applies to this component specifically, not a different component or a global theme. A "Density" collection that only has bindings to unrelated components should be excluded.
-- Confirm the mode names represent meaningful property options (e.g., "Compact", "Default", "Spacious"), not color themes or breakpoints.
-- Remove any entries that are not relevant to this component's configurable properties.
-
-#### Cross-check coupled axis detection
-
-The deterministic check in 3d-i only flags a child axis as coupled when its options are a **strict subset** of the parent's options (case-insensitive). This misses semantically coupled axes where the option names differ. Common pattern: a parent axis named `variant` with options `[bold, subtle]` and a child axis also named `variant` with options `[primary, subtle]` — the parent controls the child's variant, but "bold" ≠ "primary" so the subset check fails.
-
-Apply these heuristics for axes that share the same name (case-insensitive) but failed the subset check:
-
-- **Same option count** + **partial option overlap** (≥50% of options match) → Likely coupled. Mark as `coupled: true`.
-- **User notes explicitly state coupling** (e.g., "variant is a prebuild option for primary and subtle") → Override to `coupled: true` regardless of option overlap.
-- **Different option count with no overlap** → Probably not coupled. Leave as `coupled: false`.
-
-When overriding to `coupled: true`, the parent axis chapter already covers this property visually — the child axis chapter would be redundant.
-
-#### Detect sparse variant matrices in child components
-
-Sub-component sets may not define all variant axis combinations. For example, a child with axes `isDisabled: [false, true]` and `isSelected: [true, false]` might lack the `isDisabled=true, isSelected=false` variant. When the in-context rendering approach (6e) calls `setProperties()` on a nested instance with a missing combination, it throws `"Unable to find a variant with those property values"` and the chapter silently fails or rolls back.
-
-For each child component, check whether all axis value combinations exist:
-
-- If any child axis has options that only exist in combination with specific values of another axis (e.g., `isDisabled=true` only exists when `isSelected=true`), add a `constrainedBy` property to that axis entry in the child's `variantAxes` array (e.g., `constrainedBy: { isSelected: 'true' }`). This field is added during AI validation, not by the deterministic scripts.
-- Pass this constraint to the rendering step so the correct base variant is used (6e-iii reads `constrainedBy` from the axis to populate `BASE_PROPS`).
-- If the constraint makes in-context rendering infeasible (e.g., multiple interdependent constraints), flag the child for **blown-out rendering** by adding `blownOut: true` to the child entry in `childComponents`. See 6e-iii for the rendering template.
-
-This check can be done by inspecting the `variantProperties` of all children in the sub-component set (via a `use_figma` script on `mainComponentSetId`) or by attempting a test `setProperties()` call and catching the error.
-
-#### Deduplicate identical child instances
-
-The Step 3c script walks all children and may return multiple entries pointing to the same `mainComponentSetId` (e.g., 4 button instances in a button group that all resolve to the same Button component set). Before rendering, deduplicate `childComponents` by `mainComponentSetId` (or `mainComponentId` for non-set children). Keep only the first occurrence. This prevents rendering 4 identical chapters for the same sub-component. When deduplication removes entries, flag the surviving entry with `blownOut: true` — in-context rendering would only modify one of the identical nested instances, making the other copies visually inconsistent.
-
-#### Catch structural anomalies
-
-Scan for potential issues in the extraction output:
-
-- A child component with 0 renderable properties after normalization (all variant axes coupled, all booleans consumed by unified/sibling chapters) — verify this is genuinely empty rather than a script oversight. If properties were incorrectly consumed, adjust the skip lists.
-- A `unifiedSlotChapter` where all sub-booleans default to `true` but the container defaults to `false` — the default label should be "None", not a combination label. Verify the `defaultLabel` is correct.
-- Child components whose `mainComponentName` suggests they are utility/internal components (e.g., "Spacer", "Divider") rather than meaningful sub-components — consider whether they should be exhibited at all.
-
-#### Sanity-check combination counts
-
-For each `unifiedSlotChapter` and `siblingBoolChapter`, verify the number of `previewCombinations` is reasonable:
-
-- If a chapter has more than 8 combinations, reduce to the most meaningful subset (all off, each individually on, all on)
-- If a chapter has only 2 combinations (just "None" and one other), consider whether it should remain as a unified chapter or be rendered as a simple boolean toggle instead
-- If combination labels are unclear or redundant, rewrite them for clarity
-
-#### Compose brief description
-
-Write a `briefDescription` string (1 sentence, max ~15 words) for the spec header's `#brief-component-description` field. This describes what the component IS and does — not what the spec type is. Incorporate user-provided context when available. When no context is provided, derive from the extraction data (e.g., "Composable section header with configurable leading, title, and trailing slots"). Do not start with the component name — it already appears in the `#comp-name-anatomy` field above. Avoid generic descriptions like "Configurable properties of..." — instead describe the component's purpose and role. Save this string for Step 6.
-
-After validation, proceed with the corrected data to rendering.
-
-### Step 4: Navigate to Destination
+### Step 6: Navigate to Destination
 
 If the user provided a separate destination file URL:
 - `figma_navigate` — Switch to the destination file
 
 If no destination was provided, stay in the current file.
 
-### Step 5: Import and Detach Template
+### Step 7: Import and Detach Template
 
-**If the user provided a cross-file destination URL** (navigated in Step 4), run via `figma_execute`:
+**If the user provided a cross-file destination URL** (navigated in Step 6), run via `figma_execute`:
 
 ```javascript
 const PROPERTY_TEMPLATE_KEY = '__PROPERTY_TEMPLATE_KEY__';
@@ -825,13 +784,13 @@ figma.viewport.scrollAndZoomIntoView([frame]);
 return { frameId: frame.id, pageId: _p.id, pageName: _p.name };
 ```
 
-Replace `__COMPONENT_NAME__` with the extracted `componentName`. Replace `__COMPONENT_NODE_ID__` with the node ID extracted from the component URL (same as `TARGET_NODE_ID` from Step 3).
+Replace `__COMPONENT_NAME__` with the extracted `componentName`. Replace `__COMPONENT_NODE_ID__` with the node ID extracted from the component URL (same as `TARGET_NODE_ID` from Step 4).
 
 Save the returned `frameId`.
 
-### Step 6: Fill Header Fields
+### Step 8: Fill Header Fields
 
-Run via `figma_execute` (replace `__FRAME_ID__`, `__COMPONENT_NAME__`, `__BRIEF_DESCRIPTION__`). Replace `__BRIEF_DESCRIPTION__` with the `briefDescription` composed during Step 3e:
+Run via `figma_execute` (replace `__FRAME_ID__`, `__COMPONENT_NAME__`, `__BRIEF_DESCRIPTION__`). Replace `__BRIEF_DESCRIPTION__` with the `briefDescription` composed during Step 4e:
 
 ```javascript
 const frame = await figma.getNodeByIdAsync('__FRAME_ID__');
@@ -867,15 +826,28 @@ if (markerExample) markerExample.visible = false;
 return { success: true };
 ```
 
-### Step 7: Build Property Exhibits
+### Step 9: Build Property Exhibits
 
-This is the main rendering step. For each property (variant axes first, then booleans, then variable mode properties), create a chapter section with visual exhibits.
+This is the main rendering step. Iterate over the `exhibitPlan` array produced in Step 4e. Each entry specifies the chapter type, rendering mode, and configuration. Do NOT mechanically iterate `variantAxes` then `booleanProps` — the exhibit plan already accounts for matrix chapters, composite chapters, and context axis rendering.
 
-Run **one `figma_execute` call per property** to avoid timeouts. The scripts below are templates — fill in the extracted data.
+**Template routing based on `contextAxis`:**
 
-#### 6a: For each VARIANT axis
+| Exhibit type | `contextAxis` is null | `contextAxis` is non-null |
+|---|---|---|
+| Variant axis chapter | **6a** (standard) | **6a-ctx** (contextual rows) |
+| Boolean chapter | **6b** (standard) | **6b-ctx** (contextual rows) |
+| Composite chapter | **6a** (custom OPTIONS) | **6a-ctx** (custom OPTIONS + context rows) |
+| Sparse matrix | **6a-matrix** | **6a-matrix** (unchanged) |
+| Variable mode | **6c** | **6c** (unchanged) |
+| Child component | **6e/6f/6g** | **6e/6f/6g** (unchanged) |
 
-For each variant axis from the extraction, run via `figma_execute`:
+When `contextAxis` is non-null, pass `CONTEXT_AXIS_NAME`, `CONTEXT_OPTIONS`, and `CONTEXT_DEFAULT` to the contextual templates. These values come from the `contextAxis` object produced in Step 4e.
+
+Run **one `figma_execute` call per exhibit** to avoid timeouts. The scripts below are templates — select the appropriate template based on each exhibit entry's `template` field.
+
+#### 6a: Standard VARIANT axis chapter
+
+For exhibit plan entries with `template: "6a"` (when `contextAxis` is null). Also used for composite entries without context — supply a customized `OPTIONS` array and `DEFAULT_PROPS` as determined by the exhibit plan:
 
 ```javascript
 const FRAME_ID = '__FRAME_ID__';
@@ -1012,11 +984,382 @@ return { success: true, property: PROPERTY_NAME };
 }
 ```
 
-#### 6b: For each BOOLEAN property
+#### 6a-ctx: Contextual VARIANT axis chapter
 
-**Skip controlling booleans**: Before rendering each parent boolean, check if its `name` appears in the `controllingBooleanNames` set built in Step 3c. If so, skip it — its chapter is produced by 6e as part of the unified child component chapter.
+When `contextAxis` is non-null, use this template instead of 6a for variant chapters. Also used for composite chapters with context. The template adds an outer loop over context axis values, rendering grouped rows inside a vertical container frame. Each row group has a row label and a horizontal instance row.
 
-**Handle variant-gated booleans**: Before rendering, check if the boolean has `requiredVariantOverrides` (from Step 3a). If so, the base variant for instance creation must match those overrides instead of using the default variant. Replace `VARIANT_OVERRIDES` with the required overrides object (e.g., `{"Behavior": "Interactive"}`), or `null` if the boolean is not variant-gated.
+Replace `CONTEXT_AXIS_NAME`, `CONTEXT_OPTIONS`, and `CONTEXT_DEFAULT` with the context axis data from the exhibit plan. Replace all other placeholders as in 6a:
+
+```javascript
+const FRAME_ID = '__FRAME_ID__';
+const COMP_SET_ID = '__COMP_SET_NODE_ID__';
+const PROPERTY_NAME = '__PROPERTY_NAME__';
+const OPTIONS = __OPTIONS_JSON__;
+const DEFAULT_VALUE = '__DEFAULT_VALUE__';
+const DEFAULT_PROPS = __DEFAULT_PROPS_JSON__;
+const CONTEXT_AXIS_NAME = '__CONTEXT_AXIS_NAME__';
+const CONTEXT_OPTIONS = __CONTEXT_OPTIONS_JSON__;
+const CONTEXT_DEFAULT = '__CONTEXT_DEFAULT__';
+const FONT_FAMILY = '__FONT_FAMILY__';
+
+const frame = await figma.getNodeByIdAsync(FRAME_ID);
+const chapterTemplate = frame.findOne(n => n.name === '#anatomy-section');
+
+async function loadAllFonts(rootNode) {
+  const textNodes = rootNode.findAll(n => n.type === 'TEXT');
+  const fontSet = new Set();
+  const fontsToLoad = [];
+  for (const tn of textNodes) {
+    try {
+      const fn = tn.fontName;
+      if (fn && fn !== figma.mixed && fn.family) {
+        const key = fn.family + '|' + fn.style;
+        if (!fontSet.has(key)) { fontSet.add(key); fontsToLoad.push(fn); }
+      }
+    } catch {}
+  }
+  await Promise.all(fontsToLoad.map(f => figma.loadFontAsync(f).catch(() => {})));
+}
+
+async function loadFontWithFallback(family, preferredStyle, fallbackStyle) {
+  fallbackStyle = fallbackStyle || 'Regular';
+  const allFonts = await figma.listAvailableFontsAsync();
+  const familyFonts = allFonts.filter(f => f.fontName.family === family);
+  const match = familyFonts.find(f => f.fontName.style === preferredStyle);
+  if (match) { await figma.loadFontAsync(match.fontName); return match.fontName; }
+  const fallback = familyFonts.find(f => f.fontName.style === fallbackStyle);
+  if (fallback) { await figma.loadFontAsync(fallback.fontName); return fallback.fontName; }
+  if (familyFonts.length > 0) { await figma.loadFontAsync(familyFonts[0].fontName); return familyFonts[0].fontName; }
+  await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+  return { family: 'Inter', style: 'Regular' };
+}
+
+const chapter = chapterTemplate.clone();
+chapterTemplate.parent.appendChild(chapter);
+chapter.name = PROPERTY_NAME;
+chapter.visible = true;
+
+try {
+
+await loadAllFonts(chapter);
+
+const sectionName = chapter.findOne(n => n.name === '#section-name');
+if (sectionName) {
+  const t = sectionName.findOne(n => n.type === 'TEXT');
+  if (t) t.characters = PROPERTY_NAME;
+}
+
+const sectionDesc = chapter.findOne(n => n.name === '#optional-section-description');
+if (sectionDesc) {
+  const t = sectionDesc.findOne(n => n.type === 'TEXT');
+  if (t) t.characters = OPTIONS.length + ' options across ' + CONTEXT_OPTIONS.length + ' ' + CONTEXT_AXIS_NAME + 's. Default: ' + DEFAULT_VALUE;
+}
+
+const assetPlaceholder = chapter.findOne(n => n.name === '#preview');
+while (assetPlaceholder.children.length > 0) {
+  assetPlaceholder.children[0].remove();
+}
+
+const compSet = await figma.getNodeByIdAsync(COMP_SET_ID);
+const LABEL_FONT = await loadFontWithFallback(FONT_FAMILY, 'Medium');
+const ROW_LABEL_FONT = await loadFontWithFallback(FONT_FAMILY, 'Bold');
+
+const contextContainer = figma.createFrame();
+contextContainer.name = 'context-groups';
+contextContainer.layoutMode = 'VERTICAL';
+contextContainer.itemSpacing = 32;
+contextContainer.fills = [];
+contextContainer.primaryAxisSizingMode = 'AUTO';
+contextContainer.counterAxisSizingMode = 'FILL';
+assetPlaceholder.appendChild(contextContainer);
+
+for (const ctxValue of CONTEXT_OPTIONS) {
+  const rowGroup = figma.createFrame();
+  rowGroup.name = ctxValue;
+  rowGroup.layoutMode = 'VERTICAL';
+  rowGroup.itemSpacing = 16;
+  rowGroup.fills = [];
+  rowGroup.primaryAxisSizingMode = 'AUTO';
+  rowGroup.counterAxisSizingMode = 'FILL';
+  contextContainer.appendChild(rowGroup);
+
+  const rowLabel = figma.createText();
+  rowLabel.fontName = ROW_LABEL_FONT;
+  rowLabel.characters = ctxValue === CONTEXT_DEFAULT ? ctxValue + ' (default)' : ctxValue;
+  rowLabel.fontSize = 12;
+  rowLabel.fills = [{ type: 'SOLID', color: { r: 0.45, g: 0.45, b: 0.45 } }];
+  rowGroup.appendChild(rowLabel);
+
+  const instanceRow = figma.createFrame();
+  instanceRow.name = ctxValue + '-instances';
+  instanceRow.layoutMode = 'HORIZONTAL';
+  instanceRow.layoutWrap = 'WRAP';
+  instanceRow.itemSpacing = 24;
+  instanceRow.counterAxisSpacing = 24;
+  instanceRow.fills = [];
+  instanceRow.primaryAxisSizingMode = 'AUTO';
+  instanceRow.counterAxisSizingMode = 'AUTO';
+  rowGroup.appendChild(instanceRow);
+
+  for (const option of OPTIONS) {
+    const variantProps = { ...DEFAULT_PROPS };
+    variantProps[PROPERTY_NAME] = option;
+    variantProps[CONTEXT_AXIS_NAME] = ctxValue;
+
+    let targetVariant = null;
+    let bestFallback = null;
+    let bestFallbackScore = -1;
+    for (const child of compSet.children) {
+      const vp = child.variantProperties || {};
+      if (vp[PROPERTY_NAME] !== option) continue;
+      if (vp[CONTEXT_AXIS_NAME] !== ctxValue) continue;
+      let score = 0;
+      let exactMatch = true;
+      for (const [k, v] of Object.entries(variantProps)) {
+        if (vp[k] === v) { score++; } else { exactMatch = false; }
+      }
+      if (exactMatch) { targetVariant = child; break; }
+      if (score > bestFallbackScore) { bestFallbackScore = score; bestFallback = child; }
+    }
+    if (!targetVariant) targetVariant = bestFallback;
+
+    const wrapper = figma.createFrame();
+    wrapper.name = option;
+    wrapper.layoutMode = 'VERTICAL';
+    wrapper.primaryAxisAlignItems = 'CENTER';
+    wrapper.counterAxisAlignItems = 'CENTER';
+    wrapper.itemSpacing = 12;
+    wrapper.fills = [];
+    wrapper.primaryAxisSizingMode = 'AUTO';
+    wrapper.counterAxisSizingMode = 'AUTO';
+    instanceRow.appendChild(wrapper);
+
+    if (targetVariant) {
+      const inst = targetVariant.createInstance();
+      await loadAllFonts(inst);
+      wrapper.appendChild(inst);
+    } else {
+      const placeholder = figma.createText();
+      await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+      placeholder.characters = 'N/A';
+      placeholder.fontSize = 12;
+      placeholder.fills = [{ type: 'SOLID', color: { r: 0.6, g: 0.6, b: 0.6 } }];
+      wrapper.appendChild(placeholder);
+    }
+
+    const label = figma.createText();
+    label.fontName = LABEL_FONT;
+    label.characters = option === DEFAULT_VALUE ? option + ' (default)' : option;
+    label.fontSize = 14;
+    label.fills = [{ type: 'SOLID', color: { r: 0.29, g: 0.29, b: 0.29 } }];
+    wrapper.appendChild(label);
+  }
+}
+
+return { success: true, property: PROPERTY_NAME };
+
+} catch (e) {
+  chapter.remove();
+  return { error: e.message, rolledBack: true };
+}
+```
+
+**Key differences from 6a:**
+- Outer loop over `CONTEXT_OPTIONS` creates row groups with labels
+- A `contextContainer` frame inside `#preview` handles vertical stacking (avoids modifying `#preview` properties)
+- `variantProps` sets both `PROPERTY_NAME` and `CONTEXT_AXIS_NAME` for each instance
+- Variant lookup requires both the property AND context axis to match, with fallback scoring
+- Row labels use Bold/12px to distinguish from option labels (Medium/14px)
+- N/A placeholders appear when a context × option combination doesn't exist
+
+**Composite chapters with context:** When a composite chapter (variant axis + related booleans) needs context rendering, use the same 6a-ctx structure. The `OPTIONS` loop creates instances with custom property combinations (as in the standard composite approach), and the outer `CONTEXT_OPTIONS` loop wraps everything in context rows. For each composite option, set the variant properties AND the boolean properties on the instance, then also set `CONTEXT_AXIS_NAME = ctxValue`.
+
+#### 6a-matrix: For a SPARSE VARIANT MATRIX chapter
+
+When the exhibit plan (Step 4e) identified a sparse axis pair, render a matrix chapter **plus standalone chapters for both axes**. The matrix's primary axis forms the rows, the secondary axis forms the columns. Missing combinations get "N/A" placeholders that occupy the same cell space as real instances for visual alignment. The standalone chapters (6a) give engineers a dedicated reference for each axis in isolation; the matrix shows which cross-product combinations exist.
+
+**Grid layout technique**: The matrix uses **absolute positioning** inside a non-auto-layout child frame, nested within the template's `#preview` frame. This prevents auto-layout from collapsing or misaligning cells when "N/A" placeholders are smaller than real instances.
+
+```javascript
+const FRAME_ID = '__FRAME_ID__';
+const COMP_SET_ID = '__COMP_SET_NODE_ID__';
+const PRIMARY_AXIS = '__PRIMARY_AXIS_NAME__';   // e.g., 'variant' (rows)
+const SECONDARY_AXIS = '__SECONDARY_AXIS_NAME__'; // e.g., 'color' (columns)
+const PRIMARY_OPTIONS = __PRIMARY_OPTIONS_JSON__;
+const SECONDARY_OPTIONS = __SECONDARY_OPTIONS_JSON__;
+const DEFAULT_PROPS = __DEFAULT_PROPS_JSON__;
+const FONT_FAMILY = '__FONT_FAMILY__';
+const CHAPTER_NAME = '__CHAPTER_NAME__';
+const DESCRIPTION = '__DESCRIPTION__';
+
+const frame = await figma.getNodeByIdAsync(FRAME_ID);
+const chapterTemplate = frame.findOne(n => n.name === '#anatomy-section');
+
+async function loadAllFonts(rootNode) {
+  const textNodes = rootNode.findAll(n => n.type === 'TEXT');
+  const fontSet = new Set();
+  const fontsToLoad = [];
+  for (const tn of textNodes) {
+    try {
+      const fn = tn.fontName;
+      if (fn && fn !== figma.mixed && fn.family) {
+        const key = fn.family + '|' + fn.style;
+        if (!fontSet.has(key)) { fontSet.add(key); fontsToLoad.push(fn); }
+      }
+    } catch {}
+  }
+  await Promise.all(fontsToLoad.map(f => figma.loadFontAsync(f).catch(() => {})));
+}
+
+async function loadFontWithFallback(family, preferredStyle, fallbackStyle) {
+  fallbackStyle = fallbackStyle || 'Regular';
+  const allFonts = await figma.listAvailableFontsAsync();
+  const familyFonts = allFonts.filter(f => f.fontName.family === family);
+  if (familyFonts.length === 0) return { family: 'Inter', style: fallbackStyle };
+  const pref = familyFonts.find(f => f.fontName.style === preferredStyle);
+  if (pref) return pref.fontName;
+  const fb = familyFonts.find(f => f.fontName.style === fallbackStyle);
+  return fb ? fb.fontName : familyFonts[0].fontName;
+}
+
+const chapter = chapterTemplate.clone();
+chapter.visible = true;
+chapter.name = CHAPTER_NAME;
+frame.appendChild(chapter);
+
+try {
+
+await loadAllFonts(chapter);
+const titleNode = chapter.findOne(n => n.name === '#property-name' && n.type === 'TEXT');
+if (titleNode) titleNode.characters = CHAPTER_NAME;
+const descNode = chapter.findOne(n => n.name === '#property-description' && n.type === 'TEXT');
+if (descNode) descNode.characters = DESCRIPTION;
+
+const assetPlaceholder = chapter.findOne(n => n.name === '#preview');
+while (assetPlaceholder.children.length > 0) assetPlaceholder.children[0].remove();
+
+// --- Measure a sample instance to determine cell size ---
+const compSet = await figma.getNodeByIdAsync(COMP_SET_ID);
+const sampleVariant = compSet.children[0];
+const sampleInst = sampleVariant.createInstance();
+await loadAllFonts(sampleInst);
+const CELL_W = Math.ceil(sampleInst.width) + 40;
+const CELL_H = Math.ceil(sampleInst.height) + 40;
+sampleInst.remove();
+
+const LABEL_H = 20;
+const HEADER_H = 24;
+const GAP = 8;
+const ROW_LABEL_W = 120;
+const GRID_LEFT = ROW_LABEL_W + GAP;
+
+const totalCols = SECONDARY_OPTIONS.length;
+const totalRows = PRIMARY_OPTIONS.length;
+const totalW = GRID_LEFT + totalCols * (CELL_W + GAP);
+const totalH = HEADER_H + GAP + totalRows * (CELL_H + LABEL_H + GAP);
+
+// Preserve #preview as auto-layout, create a non-auto-layout child for the grid
+assetPlaceholder.layoutWrap = 'WRAP';
+const gridFrame = figma.createFrame();
+gridFrame.name = CHAPTER_NAME + '-grid';
+gridFrame.layoutMode = 'NONE';
+gridFrame.fills = [];
+gridFrame.resize(totalW, totalH);
+assetPlaceholder.appendChild(gridFrame);
+
+const LABEL_FONT = await loadFontWithFallback(FONT_FAMILY, 'Medium');
+const HEADER_FONT = await loadFontWithFallback(FONT_FAMILY, 'Bold');
+
+// --- Column headers ---
+for (let ci = 0; ci < SECONDARY_OPTIONS.length; ci++) {
+  const header = figma.createText();
+  header.fontName = HEADER_FONT;
+  header.characters = SECONDARY_OPTIONS[ci];
+  header.fontSize = 12;
+  header.fills = [{ type: 'SOLID', color: { r: 0.4, g: 0.4, b: 0.4 } }];
+  gridFrame.appendChild(header);
+  header.x = GRID_LEFT + ci * (CELL_W + GAP) + CELL_W / 2 - header.width / 2;
+  header.y = 0;
+}
+
+// --- Rows ---
+for (let ri = 0; ri < PRIMARY_OPTIONS.length; ri++) {
+  const rowY = HEADER_H + GAP + ri * (CELL_H + LABEL_H + GAP);
+  const rowLabel = figma.createText();
+  rowLabel.fontName = LABEL_FONT;
+  rowLabel.characters = PRIMARY_OPTIONS[ri];
+  rowLabel.fontSize = 14;
+  rowLabel.fills = [{ type: 'SOLID', color: { r: 0.29, g: 0.29, b: 0.29 } }];
+  gridFrame.appendChild(rowLabel);
+  rowLabel.x = 0;
+  rowLabel.y = rowY + CELL_H / 2 - rowLabel.height / 2;
+
+  for (let ci = 0; ci < SECONDARY_OPTIONS.length; ci++) {
+    const cellX = GRID_LEFT + ci * (CELL_W + GAP);
+    const cellY = rowY;
+
+    const variantProps = { ...DEFAULT_PROPS };
+    variantProps[PRIMARY_AXIS] = PRIMARY_OPTIONS[ri];
+    variantProps[SECONDARY_AXIS] = SECONDARY_OPTIONS[ci];
+
+    let targetVariant = null;
+    for (const child of compSet.children) {
+      const vp = child.variantProperties || {};
+      let match = true;
+      for (const [k, v] of Object.entries(variantProps)) {
+        if (vp[k] !== v) { match = false; break; }
+      }
+      if (match) { targetVariant = child; break; }
+    }
+
+    const wrapper = figma.createFrame();
+    wrapper.layoutMode = 'VERTICAL';
+    wrapper.primaryAxisAlignItems = 'CENTER';
+    wrapper.counterAxisAlignItems = 'CENTER';
+    wrapper.itemSpacing = 8;
+    wrapper.fills = [];
+    wrapper.primaryAxisSizingMode = 'AUTO';
+    wrapper.counterAxisSizingMode = 'FIXED';
+    wrapper.resize(CELL_W, CELL_H + LABEL_H);
+
+    if (targetVariant) {
+      const inst = targetVariant.createInstance();
+      await loadAllFonts(inst);
+      wrapper.appendChild(inst);
+    } else {
+      const naText = figma.createText();
+      await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+      naText.characters = 'N/A';
+      naText.fontSize = 14;
+      naText.fills = [{ type: 'SOLID', color: { r: 0.7, g: 0.7, b: 0.7 } }];
+      wrapper.appendChild(naText);
+    }
+
+    gridFrame.appendChild(wrapper);
+    wrapper.x = cellX;
+    wrapper.y = cellY;
+  }
+}
+
+return { success: true, chapter: CHAPTER_NAME };
+
+} catch (e) {
+  chapter.remove();
+  return { error: e.message, rolledBack: true };
+}
+```
+
+**N/A placeholder rule**: Always render "N/A" text for missing combinations. Never skip the cell or leave it empty — the placeholder preserves the grid's visual scanability and lets the spec consumer immediately see which combinations don't exist.
+
+**Cell sizing**: Measure a real instance before building the grid. Use the measured dimensions + padding as the fixed cell size. All cells (instance and N/A) use the same width to maintain column alignment.
+
+#### 6b: Standard BOOLEAN property chapter
+
+For exhibit plan entries with `template: "6b"` (when `contextAxis` is null).
+
+**Skip controlling booleans**: Before rendering each parent boolean, check if its `name` appears in the `controllingBooleanNames` set built in Step 4c. If so, skip it — its chapter is produced by 6e as part of the unified child component chapter.
+
+**Handle variant-gated booleans**: Before rendering, check if the boolean has `requiredVariantOverrides` (from Step 4a). If so, the base variant for instance creation must match those overrides instead of using the default variant. Replace `VARIANT_OVERRIDES` with the required overrides object (e.g., `{"Behavior": "Interactive"}`), or `null` if the boolean is not variant-gated.
 
 **Slot-aware descriptions**: Replace `__CONTROLS_SLOT_BOOL__` with the boolean's `controlsSlot` value (`true` or `false`). Replace `__SLOT_PREFERRED_NAMES_JSON__` with the boolean's `slotPreferredNames` array (e.g., `["Checkbox", "Radio"]`), or `[]` if empty. When a boolean controls a SLOT, the description reads "Controls slot: {name} (accepts: {preferred})" instead of "Controls layer: {name}".
 
@@ -1170,6 +1513,212 @@ return { success: true, property: PROPERTY_NAME };
 }
 ```
 
+#### 6b-ctx: Contextual BOOLEAN property chapter
+
+When `contextAxis` is non-null, use this template instead of 6b for boolean chapters. It wraps the true/false toggle in context rows so the developer sees how the boolean looks across all context values.
+
+**Skip controlling booleans and handle variant-gated booleans** using the same rules as 6b.
+
+For each remaining boolean property, run via `figma_execute`:
+
+```javascript
+const FRAME_ID = '__FRAME_ID__';
+const COMP_SET_ID = '__COMP_SET_NODE_ID__';
+const PROPERTY_NAME = '__PROPERTY_NAME__';
+const DEFAULT_VALUE = __DEFAULT_BOOL_VALUE__;
+const ASSOCIATED_LAYER = '__ASSOCIATED_LAYER__';
+const CONTROLS_SLOT = __CONTROLS_SLOT_BOOL__;
+const SLOT_PREFERRED_NAMES = __SLOT_PREFERRED_NAMES_JSON__;
+const VARIANT_OVERRIDES = __VARIANT_OVERRIDES_OR_NULL__;
+const CONTEXT_AXIS_NAME = '__CONTEXT_AXIS_NAME__';
+const CONTEXT_OPTIONS = __CONTEXT_OPTIONS_JSON__;
+const CONTEXT_DEFAULT = '__CONTEXT_DEFAULT__';
+const FONT_FAMILY = '__FONT_FAMILY__';
+
+async function loadAllFonts(rootNode) {
+  const textNodes = rootNode.findAll(n => n.type === 'TEXT');
+  const fontSet = new Set();
+  const fontsToLoad = [];
+  for (const tn of textNodes) {
+    try {
+      const fn = tn.fontName;
+      if (fn && fn !== figma.mixed && fn.family) {
+        const key = fn.family + '|' + fn.style;
+        if (!fontSet.has(key)) { fontSet.add(key); fontsToLoad.push(fn); }
+      }
+    } catch {}
+  }
+  await Promise.all(fontsToLoad.map(f => figma.loadFontAsync(f).catch(() => {})));
+}
+
+async function loadFontWithFallback(family, preferredStyle, fallbackStyle) {
+  fallbackStyle = fallbackStyle || 'Regular';
+  const allFonts = await figma.listAvailableFontsAsync();
+  const familyFonts = allFonts.filter(f => f.fontName.family === family);
+  const match = familyFonts.find(f => f.fontName.style === preferredStyle);
+  if (match) { await figma.loadFontAsync(match.fontName); return match.fontName; }
+  const fallback = familyFonts.find(f => f.fontName.style === fallbackStyle);
+  if (fallback) { await figma.loadFontAsync(fallback.fontName); return fallback.fontName; }
+  if (familyFonts.length > 0) { await figma.loadFontAsync(familyFonts[0].fontName); return familyFonts[0].fontName; }
+  await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+  return { family: 'Inter', style: 'Regular' };
+}
+
+const frame = await figma.getNodeByIdAsync(FRAME_ID);
+const chapterTemplate = frame.findOne(n => n.name === '#anatomy-section');
+
+const chapter = chapterTemplate.clone();
+chapterTemplate.parent.appendChild(chapter);
+chapter.name = PROPERTY_NAME;
+chapter.visible = true;
+
+try {
+
+await loadAllFonts(chapter);
+
+const sectionName = chapter.findOne(n => n.name === '#section-name');
+if (sectionName) {
+  const t = sectionName.findOne(n => n.type === 'TEXT');
+  if (t) t.characters = PROPERTY_NAME;
+}
+
+const sectionDesc = chapter.findOne(n => n.name === '#optional-section-description');
+if (sectionDesc) {
+  const t = sectionDesc.findOne(n => n.type === 'TEXT');
+  const defaultStr = DEFAULT_VALUE ? 'true' : 'false';
+  let layerStr = '';
+  if (CONTROLS_SLOT) {
+    layerStr = '. Controls slot: ' + ASSOCIATED_LAYER;
+    if (SLOT_PREFERRED_NAMES.length > 0) layerStr += ' (accepts: ' + SLOT_PREFERRED_NAMES.join(', ') + ')';
+  } else if (ASSOCIATED_LAYER) {
+    layerStr = '. Controls layer: ' + ASSOCIATED_LAYER;
+  }
+  const gateStr = VARIANT_OVERRIDES ? '. Requires ' + Object.entries(VARIANT_OVERRIDES).map(([k,v]) => k + ' = ' + v).join(', ') : '';
+  if (t) t.characters = 'Boolean toggle across ' + CONTEXT_OPTIONS.length + ' ' + CONTEXT_AXIS_NAME + 's. Default: ' + defaultStr + layerStr + gateStr;
+}
+
+const assetPlaceholder = chapter.findOne(n => n.name === '#preview');
+while (assetPlaceholder.children.length > 0) {
+  assetPlaceholder.children[0].remove();
+}
+
+const compNode = await figma.getNodeByIdAsync(COMP_SET_ID);
+const LABEL_FONT = await loadFontWithFallback(FONT_FAMILY, 'Medium');
+const ROW_LABEL_FONT = await loadFontWithFallback(FONT_FAMILY, 'Bold');
+
+const contextContainer = figma.createFrame();
+contextContainer.name = 'context-groups';
+contextContainer.layoutMode = 'VERTICAL';
+contextContainer.itemSpacing = 32;
+contextContainer.fills = [];
+contextContainer.primaryAxisSizingMode = 'AUTO';
+contextContainer.counterAxisSizingMode = 'FILL';
+assetPlaceholder.appendChild(contextContainer);
+
+for (const ctxValue of CONTEXT_OPTIONS) {
+  const rowGroup = figma.createFrame();
+  rowGroup.name = ctxValue;
+  rowGroup.layoutMode = 'VERTICAL';
+  rowGroup.itemSpacing = 16;
+  rowGroup.fills = [];
+  rowGroup.primaryAxisSizingMode = 'AUTO';
+  rowGroup.counterAxisSizingMode = 'FILL';
+  contextContainer.appendChild(rowGroup);
+
+  const rowLabel = figma.createText();
+  rowLabel.fontName = ROW_LABEL_FONT;
+  rowLabel.characters = ctxValue === CONTEXT_DEFAULT ? ctxValue + ' (default)' : ctxValue;
+  rowLabel.fontSize = 12;
+  rowLabel.fills = [{ type: 'SOLID', color: { r: 0.45, g: 0.45, b: 0.45 } }];
+  rowGroup.appendChild(rowLabel);
+
+  const instanceRow = figma.createFrame();
+  instanceRow.name = ctxValue + '-instances';
+  instanceRow.layoutMode = 'HORIZONTAL';
+  instanceRow.layoutWrap = 'WRAP';
+  instanceRow.itemSpacing = 24;
+  instanceRow.counterAxisSpacing = 24;
+  instanceRow.fills = [];
+  instanceRow.primaryAxisSizingMode = 'AUTO';
+  instanceRow.counterAxisSizingMode = 'AUTO';
+  rowGroup.appendChild(instanceRow);
+
+  const defaultVProps = (compNode.defaultVariant || compNode.children[0]).variantProperties || {};
+  const baseProps = VARIANT_OVERRIDES ? { ...defaultVProps, ...VARIANT_OVERRIDES } : { ...defaultVProps };
+  baseProps[CONTEXT_AXIS_NAME] = ctxValue;
+
+  let baseVariant = null;
+  let bestScore = -1;
+  for (const child of compNode.children) {
+    const vp = child.variantProperties || {};
+    let score = 0;
+    let exact = true;
+    for (const [k, v] of Object.entries(baseProps)) {
+      if (vp[k] === v) { score++; } else { exact = false; }
+    }
+    if (exact) { baseVariant = child; break; }
+    if (score > bestScore) { bestScore = score; baseVariant = child; }
+  }
+
+  if (!baseVariant) {
+    const skipLabel = figma.createText();
+    skipLabel.fontName = LABEL_FONT;
+    skipLabel.characters = 'Not available for ' + ctxValue;
+    skipLabel.fontSize = 12;
+    skipLabel.fills = [{ type: 'SOLID', color: { r: 0.6, g: 0.6, b: 0.6 } }];
+    instanceRow.appendChild(skipLabel);
+    continue;
+  }
+
+  for (const boolVal of [true, false]) {
+    const wrapper = figma.createFrame();
+    wrapper.name = PROPERTY_NAME + ' = ' + boolVal;
+    wrapper.layoutMode = 'VERTICAL';
+    wrapper.primaryAxisAlignItems = 'CENTER';
+    wrapper.counterAxisAlignItems = 'CENTER';
+    wrapper.itemSpacing = 12;
+    wrapper.fills = [];
+    wrapper.primaryAxisSizingMode = 'AUTO';
+    wrapper.counterAxisSizingMode = 'AUTO';
+    instanceRow.appendChild(wrapper);
+
+    const inst = baseVariant.createInstance();
+    await loadAllFonts(inst);
+    wrapper.appendChild(inst);
+
+    for (const [rawKey, val] of Object.entries(inst.componentProperties)) {
+      const cleanKey = rawKey.split('#')[0];
+      if (cleanKey === PROPERTY_NAME) {
+        inst.setProperties({ [rawKey]: boolVal });
+        await loadAllFonts(inst);
+        break;
+      }
+    }
+
+    const label = figma.createText();
+    label.fontName = LABEL_FONT;
+    const isDefault = boolVal === DEFAULT_VALUE;
+    label.characters = String(boolVal) + (isDefault ? ' (default)' : '');
+    label.fontSize = 14;
+    label.fills = [{ type: 'SOLID', color: { r: 0.29, g: 0.29, b: 0.29 } }];
+    wrapper.appendChild(label);
+  }
+}
+
+return { success: true, property: PROPERTY_NAME };
+
+} catch (e) {
+  chapter.remove();
+  return { error: e.message, rolledBack: true };
+}
+```
+
+**Key differences from 6b:**
+- Outer loop over `CONTEXT_OPTIONS` creates row groups with labels
+- Base variant lookup includes `CONTEXT_AXIS_NAME = ctxValue` in the target props
+- When no base variant exists for a context value (sparse), the row shows "Not available for {ctxValue}" instead of failing
+- Same `contextContainer` → `rowGroup` → `instanceRow` nesting as 6a-ctx
+
 #### 6c: For each VARIABLE MODE property
 
 If `variableModeProps` is not empty, render a visual chapter for each. Variable mode properties are controlled via Figma variable modes at the container level. To produce visual previews, create a wrapper frame for each mode option, place a component instance inside, and call `wrapper.setExplicitVariableModeForCollection(collection, modeId)` on the wrapper so the instance inherits the mode.
@@ -1309,13 +1858,13 @@ return { success: true, property: PROPERTY_NAME };
 
 #### 6e: For each CHILD COMPONENT
 
-If `childComponents` from Step 3c is not empty, render chapters for each child component.
+If `childComponents` from Step 4c is not empty, render chapters for each child component.
 
 **Rendering mode selection:** The preferred approach is **in-context rendering** — creating parent component instances with the child's property varied on the nested instance. This shows the child property in the context of the full parent component, which matches the designer's experience.
 
 However, use **blown-out rendering** (isolated sub-component instances created directly from the child's component set) when any of these conditions apply:
 
-- The child was flagged for blown-out rendering in Step 3e (sparse variant matrix, interdependent constraints)
+- The child was flagged for blown-out rendering in Step 4e (sparse variant matrix, interdependent constraints)
 - `setProperties()` on a nested instance fails at runtime (fallback — catch the error, remove the broken chapter, and re-render blown-out)
 - Multiple identical child instances exist in the parent (e.g., 4 buttons in a button group) — deduplicate to one blown-out child entry
 - The user explicitly requests blown-out views
@@ -1326,7 +1875,7 @@ When blown-out rendering is used, create instances directly from the child's `ma
 
 ##### 6e-i: Child variant axes (with optional off state)
 
-**Skip coupled axes**: Before rendering each child variant axis, check if the axis has `coupled === true` (set in Step 3d-i). If so, skip it entirely — it mirrors the parent axis and adds no information.
+**Skip coupled axes**: Before rendering each child variant axis, check if the axis has `coupled === true` (set in Step 4d-i). If so, skip it entirely — it mirrors the parent axis and adds no information.
 
 For each remaining child component variant axis, run via `figma_execute`. When the child has a `controllingBooleanName`, the first preview shows the "off" state (controlling boolean = false), and subsequent previews show each variant option (controlling boolean = true, child variant swapped). When there is no controlling boolean, only the variant options are shown.
 
@@ -1511,11 +2060,11 @@ for (const option of axis.options) {
 return { success: true, childComponent: CHILD_NAME };
 ```
 
-Replace `__COMP_SET_NODE_ID__` with the **parent** component's `compSetNodeId` (from Step 3 extraction), not the child's. Set `__CONTROLLING_BOOL_RAW_KEY_OR_NULL__` to the quoted raw key string if a controlling boolean was found (e.g., `'Trailing content#6051:1'`), or `null` if none.
+Replace `__COMP_SET_NODE_ID__` with the **parent** component's `compSetNodeId` (from Step 4 extraction), not the child's. Set `__CONTROLLING_BOOL_RAW_KEY_OR_NULL__` to the quoted raw key string if a controlling boolean was found (e.g., `'Trailing content#6051:1'`), or `null` if none.
 
 ##### 6e-ii: Child boolean properties (in parent context)
 
-**Skip unified sub-booleans**: Before rendering each child boolean, check if its `name` appears in the `unifiedSubBooleanNames` set built in Step 3d-iii. If so, skip it — its chapter is produced by 6f as part of a unified slot chapter.
+**Skip unified sub-booleans**: Before rendering each child boolean, check if its `name` appears in the `unifiedSubBooleanNames` set built in Step 4d-iii. If so, skip it — its chapter is produced by 6f as part of a unified slot chapter.
 
 For each remaining child boolean property, run via `figma_execute`. Each preview is a parent instance with the controlling boolean enabled and the child's boolean toggled.
 
@@ -1729,7 +2278,7 @@ For **sibling boolean** combinatorial chapters in blown-out mode, follow the sam
 
 ##### 6f: Unified slot chapters (combinatorial previews)
 
-If `unifiedSlotChapters` from Step 3d-iii is not empty, render one chapter per entry. Each chapter shows the meaningful combinations of the container boolean + its sub-booleans as a single visual exhibit.
+If `unifiedSlotChapters` from Step 4d-iii is not empty, render one chapter per entry. Each chapter shows the meaningful combinations of the container boolean + its sub-booleans as a single visual exhibit.
 
 **Blown-out adaptation**: If the child referenced by a unified slot chapter has `blownOut: true`, replace the in-context rendering pattern (parent instance + `findNestedChild` + `setProperties` on nested instance) with the blown-out pattern from 6e-iii: create instances directly from the child's `mainComponentSetId` and call `setProperties()` for the boolean combinations on the direct instance. The container boolean on/off toggle is still meaningful — for the "None" state, simply omit the instance (or show a placeholder text "Hidden").
 
@@ -1887,7 +2436,7 @@ Replace `__COMP_SET_NODE_ID__` with the **parent** component's `compSetNodeId`. 
 
 ##### 6g: Sibling boolean combinatorial chapters
 
-If `siblingBoolChapters` from Step 3d-iv is not empty, render one chapter per entry. Each chapter shows the meaningful combinations of sibling booleans on the same child component as a single visual exhibit.
+If `siblingBoolChapters` from Step 4d-iv is not empty, render one chapter per entry. Each chapter shows the meaningful combinations of sibling booleans on the same child component as a single visual exhibit.
 
 **Blown-out adaptation**: If the child has `blownOut: true`, use the blown-out pattern from 6e-iii: create instances directly from the child's `mainComponentSetId` and call `setProperties()` with the boolean combinations on the direct instance (no parent wrapper, no `findNestedChild`).
 
@@ -2038,7 +2587,7 @@ if (chapterTemplate) chapterTemplate.visible = false;
 return { success: true };
 ```
 
-### Step 8: Visual Validation
+### Step 10: Visual Validation
 
 1. `figma_take_screenshot` with the `frameId` — Capture the completed annotation
 2. Verify:
@@ -2051,11 +2600,12 @@ return { success: true };
    - Component instances render correctly
    - Child component chapter titles use the `controllingBooleanName` (e.g., "Trailing content") rather than the raw layer name (e.g., "trailingContent v2") when a controlling boolean exists. If a title shows an internal layer name (camelCase, version suffixes like "v2"), rename the chapter and its `#section-name` text to use the controlling boolean name instead.
    - All preview items fit within the preview area without being clipped. Wrapping is always enabled, but if items are still too wide for a single row even individually, reduce `itemSpacing` or check that instances are not unexpectedly large.
+   - When `contextAxis` is non-null: each illustrated chapter shows grouped rows per context value, with row labels. Row labels use the context value name, with "(default)" appended to the default value. The context axis itself has NO standalone chapter.
 3. If issues are found, fix via `figma_execute` and re-capture (up to 3 iterations)
 
-### Step 8: Completion Link
+### Step 11: Completion Link
 
-Print a clickable Figma URL to the completed spec in chat. Construct the URL from the `fileKey` (extracted from the user's input URL) and the `frameId` (returned by Step 5), replacing `:` with `-` in the node ID:
+Print a clickable Figma URL to the completed spec in chat. Construct the URL from the `fileKey` (extracted from the user's input URL) and the `frameId` (returned by Step 7), replacing `:` with `-` in the node ID:
 
 ```
 Property spec complete: https://www.figma.com/design/{fileKey}/?node-id={frameId}
@@ -2063,27 +2613,4 @@ Property spec complete: https://www.figma.com/design/{fileKey}/?node-id={frameId
 
 ## Notes
 
-- The target node can be either a `COMPONENT_SET` (multi-variant) or a standalone `COMPONENT` (single variant). The extraction script detects the type and returns `isComponentSet` accordingly. When the node is a standalone component, there are no variant axes — only boolean, instance swap, and variable mode properties apply. Instance creation uses `comp.createInstance()` directly.
-- The extraction script reads `componentPropertyDefinitions` from the component set or component, which captures all variant axes, boolean toggles, instance swap properties, and SLOT properties. The `defaultProps` are built from `defaultVariant.variantProperties` (not `componentProperties`, which only has booleans/swaps).
-- For variant axes, the script finds the matching variant child by iterating the component set's children and matching `variantProperties`. Other properties are kept at their defaults.
-- For boolean toggles, the script creates instances from the default variant and uses `setProperties` to flip the boolean value. However, some booleans are **variant-gated** — the layer they control only exists under specific variant axis values (e.g., a "Dismiss button" layer only exists when `Behavior=Interactive`, not `Behavior=Static`). Step 3a detects this deterministically: the script resolves the boolean's `rawKey#nodeId` across variants and returns an `interpretedBooleans` array with `requiredVariantOverrides` already computed (no AI reasoning needed). When a boolean has `requiredVariantOverrides`, 6b uses those overrides as the base variant instead of the default, and the description notes the dependency.
-- **SLOT property awareness**: The extraction script (Step 3) collects `slotProps` — native SLOT properties with `name`, `description`, and `preferredInstances`. SLOT properties do not produce their own visual chapters (slot content is freeform, not a finite set of options). Instead, slot content is documented by the API skill (Pattern A sub-component tables), the structure skill (`slotContent` sections), and the anatomy skill (preferred instance sections). The `slotProps` array is returned for informational completeness and to support boolean-to-slot linkage: when a boolean's associated layer is a SLOT node, the boolean entry gains `controlsSlot: true` and `slotPreferredNames` (resolved from the SLOT's `preferredValues`). The 6b rendering script uses these fields to produce richer descriptions — "Controls slot: {name} (accepts: {preferred})" — instead of the generic "Controls layer: {name}".
-- The property template key is stored in `uspecs.config.json` under `templateKeys.propertyOverview` and is configured via `@firstrun`. This is a dedicated property template with the header already set to "Property" — no renaming needed.
-- Each variant option is shown in a horizontal layout inside the `#preview`. `layoutWrap: 'WRAP'` is always enabled so items wrap to additional rows instead of overflowing. The template's `clipsContent: true` is preserved to prevent any overflow beyond the preview bounds.
-- New chapters are appended to the Content parent via `appendChild` (not inserted at a table index).
-- **Chapter rollback on failure**: All chapter-creation scripts (6a, 6b, 6c) wrap the main logic in a try/catch. If the script fails after cloning `#anatomy-section`, the cloned chapter is removed before returning the error. This prevents orphan chapters from accumulating in the frame on retries.
-- Variable mode properties (shape, density, etc.) are detected via `figma_get_variables` in Step 3b by looking for collections named after the component (e.g., "Button shape", "Button density"). These are rendered as visual chapters with component instance previews.
-- **Variable mode collection lookup**: The Figma plugin API in incremental mode requires the actual collection object (not a string ID) for `setExplicitVariableModeForCollection`. The 6c script fetches the collection via `getLocalVariableCollectionsAsync()` and matches by ID.
-- **Baked-in variable modes**: Some components have explicit variable modes set directly on their root or internal sub-instances. Instances created from such components inherit these baked-in modes, which override the wrapper frame's mode. The 6c script calls `clearExplicitVariableModeForCollection(collection)` recursively on each instance after creation so it inherits the mode from the wrapper instead.
-- **Sub-component discovery** (Step 3c): The extraction script walks the default variant's children recursively. For each `INSTANCE` child, it resolves the main component via `getMainComponentAsync()`. If the main component belongs to a local `COMPONENT_SET` or is a standalone `COMPONENT` with its own `componentPropertyDefinitions` (variant axes, booleans, instance swaps), those properties are extracted into the `childComponents` array. Child components with no configurable properties are skipped.
-- **Controlling boolean linkage** (Step 3c): The `figma_execute` script resolves boolean-to-child linkage deterministically within the script itself (no AI reasoning needed). For each hidden child (`visible === false`), it iterates the parent's `booleanProps` (passed as input) and uses two deterministic checks: (1) primary — resolve `rawKey#nodeId` suffix to a layer and compare its name to the child's layer name, (2) fallback — normalize both names (lowercase, strip non-alphanumeric) and check substring containment. The script returns `controllingBooleanName`, `controllingBooleanRawKey` on each child entry, plus a `controllingBooleanNames` array for the skip set used in 6b.
-- **In-context rendering** (6e): The preferred approach renders child component properties on **parent instances**. For each preview, the skill creates a parent instance via `parentDefaultVariant.createInstance()`, toggles the controlling boolean if applicable, then finds the nested child instance by layer name and calls `setProperties()` to swap the variant or toggle the boolean. This ensures previews show the child property in the context of the full parent component, which is what designers see when configuring the component. However, when in-context rendering fails (sparse variant matrix, nested instance access errors, duplicate child instances, or user preference), **blown-out rendering** (6e-iii) creates instances directly from the child's component set instead. Both approaches are valid — see the mode selection criteria in 6e.
-- **Sparse variant matrices**: Sub-component sets often do not define all possible variant axis combinations. For example, a child with `isDisabled: [false, true]` and `isSelected: [true, false]` may lack the `isDisabled=true, isSelected=false` variant. When `setProperties()` is called with a missing combination on a nested instance, it throws `"Unable to find a variant with those property values"`. Step 3e should detect this proactively. At rendering time, the agent should either use a constrained base variant (e.g., set `isSelected=true` before setting `isDisabled=true`) or switch to blown-out rendering where the exact variant is selected directly via `findVariant()`.
-- **Off-state label convention**: When a child has a controlling boolean, the first preview in the chapter shows the "off" state (boolean = false) labeled `"No {controllingBooleanName}"` (e.g., "No trailing content"). This negated phrasing clearly communicates that the child is hidden. The off state is marked as `(default)` when the controlling boolean's default value is `false`.
-- **Child component exhibits** (6e): Each child component with variant axes gets a chapter per axis, and each with booleans gets a chapter per boolean toggle. In **in-context mode**, instances are created from the parent component with the nested child's property varied. In **blown-out mode**, instances are created directly from the child's component set. Chapter titles use the format "{childLayerName} – {propertyName}" and descriptions note "Sub-component: {mainComponentName}" for context. The same rollback-on-failure pattern (try/catch with chapter removal) applies. When the parent contains multiple identical child instances of the same component set (e.g., 4 buttons in a button group), deduplicate to a single child entry before rendering.
-- **Property normalization** (Step 3d): Before rendering, a deterministic `figma_execute` script processes the extracted property data to eliminate redundant or misleading chapters. No AI reasoning is needed — the script takes `parentVariantAxes`, `childComponents`, and `controllingBooleanNames` as inputs and returns the full normalization plan. Four issues are addressed: (1) child variant axes that mirror the parent (coupled axes) are flagged with `coupled: true` and skipped in rendering, (2) sub-booleans nested inside container-gated children are identified as candidates for unification, (3) container booleans + their sub-booleans are collapsed into `unifiedSlotChapters` with combinatorial previews, and (4) sibling booleans on the same child are collapsed into `siblingBoolChapters` with combinatorial previews.
-- **Coupled axis detection** (3d-i + 3e): The deterministic check in 3d-i flags a child variant axis as coupled when it shares the same name (case-insensitive) with a parent axis and its options are a subset of (or equal to) the parent's options. For example, a child "Label" with `Size: [Large, Medium, Small]` matching the parent's `Size: [Large, Medium, Small, XSmall]` is coupled — the child size always follows the parent, so showing it separately is redundant. **Known limitation**: This misses semantically coupled axes where option names differ (e.g., parent `variant: [bold, subtle]` controlling child `variant: [primary, subtle]`). The AI validation in Step 3e applies heuristics (same name + partial option overlap, or user-provided coupling hints) to catch these cases.
-- **Unified slot chapter labeling** (3d-iii / 6f): Combination labels are derived by stripping the common prefix from sub-boolean names. For a container "Leading content" with sub-booleans "Leading artwork" and "Leading text", the labels become: None / Text only / Artwork only / Text + Artwork. When there is only 1 sub-boolean, the labels are: None / {short name}. The "None" state represents the container boolean in its off position.
-- **Combination cap** (3d-iii): For containers with 3+ sub-booleans, the full power set may be too large. Limit unified slot chapters to ~6 meaningful combinations, omitting edge cases. Focus on the most common designer workflows (all off, each on individually, all on) and skip unlikely combinations.
-- **Sibling boolean collapsing** (3d-iv / 6g): When a child component has 2+ boolean properties that are not consumed by container-gating (3d-ii/iii), they are collapsed into a single combinatorial chapter. For example, a Label child with "Show icon" (default: false) and "Character count" (default: true) becomes a single "Label" chapter with 4 previews: None, Character count (default), Icon, Character count + Icon. The default label is computed from the actual boolean defaults. Short names are derived by stripping common prefixes/verbs (e.g., "Show icon" → "Icon"). If only 1 boolean remains after filtering, it is rendered as a standard boolean chapter (6e-ii) instead.
-- **Graceful fallback for normalization**: If the agent is uncertain about a grouping — for example, ambiguous naming conventions, unusual hierarchy structures, or sub-booleans that do not clearly belong to the container — it should fall back to rendering individual chapters (the pre-normalization behavior) rather than producing incorrect unified chapters.
+- See the instruction file ([agent-property-instruction.md](../../property/agent-property-instruction.md)) for implementation notes, normalization reference, rendering mode selection guidance, common mistakes, and do-not rules.

@@ -388,20 +388,20 @@ All skills render directly in Figma via Plugin API JavaScript (`figma_execute` o
 
 **Structure extraction (Structure):** `create-structure` uses the same two-tier extraction model. **Tier 1 (deterministic scripts):** Steps 4b (enhanced extraction: dimensions, tokens, sub-components, collapsed dimensions) and 4d (cross-variant dimensional comparison) are `figma_execute` scripts that measure every variant, resolve token bindings, walk sub-component trees, and build the raw comparison data. **Tier 2 (AI reasoning):** Step 6 is an AI interpretation layer that builds the section plan, writes design-intent notes, detects anomalies, and judges completeness before the deterministic rendering step fills the template.
 
-**Color extraction (Color):** `create-color` uses the same two-tier extraction model. **Tier 1 (deterministic script):** Step 4b is a single consolidated `figma_execute` script that walks the component tree, resolves color variable bindings, classifies variant axes by token fingerprint, detects boolean-gated elements (with nested boolean enablement), tags sub-component instances with their parent component set name, and discovers mode-controlled collections — all in one call. **Tier 2 (AI reasoning):** Step 4c interprets the extraction output — chooses the rendering strategy (Strategy A vs B via the two-gate model), builds the variant plan, resolves mode-specific token aliases, and maps elements to tokens.
+**Color extraction (Color):** `create-color` uses the same two-tier extraction model. **Tier 1 (deterministic script):** Step 4b is a single consolidated `figma_execute` script that walks the component tree, resolves color variable bindings (paint/stroke style names take precedence over variable bindings), classifies variant axes by token fingerprint, detects boolean-gated elements (with nested boolean enablement), tags sub-component instances with their parent component set name, discovers mode-controlled collections, and detects composite paint styles (2+ visible fill layers) — emitting a `compositeDetail` object with layer stacking order, blend modes, opacities, and gradient stops. **Tier 2 (AI reasoning):** Step 4c interprets the extraction output — chooses the rendering strategy (Strategy A vs B via the two-gate model), builds the variant plan, resolves mode-specific token aliases, maps elements to tokens, and constructs `compositeChildren` breakdowns for multi-layer styles.
 
 **Spec placement:** The import template step places the spec frame on the **same page as the source component**, positioned to its right with a 200 px gap. The script resolves the component node via `getNodeByIdAsync`, walks up to its PAGE ancestor, calls `setCurrentPageAsync` to activate that page, then positions the frame at `compNode.x + compNode.width + 200, compNode.y`. This works identically for both MCP providers — the page-loading block is harmless on Console MCP where the page is already active. For skills that accept a cross-file destination URL (anatomy, property, structure, motion), the cross-file branch keeps the existing viewport-center placement; the component-relative placement only applies when the spec stays in the same file as the component.
 
 **Completion link:** After the final validation step, the agent constructs a Figma deep-link URL from the `fileKey` (extracted from the user's input URL) and the `frameId` (returned by the import step), replacing `:` with `-` in the node ID. The agent prints this URL in chat so the user can click directly to the rendered spec.
 
-**Clone visibility:** All cloned sections explicitly set `visible = true` after cloning, since template sources are hidden.
+**Clone visibility:** All cloned sections explicitly set `visible = true` after cloning, since template sources are hidden. Some templates (e.g., color's `#variant-template` and `#hierarchy-indicator`) default to `visible = false`; rendering scripts only flip sub-elements to `visible = true` when needed (e.g., hierarchy indicators on composite child rows) rather than hiding them after the fact.
 
 | Skill | Template | Sections Generated |
 |-------|----------|-------------------|
 | `create-anatomy` | Anatomy | Component structure with numbered markers and attribute table |
 | `create-property` | Property | One chapter per variant axis (with instance previews) and per boolean toggle |
 | `create-voice` | Screen reader | Focus order, per-state platform sections (VoiceOver, TalkBack, ARIA) with property tables |
-| `create-color` | Color annotation | Per-variant sections with element-to-token mapping tables (Strategy A for ≤6 variants; Strategy B consolidates states into columns for >6) |
+| `create-color` | Color annotation | Per-variant sections with element-to-token mapping tables (Strategy A for ≤6 variants; Strategy B consolidates states into columns for >6). Composite paint styles render as nested child rows with hierarchy indicators. |
 | `create-api` | API overview | Main property table, sub-component tables, configuration examples |
 | `create-structure` | Structure spec | Per-section dimensional tables with dynamic columns for size/density variants |
 | `create-motion` | Motion spec | Timeline bars with easing-colored segments (bar positions computed in Figma code), detail table from pre-computed segments |
@@ -473,7 +473,7 @@ All skills follow a shared "clone from pristine template, fill, hide/remove orig
 2. **Clone per data item** — For each item in the data array, call `template.clone()` and append the clone to the template's parent
 3. **Set visible** — Each clone sets `visible = true` (templates are hidden by default)
 4. **Fill content** — Load fonts, set text fields, configure properties on each clone
-5. **Remove or hide original** — After all clones are created, either `template.remove()` (for row-level templates) or `template.visible = false` (for section-level templates)
+5. **Remove or hide original** — After all clones are created, either `template.remove()` (for row-level templates) or `template.visible = false` (for section-level templates). Templates that default to `visible = false` (e.g., color's `#variant-template`) skip this step.
 
 This pattern nests at multiple levels. For example, the screen reader skill clones state templates, then within each state clones platform section templates, then within each section clones table templates, then within each table clones row templates. Each nesting level follows the same clone-fill-remove pattern within a single Plugin API call.
 
@@ -522,7 +522,7 @@ docs/
 | `.cursor/skills/create-anatomy/SKILL.md` | Anatomy: extraction, marker rendering, attribute table |
 | `.cursor/skills/create-property/SKILL.md` | Property: variant axis and boolean toggle exhibits |
 | `.cursor/skills/create-voice/SKILL.md` | Screen reader: merge analysis, platform sections, property tables |
-| `.cursor/skills/create-color/SKILL.md` | Color: consolidated extraction (token resolution, axis classification, boolean gating, sub-component tagging, mode discovery), AI strategy selection, element-to-token mapping tables |
+| `.cursor/skills/create-color/SKILL.md` | Color: consolidated extraction (style-over-variable token resolution, composite style detection, axis classification, boolean gating, sub-component tagging, mode discovery), AI strategy selection, element-to-token mapping tables, composite breakdown with hierarchy indicators |
 | `.cursor/skills/create-api/SKILL.md` | API: main table, sub-component tables, configuration examples |
 | `.cursor/skills/create-structure/SKILL.md` | Structure: dynamic columns, hierarchy indicators, dimensional tables |
 | `.cursor/skills/create-motion/SKILL.md` | Motion: timeline bars, pre-computed easing segments, detail table |
@@ -552,7 +552,7 @@ Only `firstrun` is committed in `.claude/skills/` and `.agents/skills/` — all 
 | `screen-reader/voiceover.md` | iOS accessibility properties reference |
 | `screen-reader/talkback.md` | Android semantics and roles reference |
 | `screen-reader/aria.md` | ARIA roles and states reference |
-| `color/agent-color-instruction.md` | Color annotation: strategy selection (A vs B), token resolution rules, element-to-token mapping, rendering decisions |
+| `color/agent-color-instruction.md` | Color annotation: strategy selection (A vs B), token resolution rules (styles over variables), element-to-token mapping, composite style breakdown, hierarchy indicator rendering, rendering decisions |
 | `api/agent-api-instruction.md` | API overview: property classification rules, sub-component patterns (slot vs fixed), naming conventions, validation checklist |
 | `api/api-library.md` | API documentation reference patterns |
 | `structure/agent-structure-instruction.md` | Structure spec: interpretation guidance, section planning, dimensional comparison rules, anomaly detection |

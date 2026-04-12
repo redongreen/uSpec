@@ -54,8 +54,10 @@ Task Progress:
 - [ ] Step 4b: Run enhanced extraction script (sub-components, booleans, tokens, collapsed dimensions)
 - [ ] Step 4c: Check variable modes
 - [ ] Step 4d: Cross-variant dimensional comparison (deterministic script)
+- [ ] Step 4e: Non-dimensional axis diff (measure all other axes for structural/property differences)
 - [ ] Step 5: Navigate to destination (if different file)
 - [ ] Step 6: AI interpretation layer — build section plan, write design-intent notes, detect anomalies, judge completeness
+- [ ] Step 6b: Run targeted extractions for structural axes identified in Step 6
 - [ ] Step 7: Generate structured data (component name, general notes, sections with columns and rows)
 - [ ] Step 8: Re-read instruction file (Common Mistakes, Do NOT sections) and audit
 - [ ] Step 9: Import and detach the Structure template
@@ -129,14 +131,16 @@ async function resolveTextStyle(textNode) {
   return null;
 }
 
+function rv(v) { return Math.round(v * 10) / 10; }
+
 function makeDisplayString(value, token) {
   if (token) return token + ' (' + value + ')';
   return String(value);
 }
 
 function collapsePadding(pT, pB, pS, pE, tT, tB, tS, tE) {
-  const vT = Math.round(pT || 0), vB = Math.round(pB || 0);
-  const vS = Math.round(pS || 0), vE = Math.round(pE || 0);
+  const vT = rv(pT || 0), vB = rv(pB || 0);
+  const vS = rv(pS || 0), vE = rv(pE || 0);
   if (vT === vB && vS === vE && vT === vS && tT === tB && tS === tE && tT === tS) {
     return { value: vT, token: tT || null, display: makeDisplayString(vT, tT) };
   }
@@ -172,7 +176,7 @@ async function extractDimensions(node) {
   for (const p of simpleProps) {
     if (node[p] !== undefined && node[p] !== null && node[p] !== figma.mixed) {
       const token = await resolveBinding(node, p);
-      const v = Math.round(node[p]);
+      const v = rv(node[p]);
       dims[p] = { value: v, token: token || null, display: makeDisplayString(v, token) };
     }
   }
@@ -192,13 +196,13 @@ async function extractDimensions(node) {
       const tBL = await resolveBinding(node, 'bottomLeftRadius');
       const tBR = await resolveBinding(node, 'bottomRightRadius');
       dims.cornerRadius = collapseCornerRadius(
-        Math.round(node.topLeftRadius || 0), Math.round(node.topRightRadius || 0),
-        Math.round(node.bottomLeftRadius || 0), Math.round(node.bottomRightRadius || 0),
+        rv(node.topLeftRadius || 0), rv(node.topRightRadius || 0),
+        rv(node.bottomLeftRadius || 0), rv(node.bottomRightRadius || 0),
         tTL, tTR, tBL, tBR
       );
     } else {
       const token = await resolveBinding(node, 'cornerRadius');
-      const v = Math.round(node.cornerRadius);
+      const v = rv(node.cornerRadius);
       dims.cornerRadius = { value: v, token: token || null, display: makeDisplayString(v, token) };
     }
   }
@@ -209,13 +213,13 @@ async function extractDimensions(node) {
       for (const s of ['strokeTopWeight', 'strokeBottomWeight', 'strokeLeftWeight', 'strokeRightWeight']) {
         if (node[s] !== undefined) {
           const logicalKey = s.replace('strokeTopWeight', 'top').replace('strokeBottomWeight', 'bottom').replace('strokeLeftWeight', 'start').replace('strokeRightWeight', 'end');
-          sides[logicalKey] = { value: Math.round(node[s]), token: null, display: String(Math.round(node[s])) };
+          sides[logicalKey] = { value: rv(node[s]), token: null, display: String(rv(node[s])) };
         }
       }
       dims.strokeWeight = sides;
     } else {
       const token = await resolveBinding(node, 'strokeWeight');
-      const v = Math.round(node.strokeWeight);
+      const v = rv(node.strokeWeight);
       dims.strokeWeight = { value: v, token: token || null, display: makeDisplayString(v, token) };
     }
   }
@@ -540,6 +544,8 @@ const SUB_COMPONENTS = __SUB_COMPONENTS_JSON__;
 const BOOLEAN_DEFS = __BOOLEAN_DEFS_JSON__;
 const VARIANT_AXES = __VARIANT_AXES_JSON__;
 
+function rv(v) { return Math.round(v * 10) / 10; }
+
 function makeDisplay(value, token) {
   if (token) return token + ' (' + value + ')';
   return String(value);
@@ -558,8 +564,8 @@ async function resolveBinding(node, prop) {
 }
 
 function collapsePadding(pT, pB, pS, pE, tT, tB, tS, tE) {
-  const vT = Math.round(pT || 0), vB = Math.round(pB || 0);
-  const vS = Math.round(pS || 0), vE = Math.round(pE || 0);
+  const vT = rv(pT || 0), vB = rv(pB || 0);
+  const vS = rv(pS || 0), vE = rv(pE || 0);
   if (vT === vB && vS === vE && vT === vS && tT === tB && tS === tE && tT === tS) {
     return { value: vT, token: tT || null, display: makeDisplay(vT, tT) };
   }
@@ -595,7 +601,7 @@ async function measureNode(node) {
   for (const p of props) {
     if (node[p] !== undefined && node[p] !== null && node[p] !== figma.mixed) {
       const token = await resolveBinding(node, p);
-      const v = Math.round(node[p]);
+      const v = rv(node[p]);
       m[p] = { value: v, token: token || null, display: makeDisplay(v, token) };
     }
   }
@@ -615,13 +621,13 @@ async function measureNode(node) {
       const tBL = await resolveBinding(node, 'bottomLeftRadius');
       const tBR = await resolveBinding(node, 'bottomRightRadius');
       m.cornerRadius = collapseCornerRadius(
-        Math.round(node.topLeftRadius || 0), Math.round(node.topRightRadius || 0),
-        Math.round(node.bottomLeftRadius || 0), Math.round(node.bottomRightRadius || 0),
+        rv(node.topLeftRadius || 0), rv(node.topRightRadius || 0),
+        rv(node.bottomLeftRadius || 0), rv(node.bottomRightRadius || 0),
         tTL, tTR, tBL, tBR
       );
     } else {
       const token = await resolveBinding(node, 'cornerRadius');
-      const v = Math.round(node.cornerRadius);
+      const v = rv(node.cornerRadius);
       m.cornerRadius = { value: v, token: token || null, display: makeDisplay(v, token) };
     }
   }
@@ -632,13 +638,13 @@ async function measureNode(node) {
       for (const s of ['strokeTopWeight', 'strokeBottomWeight', 'strokeLeftWeight', 'strokeRightWeight']) {
         if (node[s] !== undefined) {
           const logicalKey = s.replace('strokeTopWeight', 'top').replace('strokeBottomWeight', 'bottom').replace('strokeLeftWeight', 'start').replace('strokeRightWeight', 'end');
-          sides[logicalKey] = { value: Math.round(node[s]), token: null, display: String(Math.round(node[s])) };
+          sides[logicalKey] = { value: rv(node[s]), token: null, display: String(rv(node[s])) };
         }
       }
       m.strokeWeight = sides;
     } else {
       const token = await resolveBinding(node, 'strokeWeight');
-      const v = Math.round(node.strokeWeight);
+      const v = rv(node.strokeWeight);
       m.strokeWeight = { value: v, token: token || null, display: makeDisplay(v, token) };
     }
   }
@@ -810,6 +816,137 @@ Save the returned JSON. Replace `__VARIANT_AXES_JSON__` with the `variantAxes` o
 - **`stateComparison`** — measurements of the root at the default size across all state values. Use this to detect state-conditional properties (e.g., border appears on focus).
 - All measurements use the same collapsed dimensional model as Step 4b: `padding` as uniform / `{ vertical, horizontal }` / `{ top, bottom, start, end }`, collapsed `cornerRadius`, collapsed `strokeWeight`, and `typography` as composite `{ styleName }` or `{ fontSize, fontWeight, ... }`.
 
+**4e. Non-dimensional axis diff** — Run this script via `figma_execute` to measure root and direct children properties across every variant axis NOT already covered by Steps 4b–4d (i.e., not size/density/shape). This is a data-gathering step only — classification happens in Step 6. Replace `__NODE_ID__`, `__VARIANT_AXES_JSON__`, `__BOOLEAN_DEFS_JSON__`, and `__DIMENSION_AXES_LIST__` (a JSON array of axis names already handled, e.g., `["size"]`):
+
+```javascript
+const TARGET_NODE_ID = '__NODE_ID__';
+const VARIANT_AXES = __VARIANT_AXES_JSON__;
+const BOOLEAN_DEFS = __BOOLEAN_DEFS_JSON__;
+const DIMENSION_AXES = __DIMENSION_AXES_LIST__;
+
+function rv(v) { return Math.round(v * 10) / 10; }
+
+function md(value, token) {
+  if (token) return token + ' (' + value + ')';
+  return String(value);
+}
+
+async function resolveBinding(node, prop) {
+  try {
+    const bindings = node.boundVariables;
+    if (!bindings || !bindings[prop]) return null;
+    const binding = Array.isArray(bindings[prop]) ? bindings[prop][0] : bindings[prop];
+    if (!binding?.id) return null;
+    const v = await figma.variables.getVariableByIdAsync(binding.id);
+    if (v) return v.name;
+  } catch {}
+  return null;
+}
+
+async function measureNode(node) {
+  const m = {};
+  const isContainer = 'layoutMode' in node;
+  const props = ['minWidth', 'maxWidth', 'minHeight', 'maxHeight'];
+  if (isContainer) props.push('itemSpacing');
+  for (const p of props) {
+    try {
+      const val = node[p];
+      if (val !== undefined && val !== null && val !== figma.mixed) {
+        const token = await resolveBinding(node, p);
+        m[p] = { value: rv(val), token: token || null, display: md(rv(val), token) };
+      }
+    } catch {}
+  }
+  if (isContainer) {
+    try {
+      const tPS = await resolveBinding(node, 'paddingLeft');
+      const tPE = await resolveBinding(node, 'paddingRight');
+      const tPT = await resolveBinding(node, 'paddingTop');
+      const tPB = await resolveBinding(node, 'paddingBottom');
+      m.paddingTop = { value: rv(node.paddingTop || 0), token: tPT || null };
+      m.paddingBottom = { value: rv(node.paddingBottom || 0), token: tPB || null };
+      m.paddingStart = { value: rv(node.paddingLeft || 0), token: tPS || null };
+      m.paddingEnd = { value: rv(node.paddingRight || 0), token: tPE || null };
+    } catch {}
+    try { m.layoutMode = node.layoutMode; } catch {}
+    try { m.layoutSizingHorizontal = node.layoutSizingHorizontal; } catch {}
+    try { m.layoutSizingVertical = node.layoutSizingVertical; } catch {}
+  }
+  try {
+    if ('cornerRadius' in node && node.cornerRadius !== undefined && node.cornerRadius !== figma.mixed) {
+      m.cornerRadius = { value: rv(node.cornerRadius) };
+    }
+  } catch {}
+  try {
+    if ('strokeWeight' in node && node.strokes && node.strokes.length > 0) {
+      m.strokeWeight = { value: rv(node.strokeWeight) };
+    } else if ('strokeWeight' in node) {
+      m.strokeWeight = { value: 0 };
+    }
+  } catch {}
+  return m;
+}
+
+async function measureChildSummary(container) {
+  const children = [];
+  if (!('children' in container)) return children;
+  for (const child of container.children) {
+    const entry = { name: child.name, type: child.type, visible: child.visible };
+    entry.dims = await measureNode(child);
+    children.push(entry);
+  }
+  return children;
+}
+
+const compSet = await figma.getNodeByIdAsync(TARGET_NODE_ID);
+if (!compSet) return { error: 'Node not found' };
+
+let _p = compSet; while (_p.parent && _p.parent.type !== 'DOCUMENT') _p = _p.parent;
+if (_p.type === 'PAGE') await figma.setCurrentPageAsync(_p);
+
+const isCS = compSet.type === 'COMPONENT_SET';
+const allVariants = isCS ? compSet.children : [compSet];
+
+const defaultVariant = isCS ? (compSet.defaultVariant || compSet.children[0]) : compSet;
+const defaultVProps = isCS ? (defaultVariant.variantProperties || {}) : {};
+const defaultValues = {};
+for (const [axis, vals] of Object.entries(VARIANT_AXES)) {
+  defaultValues[axis] = defaultVProps[axis] || vals[0];
+}
+
+const axisDiffs = {};
+const axesToCheck = Object.keys(VARIANT_AXES).filter(a => !DIMENSION_AXES.includes(a));
+
+for (const axis of axesToCheck) {
+  axisDiffs[axis] = {};
+  for (const val of VARIANT_AXES[axis]) {
+    const targetProps = { ...defaultValues, [axis]: val };
+    const variant = allVariants.find(v => {
+      const vp = v.variantProperties || {};
+      return Object.entries(targetProps).every(([k, tv]) => vp[k] === tv);
+    });
+    if (!variant) { axisDiffs[axis][val] = null; continue; }
+
+    const inst = variant.createInstance();
+    const enableAll = {};
+    for (const key of Object.keys(BOOLEAN_DEFS)) enableAll[key] = true;
+    try { inst.setProperties(enableAll); } catch {}
+
+    axisDiffs[axis][val] = {
+      root: await measureNode(inst),
+      children: await measureChildSummary(inst)
+    };
+    inst.remove();
+  }
+}
+
+return { axisDiffs };
+```
+
+Save the returned `axisDiffs`. This provides raw measurements for every non-dimensional axis value — root node properties and direct children with their names, types, visibility, and key dimensions. **Do not classify axes at this step.** The AI interpretation layer in Step 6 will reason about the diffs to determine which axes are structural, property-variant, or visual-only.
+
+**Targeted follow-up for structural axes:** After Step 6 classifies an axis as structural (children differ across values), you must re-run the cross-variant dimensional comparison (Step 4d script) once for each structurally distinct configuration. For example, if `layout` is structural with values `label` and `icon-only`, run the Step 4d script twice — once with `layout=label` pinned and once with `layout=icon-only` pinned — varying the size axis in each run. This gives you complete dimensional data for each configuration across all sizes, which feeds into separate sections in Step 7.
+
 ### Step 5: Navigate to Destination
 
 If the user provided a separate destination file URL:
@@ -819,9 +956,9 @@ If no destination was provided, stay in the current file.
 
 ### Step 6: AI Interpretation Layer
 
-This is the core quality step. You have complete, structured data from Steps 4b-4d. Instead of writing `figma_execute` queries, you focus on high-value reasoning tasks that directly improve spec quality for engineers.
+This is the core quality step. You have complete, structured data from Steps 4b-4e. Instead of writing `figma_execute` queries, you focus on high-value reasoning tasks that directly improve spec quality for engineers.
 
-**Input:** The extraction data (4b), cross-variant dimensional comparison (4d), and variable mode data (4c).
+**Input:** The extraction data (4b), cross-variant dimensional comparison (4d), variable mode data (4c), and non-dimensional axis diffs (4e).
 
 **A. Build the section plan:**
 
@@ -832,6 +969,18 @@ Apply these deterministic rules to the extraction and cross-variant data, then v
 1. **Variant axes with purely numeric differences → columns.** For each variant axis from `variantAxes`, compare `rootDimensions` across values. If all values have the same set of properties and differ only numerically, make this axis a set of columns (e.g., Size → "Large", "Medium", "Small", "XSmall" columns).
 
 1b. **Variant axes with identical values → still columns.** When the extraction returns multiple variants along an axis but all dimensional values are identical, use those variants as columns anyway. Identical values across columns communicate intentional structural consistency to engineers. Do not collapse to a single "Default" column. This applies especially when no dimension-affecting axes (size/density/shape) exist and the extraction falls back to the component's primary functional axis (e.g., checked/unchecked/indeterminate, expanded/collapsed, on/off).
+
+1c. **Reason about non-dimensional axis diffs.** Using the raw `axisDiffs` from Step 4e, compare measurements across each axis and classify:
+
+   - **Structural axis** (children differ — different names, count, or visibility across values): Each structurally distinct configuration needs its own full extraction and section(s). Re-run the Step 4d cross-variant script scoped to each configuration (see Step 4e follow-up instructions), then create separate sections for each. If the component also has a size axis, each configuration is documented across all sizes. Example: `layout=icon-only` has different children than `layout=label` — extract dimensions for both configurations and create separate sections.
+
+   - **Property-variant axis** (same children, but dimensional properties differ — strokeWeight appears/disappears, cornerRadius changes, padding differs, sizing mode changes): Create a state-conditional section documenting which values have which property differences. Group values with identical properties into columns. Example: `variant=secondary` adds `strokeWeight=1` while `primary`/`ghost`/`subtle` have none — one section with columns showing the difference.
+
+   - **Visual-only axis** (same children, same dimensional properties — only fills, effects, opacity change): Skip. No section needed.
+
+   Use judgment for edge cases: a 0.5px rounding difference is noise, but `strokeWeight` going from 0 to 1 is meaningful. If multiple values along an axis share the same diff (e.g., `secondary` and `backgroundSafe` both add the same border), group them as columns rather than creating separate sections.
+
+   **Dedup with `stateComparison`:** If an axis is already covered by `stateComparison` (Step 4d — axes matching `/state/i`), prefer `stateComparison` for Rule 4 and skip creating a duplicate section from `axisDiffs` for that axis. However, still check the `axisDiffs` children data — if children differ across that axis (structural change), escalate it to a structural axis, which supersedes the `stateComparison` section.
 
 2. **Treat extraction outputs as candidates, not final section types.** `subComponents`, `slotContents`, `enrichedTree`, and `layoutTree` are discovery inputs for planning. Do **not** assume that an item belongs to a final section type just because it first appeared in one extraction array.
 
@@ -932,9 +1081,15 @@ If gaps exist that cannot be filled from the extraction data, add a note in `gen
 
 The instruction file (`agent-structure-instruction.md`, "Interpretation Quality Guidance" section) contains additional detail and examples for each of these steps.
 
+### Step 6b: Targeted Extractions for Structural Axes
+
+If Rule 1c classified any axis as structural (children differ across values), run the targeted follow-up extractions now. For each structurally distinct configuration, re-run the Step 4d cross-variant script with that configuration pinned (e.g., `layout=icon-only` pinned while varying the size axis). Store the results alongside the original `rootDimensions` / `subComponentDimensions`, keyed by configuration (e.g., `rootDimensions_iconOnly`, `subComponentDimensions_iconOnly`). This data feeds into Step 7 for generating separate sections per structural configuration.
+
+If no structural axes were identified, skip this step.
+
 ### Step 7: Generate Structured Data
 
-Using the section plan from Step 6 and the complete dimensional data from Steps 4b-4d, build the structured data object.
+Using the section plan from Step 6, the complete dimensional data from Steps 4b-4e (including any targeted structural-axis extractions from Step 6b), build the structured data object.
 
 Follow the schema in the instruction file:
 - `componentName`: string
@@ -1085,9 +1240,9 @@ Before rendering, determine the preview configuration for the current section. T
 
 | Section type | `SUB_COMP_SET_ID` | `VARIANT_AXIS` | `COLUMN_VALUES` | `PROPERTY_OVERRIDES` | `SUB_COMP_OVERRIDES` |
 |---|---|---|---|---|---|
-| **Size/variant** (columns are size names like Large, Medium, Small) | `''` | The axis name (e.g., `"Size"`) | Size names from the axis | `[]` | `[]` |
-| **Density** (columns are density modes from variable collections) | `''` | `''` | Mode names (e.g., `["Compact", "Default", "Spacious"]`) | `[]` | `[]` |
-| **Shape** (columns are shape variants) | `''` | The axis name (e.g., `"Shape"`) | Shape names from the axis | `[]` | `[]` |
+| **Size/variant** (columns are size names like Large, Medium, Small) | `''` | The axis name (e.g., `"Size"`) | Size names from the axis | Enable all parent-level booleans from `booleanDefs` to `true` so all documented children are visible in the preview | `[]` |
+| **Density** (columns are density modes from variable collections) | `''` | `''` | Mode names (e.g., `["Compact", "Default", "Spacious"]`) | Enable all parent-level booleans from `booleanDefs` to `true` so all documented children are visible in the preview | `[]` |
+| **Shape** (columns are shape variants) | `''` | The axis name (e.g., `"Shape"`) | Shape names from the axis | Enable all parent-level booleans from `booleanDefs` to `true` so all documented children are visible in the preview | `[]` |
 | **Sub-component** (columns are size names showing a specific child) | The sub-component's own component set ID (from `subComponents[].subCompSetId` in Step 4b extraction) | The sub-component's size axis name (from `subComponents[].subCompVariantAxes`) | Size names from the sub-component's own size axis | `[]` | Boolean properties to enable on each sub-component instance so all internal children are visible (from `subComponents[].booleanOverrides` in Step 4b — set all values to `true`) |
 | **Composition** (columns show sub-component variant mappings) | `''` | `''` | Size names | Configure each column's specific property combination | `[]` |
 | **Behavior/Configuration** (columns are size names) | `''` | Size axis name | Size names from the axis | `[]` (use default configuration only) | `[]` |

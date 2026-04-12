@@ -71,6 +71,50 @@ For each visual element in the component:
 
 **Key insight:** Element names should be consistent across states. If "Background" appears in Enabled state, use "Background" in Hover state too—don't rename it.
 
+### Token Resolution Priority: Styles over Variables
+
+A Figma node can have **both** a paint/stroke style (`fillStyleId`, `strokeStyleId`) and a variable binding (`boundVariables.color`) simultaneously. This happens when a composite style (e.g., `composite/button-primary/background`) wraps a semantic variable (e.g., `background-inverse-primary`). In this case:
+
+1. **Paint/stroke style name** — always preferred. It is the higher-level design token that encapsulates the color decision.
+2. **Variable binding** — fallback only when no style is applied.
+
+This matches how effect styles are already handled: `effectStyleId` takes priority over individual effect variable bindings. The extraction script enforces this order — check `fillStyleId`/`strokeStyleId` first, then fall back to `boundVariables.color`.
+
+When a composite style is detected (2+ visible paint layers), the style name becomes the parent token in the Spec table AND the individual layers are broken down as nested children using the hierarchy indicator.
+
+### Composite Style Breakdown
+
+Some paint styles are **composite** — they contain multiple fill layers (e.g., a solid color base with a gradient overlay). When the extraction script detects a `fillStyleId` or `strokeStyleId` with 2+ visible paint layers, it emits a `compositeDetail` on the entry. During interpretation (Step 4c-4a), this becomes `compositeChildren` on the element.
+
+**When to break down:** Only styles with 2+ visible fill/stroke layers. Single-layer styles are just a named token — no breakdown needed.
+
+**Layer stacking order:** Always **top-to-bottom** (topmost rendered layer first). Figma stores fills with index 0 at the bottom, so the extraction reverses the array.
+
+**What to capture per layer:**
+
+| Layer type | Element name | Value column | Notes column |
+|------------|-------------|-------------|-------------|
+| Solid | "Solid fill" | Variable token or hex | "{blendMode} blend, {opacity}% opacity" with "Top layer." / "Bottom layer." prefix |
+| Linear gradient | "Linear gradient" | "linear-gradient({angle}deg, ...)" | "{blendMode} blend, {opacity}% opacity" with layer position prefix |
+| Gradient stop | "Stop at {position}%" | "rgba(r, g, b, a)" or token if variable-bound | Description (e.g., "Transparent", "Opaque") |
+| Radial/Angular/Diamond gradient | "{type} gradient" | gradient notation | Same as linear |
+| Image | "Image fill" | "image" | Blend mode and opacity |
+
+**Rendering:** Composite children render as **nested rows within the same Spec table**, immediately below their parent element row. The template's `#hierarchy-indicator` frame is hidden by default (`visible=false`) with both vectors hidden — no action needed for parent or non-composite rows. Only composite child rows activate the indicator:
+- **Parent row (top-level element):** No action needed — the `#hierarchy-indicator` frame is hidden by default in the template.
+- **Middle child row:** Set `#hierarchy-indicator` frame `visible=true`, `within-group` `visible=true` (vertical continuation line), `#hierarchy-indicator-last` stays hidden.
+- **Last child row:** Set `#hierarchy-indicator` frame `visible=true`, `within-group` stays hidden, `#hierarchy-indicator-last` `visible=true` (elbow connector).
+
+**Example:** A `composite/button-primary/background` style with a solid base and gradient overlay renders as:
+
+| Element | Token | Notes |
+|---------|-------|-------|
+| Container | composite/button-primary/background | Button surface when selected |
+| ├ Linear gradient | linear-gradient(3deg, ...) | Top layer. Add blend, 16% opacity |
+| ├ Stop at 0% | rgba(255, 255, 255, 0) | Transparent |
+| ├ Stop at 100% | rgba(255, 255, 255, 1) | Opaque |
+| └ Solid fill | background-inverse-primary | Bottom layer. Normal blend, 100% opacity |
+
 ---
 
 ## Data Structure Reference
@@ -102,6 +146,13 @@ interface ColorElement {
   element: string;        // UI element: "Background", "stroke", "State layer"
   token: string;          // Design token: "backgroundPrimary", "contentTertiary", "none"
   notes: string;          // Brief element description (3-8 words)
+  compositeChildren?: CompositeChildRow[];  // Present when token is a multi-layer composite style
+}
+
+interface CompositeChildRow {
+  element: string;        // Layer or stop: "Linear gradient", "Stop at 0%", "Solid fill"
+  value: string;          // Token name, rgba(), or gradient notation
+  notes: string;          // Blend mode, opacity, position info
 }
 ```
 
@@ -134,6 +185,7 @@ interface ConsolidatedElement {
   element: string;        // UI element name
   tokensByState: Record<string, string>;  // State name → token (e.g. {"Enabled": "Tag/Gray/backgroundPrimary", "Disabled": "Tag/Gray/backgroundStateDisabled"})
   notes: string;          // Brief element description (3-8 words)
+  compositeChildren?: CompositeChildRow[];  // Present when token is a multi-layer composite style
 }
 ```
 
@@ -153,6 +205,7 @@ interface ConsolidatedElement {
 | `token` | (Strategy A) Clean token name extracted from Figma styles |
 | `tokensByState` | (Strategy B) Object mapping each state column to its token value |
 | `notes` | Brief description of the element (3-8 words). Add implementation notes if relevant. |
+| `compositeChildren` | Optional. Array of `CompositeChildRow` objects for multi-layer paint style breakdowns. Present only when `token` is a composite style with 2+ visible paint layers. Ordered top-to-bottom (topmost rendered layer first). |
 
 ### When to Use `generalNotes`
 
@@ -278,7 +331,7 @@ Components with SLOT nodes (type `'SLOT'` in Figma) host interchangeable child c
 - Sub-components inside a slot may have boolean properties that control visibility of internal elements (e.g., `showSubtext` on a title content sub-component). The extraction script enables all nested booleans recursively to capture the full set of color entries. This means the extraction output may include elements that are hidden by default.
 
 **Preview rendering limitations:**
-- Preview instances in the rendered annotation show slot content as-is (default content). Due to the slot mutation ordering constraint (see `implementation.md`), programmatically inserting preferred instances into slots for previews is complex and best-effort. If a preview does not show a particular slot child, the color table is still accurate — the preview is a visual aid, not the source of truth.
+- Preview instances in the rendered annotation show slot content as-is (default content). Due to the slot mutation ordering constraint, programmatically inserting preferred instances into slots for previews is complex and best-effort. If a preview does not show a particular slot child, the color table is still accurate — the preview is a visual aid, not the source of truth.
 
 **Writing `generalNotes` for slot-based components:**
 - Always mention the slot architecture and what the default slot content is. Example: `"Leading, title, and trailing are interchangeable slots. Color entries reflect the default title slot content (title text and subtext)."`
@@ -437,7 +490,7 @@ When a component has mode-controlled colors with interactive states, create one 
           "name": "Spec",
           "elements": [
             {
-              "element": "Container (fill)",
+              "element": "Container fill",
               "tokensByState": {
                 "Enabled": "Tag/Gray/backgroundPrimary",
                 "Hover": "Tag/Gray/backgroundPrimary",
@@ -482,7 +535,7 @@ When a component has mode-controlled colors with interactive states, create one 
           "name": "Spec",
           "elements": [
             {
-              "element": "Container (fill)",
+              "element": "Container fill",
               "tokensByState": {
                 "Enabled": "Tag/Orange/backgroundPrimary",
                 "Hover": "Tag/Orange/backgroundPrimary",
@@ -505,7 +558,7 @@ When a component has mode-controlled colors with interactive states, create one 
           "name": "Spec",
           "elements": [
             {
-              "element": "Container (fill)",
+              "element": "Container fill",
               "tokensByState": {
                 "Enabled": "Tag/Gray/backgroundSecondary",
                 "Hover": "Tag/Gray/backgroundSecondary",
@@ -615,11 +668,13 @@ Use these names to match Figma layer names:
 
 | Element Type | Names |
 |-------------|-------|
-| Backgrounds | Background, Container, Surface |
+| Backgrounds | Background fill, Container fill, Surface fill |
 | Text | Primary labels, Secondary labels, Title, Description, Label |
 | Visual | stroke, Icon, Artwork, Indicator, Checkmark |
 | State | State layer, State layer (backplate), Focus ring, Overlay |
 | Effects | Shadow, Elevation, Drop shadow |
+
+**Property qualifier rule:** When naming fill-bearing elements (backgrounds, containers, surfaces), always include the property qualifier — use "Container fill" not "Container", "Background fill" not "Background". This removes ambiguity when the same element also has a stroke (e.g., "Container fill" + "Container stroke").
 
 ---
 
@@ -636,7 +691,7 @@ Use these names to match Figma layer names:
         {
           "name": "Spec",
           "elements": [
-            { "element": "Background", "token": "backgroundPrimary", "notes": "Container surface. Optional in code." },
+            { "element": "Background fill", "token": "backgroundPrimary", "notes": "Container surface. Optional in code." },
             { "element": "Primary labels", "token": "contentPrimary", "notes": "Main heading text" },
             { "element": "Secondary labels", "token": "contentSecondary", "notes": "Supporting description text" }
           ]
@@ -664,7 +719,7 @@ Each state becomes its own variant with one "Spec" table:
         {
           "name": "Spec",
           "elements": [
-            { "element": "Background", "token": "interactivePrimary", "notes": "Button fill color" },
+            { "element": "Background fill", "token": "interactivePrimary", "notes": "Button fill color" },
             { "element": "Label", "token": "contentInversePrimary", "notes": "Button text" }
           ]
         }
@@ -676,7 +731,7 @@ Each state becomes its own variant with one "Spec" table:
         {
           "name": "Spec",
           "elements": [
-            { "element": "Background", "token": "interactivePrimaryHover", "notes": "Button fill on hover" },
+            { "element": "Background fill", "token": "interactivePrimaryHover", "notes": "Button fill on hover" },
             { "element": "Label", "token": "contentInversePrimary", "notes": "Button text" }
           ]
         }
@@ -688,7 +743,7 @@ Each state becomes its own variant with one "Spec" table:
         {
           "name": "Spec",
           "elements": [
-            { "element": "Background", "token": "backgroundTertiary", "notes": "Muted fill when disabled" },
+            { "element": "Background fill", "token": "backgroundTertiary", "notes": "Muted fill when disabled" },
             { "element": "Label", "token": "contentStateDisabled", "notes": "Dimmed text when disabled" }
           ]
         }
@@ -770,6 +825,8 @@ Before proceeding to the rendering steps, verify:
 | ☐ **Notes on every element** | Every element has a 3-8 word description; no empty notes or bare `"–"` |
 | ☐ **`generalNotes` is color-specific only** | No size, layout, prop, or behavior information — only color/token implementation notes. Omitted entirely if nothing color-specific to note |
 | ☐ **No invented tokens** | Every token name was found in Figma data, not guessed |
+| ☐ **Style names preferred over variables** | When a node has both a paint/stroke style (e.g., `composite/button-primary/background`) and a variable binding, the style name is used as the token |
+| ☐ **Composite styles expanded** | Multi-layer paint styles (2+ visible fills/strokes) have `compositeChildren` with layer breakdown in top-to-bottom stacking order, rendered as nested rows with hierarchy indicators |
 | ☐ **Boolean toggles checked** | `booleanDelta` from extraction is merged if `deltaCount > 0`; elements hidden behind boolean properties are accounted for |
 | ☐ **Hardcoded colors noted** | If any element uses a hex value instead of a token, it's noted in `generalNotes` |
 | ☐ **Elements only where color exists** | No layout containers, spacers, or non-visual elements included |
@@ -794,4 +851,6 @@ Before proceeding to the rendering steps, verify:
 - **Rendering only one mode:** When a component has multiple color modes (e.g., 11 Tag color modes), every mode must have its own section(s) with resolved semantic tokens — do not document only the default mode and describe the rest in `generalNotes`
 - **Missing boolean-gated elements:** Not merging `booleanDelta.delta` when `deltaCount > 0`. Elements hidden behind boolean toggles (icons, clear buttons, prefix/suffix content) must be accounted for — check the extraction output's `booleanDelta` field
 - **Ignoring sub-component token ownership:** Not applying the ownership framework to entries with `subComponentName`. Evaluate each: leaf instances (icon, divider) → include; full sub-components (button, badge, checkbox) → exclude and note in `generalNotes`. The `subComponentName` field is deterministic — use it to identify the nested component, then reason about ownership
+- **Using variable names instead of style names:** When a node has both a paint/stroke style and a variable binding (e.g., a composite style wrapping a semantic variable), the style name is the correct token. The extraction script checks `fillStyleId`/`strokeStyleId` first, falling back to `boundVariables.color` only when no style is applied
+- **Missing composite breakdown:** When a fill/stroke style has multiple visible layers (e.g., solid + gradient overlay), the individual layers must be documented as `compositeChildren` nested rows with the hierarchy indicator. Check extraction output for `compositeDetail` on entries — if present, build the breakdown. Single-layer styles do not need a breakdown
 

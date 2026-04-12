@@ -521,7 +521,7 @@ Each element carries pre-resolved fields:
 - `slotDefaultChildren[]` — array of `{ name, nodeType, visible, mainComponentId?, mainComponentKey?, componentSetName?, componentSetId?, isComponentSet? }` or absent. Present on `slot` elements that contain children in the default variant. Used to identify what content populates the slot by default.
 
 Additional extraction-level fields:
-- `rootVariantVisuals` — `{ hasFills, hasStrokes, hasEffects, cornerRadius }` for the root variant frame. When `hasFills` or `hasEffects` is true, the variant itself has a visual layer (e.g., statelayer/backplate) that Step 4 should insert as a synthetic element. `hasStrokes` is included for informational purposes (to enrich the root container note with border details) but does NOT trigger a separate synthetic element — strokes on the root variant are a border property of the container frame.
+- `rootVariantVisuals` — `{ hasFills, hasStrokes, hasEffects, cornerRadius }` for the root variant frame. When `hasFills` or `hasEffects` is true, the variant has visual properties. Step 4 should fold these into the root container's note when a container synthetic is already being created, or insert a standalone synthetic backplate/statelayer element when no container synthetic covers the root variant. `hasStrokes` is included for informational purposes (to enrich the root container note with border details) but does NOT trigger a separate synthetic element — strokes on the root variant are a border property of the container frame.
 - `traversedFrames[]` — Frames the `resolveChildContainer` traversal walked through to reach the child container. Each entry has `{ name, nodeType, hasFills, hasStrokes, hasEffects, cornerRadius, bbox }`. Frames with fills, strokes, or effects are visually meaningful and should be inserted as synthetic elements by Step 4.
 - `childContainerIsVariant` — `true` when `resolveChildContainer` resolved to the variant itself (no wrapper traversal). `false` when it traversed into a child frame, meaning the root component container was skipped during extraction. When `false`, Step 4 should insert a synthetic element for the root container regardless of whether it has visual properties.
 
@@ -541,7 +541,7 @@ Read the instruction file `anatomy/agent-anatomy-instruction.md`, then enrich th
 
 2. **Validate** the pre-classified extraction data per the instruction file's validation checklist.
 
-2b. **Detect skipped visual layers and root container**: Check `childContainerIsVariant`, `rootVariantVisuals`, and `traversedFrames` from the extraction output. When `childContainerIsVariant` is `false`, always insert a synthetic element for the root container. When `childContainerIsVariant` is `true`, evaluate whether the root container is architecturally meaningful (e.g., hosts composable slots, manages conditional visibility) and insert a synthetic element if so — skip it when the container is a self-evident stack of same-type sub-components. Also insert synthetic elements for root variant fills/effects (NOT strokes — strokes on the root variant are described in the container note) and traversed frames with fills/strokes/effects. See `anatomy/agent-anatomy-instruction.md` sub-step 1b for the full procedure and examples.
+2b. **Detect skipped visual layers and root container**: Check `childContainerIsVariant`, `rootVariantVisuals`, and `traversedFrames` from the extraction output. When `childContainerIsVariant` is `false`, always insert a synthetic element for the root container. When `childContainerIsVariant` is `true`, evaluate whether the root container is architecturally meaningful (e.g., hosts composable slots, manages conditional visibility) and insert a synthetic element if so — skip it when the container is a self-evident stack of same-type sub-components. Root variant fills/effects (NOT strokes — strokes are described in the container note) are folded into the container's note when a container synthetic already exists, or inserted as standalone synthetic elements when no container synthetic covers the root variant. Also insert synthetic elements for traversed frames with fills/strokes/effects. See `anatomy/agent-anatomy-instruction.md` sub-step 1b for the full procedure and examples.
 
 3. **Set unhide strategy** for hidden elements per the instruction file's Property-Aware Unhide Decisions section.
 
@@ -790,8 +790,8 @@ for (const tn of allPreloadTexts) {
 }
 await Promise.all(fontsToLoad.map(f => figma.loadFontAsync(f).catch(() => {})));
 
-const instAbsX = compInstance.absoluteTransform[0][2];
-const instAbsY = compInstance.absoluteTransform[1][2];
+let instAbsX = compInstance.absoluteTransform[0][2];
+let instAbsY = compInstance.absoluteTransform[1][2];
 let childContainer = compInstance;
 while (childContainer.children.length === 1 && childContainer.children[0].type === 'FRAME' && childContainer.children[0].layoutMode !== 'NONE') {
   childContainer = childContainer.children[0];
@@ -809,8 +809,11 @@ if (childContainer === compInstance && childContainer.children.length > 1) {
   }
 }
 
-// --- Populate slot content via appendChild into SLOT node, ghost overlay as fallback ---
+// --- Populate slot content via appendChild into SLOT node ---
 // Must run BEFORE bbox re-computation so auto-layout reflow is captured in positions.
+// Ghost overlays (fallback when appendChild fails) are deferred to after reflow so they
+// use final compX/compY and recomputed el.bbox.
+const pendingGhosts = [];
 let slotChildIdx = 0;
 for (const el of elements) {
   if (el.isSynthetic) continue;
@@ -818,18 +821,15 @@ for (const el of elements) {
     try {
       const prefNode = await figma.getNodeByIdAsync(el.populateWith.componentId);
       if (prefNode && prefNode.type === 'COMPONENT') {
-        const inst = prefNode.createInstance();
-        await loadAllFonts(inst);
         let inserted = false;
         const slotNode = childContainer.children[slotChildIdx];
         if (slotNode && slotNode.type === 'SLOT') {
+          const inst = prefNode.createInstance();
+          await loadAllFonts(inst);
           try { slotNode.appendChild(inst); inserted = true; } catch {}
         }
         if (!inserted) {
-          wrapper.appendChild(inst);
-          inst.x = Math.round(compX + el.bbox.x + (el.bbox.w - inst.width) / 2);
-          inst.y = Math.round(compY + el.bbox.y + (el.bbox.h - inst.height) / 2);
-          inst.opacity = 0.6;
+          pendingGhosts.push({ el, prefNode });
         }
       }
     } catch {}
@@ -849,6 +849,8 @@ compX = Math.round((ARTWORK_W - rootW) / 2);
 compY = Math.round((ARTWORK_H - rootH) / 2);
 compInstance.x = compX;
 compInstance.y = compY;
+instAbsX = compInstance.absoluteTransform[0][2];
+instAbsY = compInstance.absoluteTransform[1][2];
 
 for (const el of elements) {
   if (el.isSynthetic && el.classification === 'container') {
@@ -877,6 +879,18 @@ for (let i = 0; i < elements.length; i++) {
     };
   }
   childIdx++;
+}
+
+// --- Create ghost overlays for failed slot insertions (using final compX/compY and recomputed bboxes) ---
+for (const ghost of pendingGhosts) {
+  try {
+    const inst = ghost.prefNode.createInstance();
+    await loadAllFonts(inst);
+    wrapper.appendChild(inst);
+    inst.x = Math.round(compX + ghost.el.bbox.x + (ghost.el.bbox.w - inst.width) / 2);
+    inst.y = Math.round(compY + ghost.el.bbox.y + (ghost.el.bbox.h - inst.height) / 2);
+    inst.opacity = 0.6;
+  } catch {}
 }
 
 const LINE_WIDTH = 1;
