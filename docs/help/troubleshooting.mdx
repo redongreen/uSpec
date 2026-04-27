@@ -15,20 +15,23 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
       <Accordion title="Skill not activating">
         **Symptom**: You type a prompt but the skill doesn't run.
 
+        First, run `npx uspec-skills doctor` from your project root. It reports missing skills, missing references, or broken links and tells you exactly what to fix.
+
         <Tabs>
           <Tab title="Cursor">
             - Use the direct reference format: `@create-voice` instead of typing keywords
-            - Check that the uSpec project folder is open in Cursor (not a parent directory)
+            - Confirm your project folder is open in Cursor (the same folder where you ran `npx uspec-skills init`)
+            - Verify `.cursor/skills/` contains the skill folders. If empty, run `npx uspec-skills install --platform cursor`
             - Restart Cursor if skills don't autocomplete
           </Tab>
           <Tab title="Claude Code">
-            - Confirm you're running `claude` from the uSpec project root
-            - Check that `CLAUDE.md` exists and `.claude/skills/` contains the skill folders
+            - Confirm you're running `claude` from the project root where you ran `npx uspec-skills init`
+            - Verify `.claude/skills/` contains the skill folders. If empty, run `npx uspec-skills install --platform claude-code`
             - Try mentioning the skill by name: "Run create-voice for this component"
           </Tab>
           <Tab title="Codex">
-            - Confirm you're in the uSpec project directory
-            - Check that `AGENTS.md` exists and `.agents/skills/` contains the skill folders
+            - Confirm you're in the project directory where you ran `npx uspec-skills init`
+            - Verify `.agents/skills/` contains the skill folders. If empty, run `npx uspec-skills install --platform codex`
             - Try using `/skills` to list available skills, then invoke with `$skill-name`
           </Tab>
         </Tabs>
@@ -56,9 +59,9 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
         **Symptom**: Typing `@create-` doesn't show skill suggestions.
 
         **Solutions**:
-        - Confirm the uSpec project folder is open in Cursor
-        - Check that `.cursor/skills/` contains the skill folders
-        - Restart Cursor after cloning the repository
+        - Confirm your project folder is open in Cursor (the folder where you ran `npx uspec-skills init`)
+        - Verify `.cursor/skills/` contains the skill folders. If empty, run `npx uspec-skills install --platform cursor` to repair the install
+        - Restart Cursor after running `npx uspec-skills init` or `npx uspec-skills install`
       </Accordion>
     </AccordionGroup>
   </Tab>
@@ -157,6 +160,133 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
         </AccordionGroup>
       </Tab>
     </Tabs>
+  </Tab>
+
+  <Tab title="Figma Extract plugin" icon="puzzle-piece">
+    The **uSpec Extract** Figma plugin powers the Component Markdown path. It walks a selected component, captures every variant and token binding, and writes a single `_base.json` that `create-component-md` consumes. Use this tab when the plugin won't install, won't build, or runs but doesn't produce a usable file.
+
+    <Note>
+      The plugin runs entirely inside Figma Desktop's plugin sandbox. It makes no network calls and stores nothing externally. If you can install it once, it will work offline thereafter.
+    </Note>
+
+    ### Install the plugin
+
+    Build the plugin locally and import it into Figma Desktop. Requires Node.js 18 or later.
+
+    <Steps>
+      <Step title="Clone the uSpec repository">
+        ```bash
+        git clone https://github.com/redongreen/uSpec.git
+        cd uSpec/figma-plugin
+        ```
+      </Step>
+      <Step title="Install dependencies">
+        ```bash
+        npm install
+        ```
+
+        This installs `esbuild`, `ajv`, and the Figma plugin typings. Nothing else is fetched at runtime.
+      </Step>
+      <Step title="Build the plugin bundle">
+        ```bash
+        npm run build
+        ```
+
+        The build writes `dist/code.js` and `dist/ui.html`. Both are referenced by `manifest.json`.
+      </Step>
+      <Step title="Import the manifest into Figma Desktop">
+        In Figma Desktop, go to **Plugins → Development → Import plugin from manifest…** and select `figma-plugin/manifest.json` from your local clone.
+      </Step>
+      <Step title="Run from the Development menu">
+        The plugin appears under **Plugins → Development → uSpec Extract**. Select a component on the canvas, then run it.
+      </Step>
+    </Steps>
+
+    <Tip>
+      For active development, run `npm run build:watch` instead of `npm run build`. Figma reloads the plugin on next open after each rebuild, so no manual re-import is needed.
+    </Tip>
+
+    <Check>
+      When **Plugins → Development → uSpec Extract** opens the plugin window, the dev install is complete.
+    </Check>
+
+    ### Plugin issues
+
+    <AccordionGroup>
+      <Accordion title="Plugin doesn't appear in Figma after import (dev install)">
+        **Symptom**: You imported `manifest.json` but **Plugins → Development → uSpec Extract** is missing or greyed out.
+
+        **Solutions**:
+        - Confirm you imported the manifest from the project you actually built. The manifest references `dist/code.js` and `dist/ui.html` by relative path, so moving the manifest without the `dist/` folder breaks the link.
+        - Re-run `npm run build` and confirm `figma-plugin/dist/code.js` and `figma-plugin/dist/ui.html` exist.
+        - Restart Figma Desktop after importing. Some macOS installs need a full quit (`Cmd+Q`), not just closing the window.
+        - Confirm you're on **Figma Desktop**, not the browser. The Development menu only appears in the desktop app.
+        - If you have multiple Figma accounts, confirm the dev plugin was imported under the account you're currently signed in to.
+      </Accordion>
+
+      <Accordion title="Build fails with `npm run build`">
+        **Symptom**: `npm install` or `npm run build` errors out before producing `dist/code.js`.
+
+        **Solutions**:
+        - Confirm Node.js 18 or later. Older versions miss APIs `esbuild` 0.25 expects. Run `node --version` to check.
+        - Delete `node_modules/` and `package-lock.json` inside `figma-plugin/`, then run `npm install` again. Stale lockfiles from a different Node version cause silent failures.
+        - If the build complains about missing types, run `npm install` from inside `figma-plugin/`, not from the repo root. The plugin keeps its dependencies isolated.
+        - On Apple Silicon, if `esbuild` reports a binary mismatch, run `npm rebuild esbuild`.
+      </Accordion>
+
+      <Accordion title="Plugin runs but the canvas selection is rejected">
+        **Symptom**: The plugin shows "Select a component or component set on the canvas" even though something is selected.
+
+        **Solutions**:
+        - Select exactly one node. The plugin requires a single selection.
+        - The selection must be a `COMPONENT` or `COMPONENT_SET`. Frames, groups, and instances are not accepted. Selecting a single variant inside a component set is fine — the plugin auto-promotes it to the parent set.
+        - If you're working in a library file, confirm the component hasn't been detached from its master. Detached instances do not register as `COMPONENT` nodes.
+        - Click **Refresh** in the plugin footer if you changed the selection while the plugin window was open.
+      </Accordion>
+
+      <Accordion title="Extract & download produces no file">
+        **Symptom**: You click **Extract & download** but nothing lands in `~/Downloads/`.
+
+        **Solutions**:
+        - Check Figma Desktop's permission to download files. macOS may block downloads from sandboxed plugins on first run — look for a permission prompt.
+        - Try **Copy JSON** instead. If the clipboard copy works, the issue is download-permission related, not extraction itself. Paste the JSON into a file manually and continue.
+        - Open Figma's plugin developer console (**Plugins → Development → Open console**) and look for an `extract-error` message. The error reason indicates which extraction phase failed.
+      </Accordion>
+
+      <Accordion title="`create-component-md` rejects the `_base.json` with a schema error">
+        **Symptom**: The agent runs `node figma-plugin/scripts/validate-base.mjs` and aborts with an Ajv FAIL.
+
+        **Solutions**:
+        - Re-run the plugin and re-export. A stale file from a previous plugin version may not match the current schema.
+        - Confirm the plugin and the skill are on the same uSpec version. If you updated one without the other, the schema can drift. Run `git pull` in your local clone, then re-run `npm run build` if you're on the dev install.
+        - Run the validator directly to see the full diagnostic:
+
+          ```bash
+          node figma-plugin/scripts/validate-base.mjs ~/Downloads/your-component-_base.json
+          ```
+
+          The validator names the failing field and the expected shape.
+        - The schema reference lives at [`figma-plugin/docs/base-json-schema.md`](https://github.com/redongreen/uSpec/blob/main/figma-plugin/docs/base-json-schema.md).
+      </Accordion>
+
+      <Accordion title="Sub-component checklist looks wrong">
+        **Symptom**: The plugin's checklist marks something as **constitutive** that should be **referenced**, or vice versa.
+
+        **Solutions**:
+        - Flip the classification directly in the checklist before clicking **Extract & download**. Your override is recorded in `_base.json._childComposition.children[*].classificationEvidence` as `["user-selected"]`, and the orchestrator trusts user selections without re-asking.
+        - Non-instance children (vectors, frames, text) are locked to **decorative** and cannot be flipped. If something you expect to be configurable is showing as decorative, the underlying node is not an instance — re-create it as a component instance in Figma.
+        - For fully accurate classifications across runs, document the convention in your design system: what counts as constitutive vs. referenced for your library.
+      </Accordion>
+
+      <Accordion title="Extraction takes more than a minute">
+        **Symptom**: The plugin progress indicator stalls for an unusually long time on a large component set.
+
+        **Solutions**:
+        - Components with more than 20 sub-component variants trigger Phase I's variant-walk cap, which slows extraction. The plugin emits a `skipped` marker when the cap is hit; check for those in the resulting `_base.json` and consider documenting oversize sub-components in their own `create-component-md` run.
+        - Close other open Figma files. The sandbox shares memory across files, and very large libraries can exhaust the budget.
+        - Restart Figma Desktop and re-run the plugin. A long Figma session sometimes accumulates state that slows plugin execution.
+      </Accordion>
+    </AccordionGroup>
   </Tab>
 
 </Tabs>

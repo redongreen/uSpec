@@ -1,11 +1,24 @@
 ---
 title: "How It Works"
-description: "Understand the pipeline that turns a Figma link into structured documentation"
+description: "Understand the two rendering paths and the skill pipelines behind them"
 ---
 
-uSpec connects your AI agent and Figma into a single pipeline. You provide a component link and context, and the system produces formatted documentation directly in your Figma file.
+uSpec connects your AI agent and Figma into a single pipeline. You provide a component link or a plugin capture, and the system produces either annotations rendered back into Figma or a single self-contained `.md` specification.
 
-## The pipeline at a glance
+## Two rendering paths
+
+uSpec supports two paths from the same source component. Pick the one that matches where the documentation needs to live.
+
+<CardGroup cols={2}>
+  <Card title="Figma-native path" icon="figma">
+    Output is rendered as annotation frames next to the component in your Figma file. Best for design reviews, spec handoff inside Figma, and component libraries where the spec lives beside the component.
+  </Card>
+  <Card title="Component Markdown path" icon="file-code" href="/specs/component-md">
+    Output is a single `.md` file saved to disk. Best for feeding specs to any LLM (Cursor, Claude Design, GPT), committing alongside code, or diffing across design iterations.
+  </Card>
+</CardGroup>
+
+### Figma-native path
 
 ```mermaid
 flowchart LR
@@ -14,7 +27,19 @@ flowchart LR
     C -->|Documentation frame| D[Figma Output]
 ```
 
-Every skill extracts component data and renders documentation directly in Figma via the MCP. The internal steps differ depending on what each skill needs to analyze. The diagrams below show what happens inside each skill.
+Every Figma-native skill extracts component data through the MCP and renders documentation directly in Figma. The internal steps differ depending on what each skill needs to analyze. The diagrams below show what happens inside each skill.
+
+### Component Markdown path
+
+```mermaid
+flowchart LR
+    A[You] -->|Select component| Plugin[uSpec Extract Plugin]
+    Plugin -->|_base.json| Skill[create-component-md]
+    Skill -->|Parallel specialists| Cache[".uspec-cache/"]
+    Cache -->|Render| MD["components/componentSlug.md"]
+```
+
+The plugin runs deterministic extraction inside Figma's sandbox (no network calls), producing a `_base.json` that captures every variant, token binding, and sub-component. The `create-component-md` skill then runs four parallel interpretation agents (API, structure, color, voice), reconciles their outputs, and renders a single Markdown file. See the [Component Markdown page](/specs/component-md#how-it-works) for the full pipeline diagram.
 
 ---
 
@@ -37,7 +62,7 @@ Every skill extracts component data and renders documentation directly in Figma 
     </Steps>
 
     <Tip>
-      If autocomplete doesn't show the skill, verify the uSpec project is open in Cursor. Skills load from the `.cursor/skills/` folder.
+      If autocomplete doesn't show the skill, verify your project is open in Cursor and that `.cursor/skills/` is populated. If the directory is empty, run `npx uspec-skills install --platform cursor` from the project root.
     </Tip>
   </Tab>
 
@@ -54,7 +79,7 @@ Every skill extracts component data and renders documentation directly in Figma 
     </Steps>
 
     <Tip>
-      Claude Code reads `CLAUDE.md` at the project root for context. Make sure you're running from the uSpec directory.
+      Skills live in `.claude/skills/` under the project where you ran `npx uspec-skills init`. Make sure you launch `claude` from that directory so it can discover them.
     </Tip>
   </Tab>
 
@@ -71,7 +96,7 @@ Every skill extracts component data and renders documentation directly in Figma 
     </Steps>
 
     <Tip>
-      Codex reads `AGENTS.md` at the project root. Make sure you're in the uSpec directory.
+      Skills live in `.agents/skills/` under the project where you ran `npx uspec-skills init`. Make sure you launch Codex from that directory so it can discover them.
     </Tip>
   </Tab>
 </Tabs>
@@ -83,6 +108,32 @@ Every skill extracts component data and renders documentation directly in Figma 
 Every skill loads an instruction file, reads platform-specific or domain-specific reference files, extracts data from Figma via MCP, runs through a checklist, and renders the output. The reference files determine what the agent knows about each domain.
 
 <Tabs>
+  <Tab title="Component Markdown">
+    The `create-component-md` orchestrator is the only skill that does not render into Figma. It consumes a plugin-produced `_base.json`, dispatches four interpretation specialists (one serial, three in parallel), reconciles typed disagreements, then renders a single `.md` file to disk.
+
+```mermaid
+flowchart TB
+    Pre["Steps 1-4.5 (preflight)"] --> API["Step 5: extract-api (parent, solo)"]
+    API --> Dict[(api-dictionary.json)]
+    Dict --> FanOut["Parallel fan-out (1 batch of 3 Task calls)"]
+    FanOut -->|subagent| Struct[extract-structure]
+    FanOut -->|subagent| Color[extract-color]
+    FanOut -->|subagent| Voice[extract-voice]
+    Struct --> Join
+    Color --> Join
+    Voice --> Join
+    Join --> Recon["Step 8.5: Reconciliation (typed, deterministic)"]
+    Recon -->|"typed gap + retries available"| SerialRetry["Re-dispatch ONE specialist<br/>via Task (serial, not parallel)"]
+    SerialRetry --> Recon
+    Recon -->|"no gaps or budget exhausted"| Integ["Step 9.5: integrity"]
+    Integ --> Render["Step 9: render .md"]
+```
+
+  The API specialist runs first and solo because its output (the property dictionary) anchors the three downstream specialists on a shared property and state vocabulary. Structure, color, and voice then run in a single parallel batch so their contexts stay isolated and the parent orchestrator only holds the returned summaries. Reconciliation is typed and deterministic: each disagreement has a defined signature (conflicting child classification, mismatched axes, missing states), and only the matching specialist is re-dispatched. The integrity gate validates cache-file shapes, axis consistency, and the structure coverage matrix before the Markdown renderer runs.
+
+  See the [Component Markdown spec page](/specs/component-md) for install, usage, and output details.
+  </Tab>
+
   <Tab title="Anatomy">
     The anatomy skill extracts child layers, element types, and property definitions, then classifies each element's role before rendering numbered markers with an attribute table directly in Figma.
 

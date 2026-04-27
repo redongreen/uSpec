@@ -1,21 +1,31 @@
 ---
 title: "Introduction"
-description: "Generate design system documentation for your UI components, directly from your AI agent to Figma"
+description: "Generate design system documentation for any Figma component. Render it directly into Figma, or export a portable .md spec for any LLM"
 ---
 
 <Note>
-**v1.8.1** — Structure skill now recursively measures nested containers and enforces per-wrapper padding coverage. Color specs composite styles (gradients, multi-layer fills). Property skill drastically improved. [See changelog](/help/changelog).
+**uSpec 2.0 is here.** Added new skill create-component-md. Bring your pixel-perfect Figma component to your favorite LLM. [Read the article about Component.md →](https://ianguisard.substack.com/p/componentmd)
 </Note>
 
 <Frame>
-  <img src="/images/cover.png" alt="uSpec — generate design system documentation from your AI agent to Figma" />
+  <img src="/images/cover.png" alt="uSpec: design system documentation for Figma components" />
 </Frame>
 
-uSpec generates structured documentation for your UI components, directly from your AI agent to Figma. You describe a component, an agent skill analyzes it using your Figma file as context, and renders the spec directly in your Figma file.
+uSpec turns your Figma components into structured documentation from your AI agent. Pick a component, a skill analyzes it, and the output lives either in Figma as annotation frames or on disk as a single `.md` spec you can take anywhere.
 
 Works with **Cursor**, **Claude Code**, and **Codex**.
 
-## What you can create
+## Start here: Component Markdown
+
+<CardGroup cols={1}>
+  <Card title="Your component. One .md file. Anywhere." icon="file-code" href="/specs/component-md">
+    **New in v2.0.** Your design system source of truth, in one markdown file per component. Covers API, structure, color, and screen-reader behavior. An artifact that LLM tools can build from and humans can query.
+  </Card>
+</CardGroup>
+
+## Render into Figma
+
+The original uSpec skills render annotation frames directly into your Figma file, next to the component.
 
 <CardGroup cols={3}>
   <Card title="Component Anatomy" icon="crosshairs" href="/specs/anatomy">
@@ -43,12 +53,14 @@ Works with **Cursor**, **Claude Code**, and **Codex**.
 
 ## How it works
 
+uSpec supports two rendering paths from the same source component:
+
 <Steps>
-  <Step title="Provide a Figma link and context">
-    Share a link to the component in Figma. This is the primary input. You can also add a description of states, variants, or behavior to guide the agent. The Figma MCP pulls structure, variables, and styles directly from your file.
+  <Step title="Figma-native path">
+    Point the skill at a Figma link. The agent uses the Figma MCP to pull structure, variables, and styles from your file, then renders annotation frames directly in Figma using templates you linked during setup.
   </Step>
-  <Step title="Trigger an agent skill">
-    Reference the skill you need — like `create-voice` for screen reader specs or `create-color` for color annotations. The agent analyzes your component and renders documentation directly in your Figma file.
+  <Step title="Component Markdown path">
+    Run the **uSpec Extract** Figma plugin to produce a `_base.json` capture of your component, then run `create-component-md` against the JSON. The skill runs four parallel interpretation agents (API, structure, color, voice) and writes a single `.md` specification to disk.
   </Step>
 </Steps>
 

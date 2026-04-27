@@ -1,0 +1,12 @@
+{
+  "name": "uspec-repo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Source repo for the uSpec CLI, Figma plugin, and skill source. Not published.",
+  "license": "MIT",
+  "scripts": {
+    "build:cli": "cd packages/cli && npm install --no-audit --no-fund && npm run build",
+    "typecheck:cli": "cd packages/cli && npm run typecheck",
+    "dev:render": "cd packages/cli && node dist/index.js render --target cursor --out ../.. && node dist/index.js render --target claude-code --out ../.. && node dist/index.js render --target codex --out ../.."
+  }
+}

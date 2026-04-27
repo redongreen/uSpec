@@ -1,0 +1,58 @@
+{
+  "name": "uspec-skills",
+  "version": "0.2.0",
+  "description": "Install uSpec design-system documentation skills into your AI coding agent (Cursor, Claude Code, or Codex).",
+  "license": "MIT",
+  "author": "Ian Guisard",
+  "homepage": "https://uspec.design/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/redongreen/uSpec.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/redongreen/uSpec/issues"
+  },
+  "keywords": [
+    "uspec",
+    "uspec-skills",
+    "figma",
+    "design-system",
+    "ai",
+    "skills",
+    "cursor",
+    "claude-code",
+    "codex"
+  ],
+  "type": "module",
+  "bin": {
+    "uspec-skills": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "node scripts/check-registry.mjs && npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}

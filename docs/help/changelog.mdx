@@ -3,6 +3,62 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V2.0 — April 2026" description="New create-component-md skill, uSpec Extract Figma plugin, and uspec-skills install CLI">
+  ## uSpec V2.0
+
+  A major milestone release. uSpec now supports two rendering paths: the original Figma-native annotations, and a new **Component Markdown** path that produces a single self-contained `.md` specification you can hand to any LLM. The release ships with a new Figma plugin that captures every variant, token binding, and sub-component deterministically inside Figma's sandbox, and a new `uspec-skills` CLI that replaces the clone-and-copy install flow.
+
+  ### New: `uspec-skills` install CLI (0.2.0)
+
+  - Run `npx uspec-skills init` from any project root. The CLI prompts for your agent host (Cursor, Claude Code, or Codex) and your Figma MCP provider, installs every skill into the matching platform directory (`.cursor/skills/`, `.claude/skills/`, or `.agents/skills/`), copies references into `./references/`, and writes `uspecs.config.json`
+  - `npx uspec-skills install --platform <cursor|claude-code|codex>` reinstalls or repairs skills non-interactively
+  - `npx uspec-skills update` re-renders skills against the current package version
+  - `npx uspec-skills doctor` validates your install and reports missing skills, missing references, or broken cross-references
+  - `init` bootstraps a fresh uSpec project into the current directory when no project root marker (`.git/`, `package.json`, or `uspecs.config.json`) is found above it, so the documented "create a new folder, then run init" walkthrough works from an empty directory. A one-line note (`bootstrapping a new uSpec project here.`) is printed when this happens
+  - `uspec-skills install` points you at `npx uspec-skills init` when run from a directory with no project root, instead of failing with a generic message
+  - All CLI error and log prefixes consistently say `uspec-skills` (the legacy `uspec` shorthand has been removed)
+  - The previous flow (cloning the repo and running `utils/sync-skills.sh`) is no longer required. Existing users can keep their clone, but new setups should use `npx uspec-skills init` from their own project root
+  - `uspecs.config.json` now records the chosen platform and MCP provider so `firstrun` reads them from disk instead of asking again
+
+  ### New skill: `create-component-md`
+
+  - Orchestrator skill that turns a plugin-produced `_base.json` into a single `components/{componentSlug}.md` file
+  - Runs four interpretation specialists: `extract-api` (serial, produces the shared property dictionary), then `extract-structure`, `extract-color`, and `extract-voice` in a parallel batch
+  - Deterministic reconciliation gate catches typed disagreements between specialists (conflicting child classifications, mismatched axes, missing states) and serially re-dispatches only the specialist that owns the mismatch
+  - Integrity gate validates cache-file shapes, axis consistency, and structure coverage matrix before rendering the Markdown
+  - Output sections: Overview, API, Structure, Color, Voice / Screen reader, Provenance. Everything needed to implement the component from scratch without opening Figma
+  - Cost envelope: 50k–200k tokens per run. Recommended model: Opus 4.7 High or above
+  - [Full guide →](/specs/component-md)
+
+  ### uSpec Extract Figma plugin
+
+  - New Figma plugin that captures a component's complete extractable state in one pass
+  - Walks every variant (no default-variant sampling), resolves library-linked variables with name, `codeSyntax`, alias chains, and remote collection metadata, and captures inline font properties alongside text style IDs
+  - **Phase I: sub-component variant walks.** Constitutive sub-components are measured across their own variant axes, not only the configuration the parent embeds, so a Button inside a Text Field is specified at every size and density
+  - Designer-in-the-loop classification checklist: confirm or flip whether each top-level child is constitutive, referenced, or decorative before extraction
+  - Runs entirely inside the Figma plugin sandbox with no network access. Nothing is stored, nothing leaves your machine. To build locally, clone the [uSpec repo](https://github.com/redongreen/uSpec), run `npm install && npm run build` inside `figma-plugin/`, then import the manifest in Figma Desktop. See the [install walkthrough](/specs/component-md#what-you-need)
+  - Output is a validated `_base.json` (Ajv schema at `figma-plugin/docs/base-json-schema.md`) that becomes the sole input for `create-component-md`
+
+  ### Documentation
+
+  - New [Component Markdown spec page](/specs/component-md) covering install, usage, the four-specialist pipeline, and skill-side troubleshooting
+  - New **Figma Extract plugin** tab on the [Troubleshooting page](/help/troubleshooting) covering build steps, Node version requirements, the watch-mode dev loop, and common install failure modes
+  - [Getting Started](/getting-started) rewritten around the CLI flow with platform-specific tabs
+  - [Troubleshooting](/help/troubleshooting) updated with `npx uspec-skills doctor` and per-platform repair commands
+
+  ### Structure skill: coverage matrix artifact
+
+  - `extract-structure` now emits a `_extractionArtifacts.coverageMatrix` artifact listing every auto-layout frame walked, the non-zero layout properties found on it, and whether a corresponding row was emitted in the final spec
+  - The orchestrator's integrity step asserts `coverageMatrix.complete === true` and independently recounts frames walked, so silently dropped padding or spacing is caught before rendering
+  - Fixes a class of bugs where inner wrapper frames with non-zero `horizontalPadding` or `itemSpacing` could be measured but not emitted
+
+  ### Dual-path architecture
+
+  - `implementation.md` fully rewritten to describe both rendering paths, the plugin phases (A–I), the orchestrator workflow, the `.uspec-cache/` layout, and the `extract-*` interpretation skills
+  - `uspecs.config.json` gains `extractionSource: "plugin"` and `reconciliation: { autoRetry: true }` to control the new path
+  - `.uspec-cache/{componentSlug}/` directory stages the plugin payload and caches each specialist's JSON output. Useful for debugging and for re-running only part of the pipeline
+</Update>
+
 <Update label="V1.8.1 — April 2026" description="Recursive nested container measurement and wrapper frame padding coverage in structure specs">
   ## uSpec V1.8.1
 

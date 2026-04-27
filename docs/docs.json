@@ -31,8 +31,15 @@
         ]
       },
       {
-        "group": "Spec Types",
-        "icon": "layer-group",
+        "group": "Out of Figma",
+        "icon": "file-export",
+        "pages": [
+          "specs/component-md"
+        ]
+      },
+      {
+        "group": "In Figma",
+        "icon": "figma",
         "pages": [
           "specs/anatomy",
           "specs/api",

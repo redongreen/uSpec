@@ -1,31 +1,72 @@
 # uSpec Implementation
 
-> **Purpose of this file:** This is an architecture reference for AI agents working in this codebase. It covers how the system connects (skills, MCP, Figma) — not the details of each spec type.
+> **Purpose of this file:** This is an architecture reference for AI agents working in this codebase. It covers how the system connects (skills, MCP, Figma, the extract plugin) — not the details of each spec type.
+>
+> **Two rendering paths:**
+> - **Figma-native path** (`create-*` skills + Figma MCP): each spec type writes its own annotation frame into Figma next to the component. Figma is the source of truth.
+> - **Component markdown path** (`figma-plugin/` + `create-component-md` + `extract-*` skills): the plugin emits a single `_base.json`; interpreter skills turn it into a standalone `.md` spec. The `.md` — not Figma — becomes the implementation source of truth.
 >
 > **What belongs here:**
-> - System architecture and data flow
-> - Template registry pattern and extensibility
+> - System architecture and data flow for both paths
+> - Template registry pattern and extensibility (Figma path)
+> - Figma plugin phase map and `_base.json` contract (MD path)
 > - Cross-cutting utilities (cloning, error handling)
 > - Build, test, and documentation setup
 > - Reference file pointers
 >
 > **What does NOT belong here:**
-> - Per-spec-type JSON schemas and examples — those live in each skill's instruction file (e.g., `screen-reader/agent-screenreader-instruction.md`)
+> - Per-spec-type JSON schemas and examples — those live in each skill's instruction file (e.g., `screen-reader/agent-screenreader-instruction.md`, `component-md/agent-component-md-instruction.md`)
 > - Hardcoded template component keys — those are configured via the `firstrun` skill and stored in `uspecs.config.json`
+> - The `_base.json` field reference — that lives in `figma-plugin/docs/base-json-schema.md`
 >
-> **Adding a new spec type:** Update the skills table, template type table, and reference files table below. Document the spec's schema, examples, and template structure in its own instruction file.
+> **Adding a new spec type:** Author the new skill in the platform-neutral `skills/<name>/SKILL.md` source (use `{{skill:name}}` and `{{ref:path}}` tokens for cross-references — see the [Skill Source and CLI](#skill-source-and-cli-packagescli) section). Add any shared docs to `references/<area>/`. Update the skills table, template type table, and reference files table below. Document the spec's schema, examples, and template structure in its own instruction file. If the new spec should participate in the component markdown path, pair it with a read-only `extract-<type>` sibling skill and wire it into `create-component-md`'s Step 6 fan-out. Bump `packages/cli/package.json` and rebuild so existing installs can pick up the new skill via `npx uspec-skills update`.
+>
+> **Operator's manual.** This file is the architecture reference. For the human-facing release process — when to bump versions, how to publish to npm, troubleshooting failed publishes, and the smoke-test workflow — see [`maintaining.md`](maintaining.md).
+
+## Contents
+
+- [Overview](#overview) — the two rendering paths and supported spec types
+- [Skills](#skills) — host directories, full skill list, source-of-truth rules
+- [Figma MCP Tools](#figma-mcp-tools) — Console vs Native MCP, complete tool mapping
+  - [Native MCP Page Context](#native-mcp-page-context) — required `setCurrentPageAsync` pattern
+  - [Font Loading in `use_figma`](#font-loading-in-use_figma) — `loadAllFonts` recipe and when to call it
+  - [SLOT Node Handling](#slot-node-handling) — slot mutation ordering, default child workaround
+  - [Console MCP Tools](#console-mcp-tools) / [Native MCP Tools](#native-mcp-tools) — per-provider tool catalog
+- [Architecture](#architecture) — host-specific configuration and template keys
+- [Components](#components) — render pipeline, two-tier extraction, template infrastructure
+  - [Skill and Agent Instruction Architecture](#skill-and-agent-instruction-architecture) — SKILL.md vs instruction file split
+  - [Template Key Config](#template-key-config) — `uspecs.config.json` shape and fields
+- [Cloning Logic](#cloning-logic) — shared template clone-fill-remove pattern
+- [Stability](#stability) — multi-call splitting to avoid Figma timeouts
+- [Component Markdown Pipeline](#component-markdown-pipeline) — `_base.json` → `.md` spec flow
+  - [Figma plugin (`figma-plugin/`)](#figma-plugin-figma-plugin) — phase map A–I
+  - [`create-component-md` orchestrator](#create-component-md-orchestrator) — workflow steps 1–10.5
+  - [`.uspec-cache/` layout](#uspec-cache-layout) — per-component cache files
+- [Skill Source and CLI (`packages/cli/`)](#skill-source-and-cli-packagescli) — token rewriting, render engine, CLI commands
+  - [Tokenized cross-references](#tokenized-cross-references) — `{{skill:}}` and `{{ref:}}` rewrite rules
+  - [CLI package layout](#cli-package-layout) — files inside `packages/cli/`
+  - [Commands](#commands) — `init` / `install` / `update` / `doctor`
+  - [Publish safety](#publish-safety) — three layers preventing wrong-registry publishes
+- [Documentation Site](#documentation-site) — Mintlify, deploy flow, file structure
+- [Reference Files](#reference-files) — full file inventory by area
 
 ## Overview
 
-uSpec generates documentation specifications for UI components. Most skills extract component data via a Figma MCP (Console or native) and render annotations directly in Figma using Plugin API JavaScript. The motion skill is an exception — it reads pre-computed data from an After Effects export script rather than inspecting Figma components.
+uSpec generates documentation specifications for UI components. The system ships two rendering paths that share the same interpretation patterns but produce different artifacts:
 
-1. **Anatomy** - Numbered markers on a component instance with an attribute table
-2. **Property** - Variant axes and boolean toggles with instance previews
+- **Figma-native path.** `create-*` skills extract data via a Figma MCP (Console or native) and render annotations directly in Figma using Plugin API JavaScript. Each spec type has its own template frame. The motion skill is an exception — it reads pre-computed data from an After Effects export script rather than inspecting Figma components.
+- **Component markdown path.** The `figma-plugin/` Figma Desktop plugin walks a component locally and emits a single `_base.json`. The `create-component-md` orchestrator runs four read-only `extract-*` interpreter skills against that file, reconciles their outputs, and renders one self-contained `.md` spec. The `.md` becomes the implementation source of truth; Figma is only the source of extraction.
+
+Spec types currently supported (either path unless noted):
+
+1. **Anatomy** - Numbered markers on a component instance with an attribute table _(Figma-native only)_
+2. **Property** - Variant axes and boolean toggles with instance previews _(Figma-native only)_
 3. **Screen Reader Specs** - Accessibility specifications for VoiceOver, TalkBack, and ARIA
 4. **Color Annotation** - Design token specifications for component colors
 5. **API Overview** - Component property documentation with configuration examples
 6. **Structure Specification** - Dimensional properties documentation (spacing, padding, density variants)
-7. **Motion Specification** - Animation timeline documentation from After Effects export data (pre-computed segments, no raw keyframes)
+7. **Motion Specification** - Animation timeline documentation from After Effects export data (pre-computed segments, no raw keyframes) _(Figma-native only)_
+8. **Component Markdown** - Single standalone `.md` that bundles API, Structure, Color, and Voice into one implementation source of truth _(component markdown path only)_
 
 ## Skills
 
@@ -41,6 +82,8 @@ Agent workflows are defined as skills. Each skill has a `SKILL.md` with frontmat
 
 ### Available skills
 
+**Figma-native (render into Figma):**
+
 | Skill | Trigger Keywords | Purpose |
 |-------|------------------|---------|
 | `create-anatomy` | anatomy, component anatomy, create anatomy | Numbered markers and attribute table |
@@ -50,13 +93,28 @@ Agent workflows are defined as skills. Each skill has a `SKILL.md` with frontmat
 | `create-api` | api, props, properties, component api | API overview generation |
 | `create-structure` | structure, structure spec, dimensions, spacing, density, sizing | Structure spec generation |
 | `create-motion` | motion, motion spec, animation spec, timeline | Motion specification from AE export (JSON paste, file ref, or Figma destination link) |
+
+**Component markdown path (consume `_base.json`, render `.md`):**
+
+| Skill | Trigger Keywords | Purpose |
+|-------|------------------|---------|
+| `create-component-md` | component md, component markdown, spec md, source of truth, migrate to md | Orchestrator: validates a plugin-produced `_base.json`, runs the four `extract-*` interpreter skills, reconciles their outputs, and renders a standalone `components/{componentSlug}.md`. See the [Component Markdown Pipeline](#component-markdown-pipeline) section below. |
+| `extract-api` | _(sub-skill, invoked by `create-component-md`)_ | Read-only: interpret properties, sub-components, and configuration examples from `_base.json`. Produces the shared **API dictionary** that steers the three downstream specialists. Runs inline in the orchestrator's parent context. |
+| `extract-structure` | _(sub-skill, invoked by `create-component-md`)_ | Read-only: interpret variant axes, dimensions, sub-component variant walks (Phase I output), slot contents, and cross-variant diffs from `_base.json`. |
+| `extract-color` | _(sub-skill, invoked by `create-component-md`)_ | Read-only: interpret per-element fills/strokes/effects, axis classification, boolean delta, variable-mode detection, and rendering strategy from `_base.json`. |
+| `extract-voice` | _(sub-skill, invoked by `create-component-md`)_ | Read-only: interpret focus order, merge analysis, per-state VoiceOver/TalkBack/ARIA tables, and slot insertion plans from `_base.json`. |
+
+**Setup:**
+
+| Skill | Trigger Keywords | Purpose |
+|-------|------------------|---------|
 | `firstrun` | firstrun, first run, setup, setup library, configure templates | First-time environment setup and template library configuration |
 
 **Usage:** Mention trigger keywords in your prompt (e.g., "Create voice spec for this button"). In Cursor, you can also reference directly with `@create-voice`.
 
-`.cursor/skills/` is the **source of truth** for all skills. Only `firstrun` is committed in `.claude/skills/` and `.agents/skills/` (for bootstrapping on those platforms); all other skills in those directories are gitignored and generated by the sync script.
+**Skill source of truth.** The platform-neutral `skills/<name>/SKILL.md` files at the repo root are the source of truth — they contain `{{skill:name}}` and `{{ref:path}}` tokens that the CLI rewrites at install time. Per-platform directories (`.cursor/skills/`, `.claude/skills/`, `.agents/skills/`) and the bundled `packages/cli/templates/` directory are **generated artifacts** — never edit them directly. See the [Skill Source and CLI](#skill-source-and-cli-packagescli) section below.
 
-**Editing skills:** Always edit the `.cursor/skills/<name>/SKILL.md` file, then run `./utils/sync-skills.sh` to propagate changes to `.claude/skills/` and `.agents/skills/`. Never edit the synced copies directly — they will be overwritten on the next sync. Use `--target claude` or `--target codex` to sync to one platform only.
+**Editing skills:** Edit `skills/<name>/SKILL.md` (and any `references/` files), then `cd packages/cli && npm run build` to refresh the bundled `templates/` copy. Run `npx uspec-skills update` from any consumer project to pick up the changes. The legacy `utils/sync-skills.sh` script is retained for now but is no longer the supported install path.
 
 ## Figma MCP Tools
 
@@ -438,8 +496,9 @@ The template infrastructure uses a config file for extensibility:
 
 ```json
 {
-  "mcpProvider": "figma-console",
+  "mcpProvider": "figma-mcp",
   "environment": "cursor",
+  "extractionSource": "plugin",
   "fontFamily": "Inter",
   "templateKeys": {
     "screenReader": "key-from-firstrun",
@@ -449,20 +508,27 @@ The template infrastructure uses a config file for extensibility:
     "propertyOverview": "key-from-firstrun",
     "structureSpec": "key-from-firstrun",
     "motionSpec": "key-from-firstrun"
+  },
+  "reconciliation": {
+    "autoRetry": true
   }
 }
 ```
 
-**`mcpProvider`:** Determines which Figma MCP the skills use. Values: `"figma-console"` (Southleft Console MCP with Desktop Bridge) or `"figma-mcp"` (native Figma MCP with write access). Set by the `firstrun` skill. Each skill reads this value and follows the matching tool-call path in its MCP Adapter section.
+**`mcpProvider`:** Determines which Figma MCP the `create-*` skills use. Values: `"figma-console"` (Southleft Console MCP with Desktop Bridge) or `"figma-mcp"` (native Figma MCP with write access). Set by the `firstrun` skill. Each skill reads this value and follows the matching tool-call path in its MCP Adapter section. The component markdown path does not use the MCP for measurements — it reads `_base.json` from disk — but the field is still consulted if a sub-skill's optional Step 3-delta triggers.
+
+**`extractionSource`:** Signals where the component markdown path expects its input to come from. Current value: `"plugin"` (produced by `figma-plugin/`). Non-plugin extraction sources are not currently supported; the orchestrator's Step 1 aborts if the input cannot be validated against `figma-plugin/docs/base-json-schema.md`.
+
+**`reconciliation.autoRetry`:** Toggles the `create-component-md` orchestrator's Step 8.5 bounded serial retry loop. When `true`, typed disagreements between `extract-structure` / `extract-color` / `extract-voice` trigger up to N targeted re-runs of the offending specialist with the mismatch payload attached. When `false`, mismatches are recorded into `reconciliation.json` and carried through to the final audit without retries.
 
 **`fontFamily` and the `__FONT_FAMILY__` placeholder:** The `fontFamily` value (detected by `firstrun` from the template library) is used in rendering scripts that create text labels in Figma. Skills declare `const FONT_FAMILY = '__FONT_FAMILY__';` at the top of each rendering script, and the agent replaces `__FONT_FAMILY__` with the value from `uspecs.config.json` before execution. This follows the same `__PLACEHOLDER__` convention used for all dynamic values in `figma_execute` scripts.
 
 **Adding a new template type requires:**
 
 1. Add a new key to `uspecs.config.json` under `templateKeys`
-2. Create a new SKILL.md in `.cursor/skills/<name>/` with the MCP Adapter preamble and a workflow that reads the key and uses `figma.importComponentByKeyAsync` to import the template
-3. Update the `firstrun` skill to search for and extract the new template's component key
-4. Run `./utils/sync-skills.sh` to sync the new skill (and updated `firstrun`) to `.claude/skills/` and `.agents/skills/`
+2. Create a new SKILL.md in the platform-neutral source at `skills/<name>/SKILL.md` with the MCP Adapter preamble and a workflow that reads the key and uses `figma.importComponentByKeyAsync` to import the template. Use `{{skill:name}}` and `{{ref:path}}` tokens for any cross-references to other skills or shared docs.
+3. Update the `firstrun` skill (in `skills/firstrun/SKILL.md`) to search for and extract the new template's component key
+4. Rebuild the CLI bundle with `cd packages/cli && npm run build` so the new skill ships in the published `templates/` artifact, then bump the package version and publish (`npm publish --access public`). Existing installs pick up the new skill via `npx uspec-skills update`.
 5. Add the new skill to the tables in `CLAUDE.md`, `AGENTS.md`, and this file
 
 ## Cloning Logic
@@ -480,6 +546,179 @@ This pattern nests at multiple levels. For example, the screen reader skill clon
 ## Stability
 
 Each skill splits work across multiple Plugin API calls (`figma_execute` / `use_figma`) to avoid timeouts — typically one call per section, variant, or state. This keeps each call's execution time short and lets Figma process between calls. Complex specs (e.g., structure with many sections, screen reader with many states) benefit most from this pattern.
+
+## Component Markdown Pipeline
+
+The component markdown path produces a single standalone `.md` spec per component. It bypasses the Figma MCP for measurements — data comes from a locally-installed Figma Desktop plugin that runs inside the Figma plugin sandbox and writes a `_base.json` file to disk. Interpreter skills then read that file and render the `.md`.
+
+### Why this path exists
+
+Each `create-*` Figma-native skill costs roughly 100k tokens per run because the majority of the weight is the Figma render pass: `setProperties`, `createInstance`, `loadFontAsync`, layout math, cloning templates, placing markers. The `extract-*` skills strip all of that. Because the plugin produces a single shared `_base.json`, the interpreters also stop calling the MCP for measurements — they read that file from disk. Per-spec token cost drops into the low tens of thousands and the parent orchestrator only holds one-line summaries from each specialist. The `.md` artifact is also easier to diff, review, and hand to downstream code-generation tools than seven separate Figma frames.
+
+### Figma plugin (`figma-plugin/`)
+
+A local Figma Desktop plugin installed via **Plugins → Development → Import plugin from manifest…**. Not published to Figma Community — the source lives in-repo under `figma-plugin/` and is built with esbuild.
+
+The plugin walks the selected `COMPONENT` or `COMPONENT_SET` (a selected variant is auto-promoted to its component set) through a fixed sequence of phases and emits `{componentSlug}-_base.json`. Every variant is walked — no default-variant sampling — so cross-variant diffs are computed in the sandbox rather than reconstructed by the agent.
+
+| Phase | File | Purpose |
+|-------|------|---------|
+| A | `phaseA.ts` | Meta, axes, component property definitions |
+| B | `phaseB.ts` | Local variable collections + resolved values per mode |
+| C | `phaseC.ts` | Style resolution with inline-sample fallback when library styles are unresolvable |
+| D | `phaseD.ts` | Library-linked variable resolution (`name`, `codeSyntax`, alias chains, remote collection metadata) via `figma.variables.getVariableByIdAsync` |
+| E | `phaseE.ts` | Per-variant walker: dimensions, hierarchical tree, color walk, post-walk validation. `extractDims` is exported for reuse by Phase I. |
+| F | `phaseF.ts` | Cross-variant diffs + axis classification |
+| F′ | `childComposition.ts` | First-guess classification for each top-level child instance (constitutive / referenced / decorative). Designer confirms or flips each guess in the plugin UI before extraction completes. |
+| G | `phaseG.ts` | Revealed trees + slot host geometry |
+| H | `phaseH.ts` | Ownership hints (which element "owns" a given color / dimension) |
+| I | `phaseI.ts` | Constitutive sub-component variant walks: enumerates each constitutive child's own variant axes (cross-product capped at 20 combos per sub), measures `dimensions` + `treeHierarchical` per combo, emits `subComponentVariantWalks` keyed by `subCompSetId`. Fixes the case where a parent-variant walk captures a child only in its embedded configuration and misses the child's own size/density/etc. axes. |
+
+**Designer-in-the-loop composition.** Phase F′ pre-classifies children using node metadata (name, main component set, variant axes), but the plugin UI surfaces each top-level child for designer review. Confirmed or flipped guesses land in `_childComposition.children[*]` with `classificationEvidence: ["user-selected"]`. The orchestrator's Step 4.5 review short-circuits to a confirmation-only pass when every child carries that evidence.
+
+**Defensive accessors.** `src/safe.ts` provides `safeLen`, `sg`, and `sidStr` wrappers that let the walker tolerate `GROUP` and `SLOT` nodes whose property reads would otherwise throw under the plugin sandbox's strict mode.
+
+**Inline font capture.** Text style IDs are recorded, but inline font family + style + size + weight are also captured on every text node so typography data survives even when a library-linked text style cannot be resolved.
+
+**Schema + validator.** The full `_base.json` shape is documented in [`figma-plugin/docs/base-json-schema.md`](figma-plugin/docs/base-json-schema.md). An Ajv validator lives at `figma-plugin/scripts/validate-base.mjs` and is shell-executed by the orchestrator's Step 1 — non-zero exit aborts the run with the validator's FAIL output.
+
+### `create-component-md` orchestrator
+
+Inputs:
+
+- `baseJsonPath` _(required)_ — path to the plugin's output. Missing → abort with "run the uSpec Extract plugin".
+- `figmaLink` _(optional)_ — only consulted if an interpreter's Step 3-delta MCP call fires. `_meta.fileKey` / `_meta.nodeId` from `_base.json` win when the two disagree; the parent logs a `META_DISAGREES_WITH_LINK` warning.
+- `optionalContext` _(optional)_ — free-form design intent forwarded verbatim to every sub-skill. `_base.json._meta.optionalContext` wins when both are set.
+
+Workflow (abridged — the canonical checklist lives in `.cursor/skills/create-component-md/SKILL.md`):
+
+1. **Preflight.** Read `uspecs.config.json`, load `_base.json`, run the Ajv validator. Extract `_meta.{fileKey, nodeId, componentSlug, optionalContext, extractionSource}`.
+2. **Resolve `componentSlug`** and the output path (default `./components/{componentSlug}.md`). Create `./components/` (tracked) and `.uspec-cache/{componentSlug}/` (gitignored).
+3. **Announce the plan.** One-line summary of what will be generated.
+4. **Stage `_base.json`** into `.uspec-cache/{componentSlug}/_base.json`.
+5. **Run `extract-api` inline in the parent.** Produces `{componentSlug}-api.json` and `api-dictionary.json`. The dictionary lands in the parent so downstream specialists can read it.
+6. **Parallel fan-out.** Dispatch `extract-structure`, `extract-color`, `extract-voice` as three `generalPurpose` subagents in a single batch. Each subagent holds its own `_base.json` + `api-dictionary.json` context; the parent keeps only the returned one-line summary + cache-file path from each.
+7. **Reconciliation (Step 8.5).** Compare the three specialist artifacts for typed disagreements (e.g., same element classified as `constitutive` in structure but `referenced` in voice; variant axis present in one artifact and absent in another). When `reconciliation.autoRetry === true`, re-run the offending specialist with the mismatch payload attached, up to a bounded retry count. Write the final verdict to `reconciliation.json`.
+8. **Render the `.md`** per `component-md/agent-component-md-instruction.md` using all four cache files + `api-dictionary.json`.
+9. **Integrity check (Step 9.5).** Validate every cache file's shape, assert axis-name consistency across artifacts, assert voice state platform coverage, assert the `coverageMatrix` artifact from `extract-structure` is `complete === true`, and recount `framesWalked` independently. Abort on failure.
+10. **Audit + summary.** Emit a one-line run summary.
+11. **Recursion manifest (Step 10.5).** Emit a manifest of constitutive children so the caller can fan out to generate per-child `.md` specs without re-walking `_base.json`.
+
+### `.uspec-cache/` layout
+
+Produced per component by the orchestrator. `.uspec-cache/` is gitignored.
+
+```
+.uspec-cache/{componentSlug}/
+├── _base.json                      staged copy of plugin output
+├── {componentSlug}-api.json        from extract-api
+├── {componentSlug}-structure.json  from extract-structure
+├── {componentSlug}-color.json      from extract-color
+├── {componentSlug}-voice.json      from extract-voice
+├── api-dictionary.json             shared dictionary that steers structure/color/voice
+└── reconciliation.json             Step 8.5 verdicts + retry log
+```
+
+### `extract-*` interpreter skills
+
+Shared shape across all four:
+
+- **Read-only.** No MCP calls except an optional Step 3-delta ping if a measurement is missing from `_base.json` and `figmaLink` was passed. The delta path writes tiny `_deltaExtractions` entries into the cache artifact so the orchestrator can surface them in the audit.
+- **Paired instruction file.** Each `extract-<type>` references the canonical `agent-<type>-instruction.md` for domain rules (same instruction file the Figma-native `create-<type>` skill uses). The skill teaches the read-path over `_base.json` fields; the instruction file teaches the interpretation rules.
+- **Deterministic output paths.** `{componentSlug}-<type>.json` under the component's cache directory, plus any `_deltaExtractions` requests.
+- **Provenance flags.** Every row / cell carries a `provenance` tag (`measured`, `inferred`, `delta`, or `"—"` with a reason) so the orchestrator and downstream readers can trust or challenge values without re-running the pipeline.
+
+`extract-structure` is the largest of the four. It consumes the Phase I `subComponentVariantWalks` block to populate per-column values for constitutive sub-components across their own variant axes (e.g., `Input` size=`large|medium|small`), replacing the old "—" placeholders. When a matching walk entry exists, cells are sourced from `variants[*].dimensions` (or `treeHierarchical` for hierarchical properties) with `provenance: 'measured'`; when it is missing or the walk was skipped, a `_deltaExtractions` gap is emitted instead of a silent "—".
+
+### Source-of-truth semantics
+
+The Figma-native skills treat the Figma file as the source of truth for the component spec and write annotation frames beside the component. `create-component-md` inverts that relationship: the `.md` file is the source of truth for implementation, and Figma is only the source of extraction. Downstream code generators, documentation sites, and review tools should consume the `.md`; regenerating it is cheap because the plugin + interpreter chain is deterministic given the same `_base.json`.
+
+## Skill Source and CLI (`packages/cli/`)
+
+Skills, references, and the CLI that installs them are versioned together but live in separate trees:
+
+```
+skills/<name>/SKILL.md            platform-neutral source of truth, with {{skill:}} / {{ref:}} tokens
+references/<area>/*.md            shared instruction and reference files
+packages/cli/                     the uspec-skills npm package (CLI + render engine)
+packages/cli/templates/           bundled copy of skills/ and references/ — built artifact
+.cursor/skills/                   generated per-host artifact (DO NOT edit)
+.claude/skills/                   generated per-host artifact (DO NOT edit)
+.agents/skills/                   generated per-host artifact (DO NOT edit)
+```
+
+### Tokenized cross-references
+
+Because the same `SKILL.md` is rendered into three different per-host directories whose relative paths to `references/` differ (e.g., `.cursor/skills/<name>/SKILL.md` reaches references via `../../references/...`, while `.claude/skills/<name>/SKILL.md` reaches them via `../../../references/...`), bare relative paths inside a SKILL.md cannot work across hosts. The CLI's render engine rewrites two token forms at install time:
+
+| Token | Rewritten to | Purpose |
+|---|---|---|
+| `{{skill:other-skill}}` | host-specific invocation phrasing (e.g., `@other-skill` for Cursor, "the other-skill skill" elsewhere) | Cross-skill references |
+| `{{ref:area/file.md}}` | host-correct relative path to `references/area/file.md` | Pointers to shared instruction files |
+
+Authors should always use these tokens in the source `skills/<name>/SKILL.md`. Bare relative paths to `references/...` will resolve correctly only on Cursor and break on Claude Code / Codex.
+
+### CLI package layout
+
+```
+packages/cli/
+├── package.json                 published to npm as "uspec-skills"
+├── src/
+│   ├── cli.ts                   command dispatcher
+│   ├── render.ts                token rewrite + per-host writer
+│   ├── paths.ts                 source-dir resolution (dev vs production)
+│   ├── config.ts                uspecs.config.json reader/writer
+│   ├── version.ts               reads CLI version into config.cliVersion
+│   └── commands/
+│       ├── init.ts              interactive setup; bootstraps empty dirs
+│       ├── install.ts           non-interactive (re-)install for a platform
+│       ├── update.ts            wraps install — re-render after package upgrade
+│       ├── doctor.ts            verify install + report drift
+│       └── render.ts            internal render driver
+├── scripts/
+│   ├── build.mjs                esbuild → dist/index.js + copy templates/
+│   └── check-registry.mjs       prepublishOnly safety guard (blocks non-public registries)
+├── templates/                   built copy of /skills and /references (gitignored)
+└── .npmrc                       pins this package's registry to npmjs.org
+```
+
+### Commands
+
+| Command | Purpose |
+|---|---|
+| `npx uspec-skills init` | Interactive setup: prompts for platform + MCP, installs skills + references, writes `uspecs.config.json`. Bootstraps a fresh project when no `.git/`, `package.json`, or `uspecs.config.json` is found above the current directory. |
+| `npx uspec-skills install [--platform p]` | Non-interactive (re-)install. Reads `environment` from `uspecs.config.json` if `--platform` is omitted. Idempotent. When called with `--platform` for a secondary host, preserves the primary `environment` field already in the config. |
+| `npx uspec-skills update` | Re-renders skills against the currently installed CLI version. Run after upgrading the package. |
+| `npx uspec-skills doctor` | Verifies install: checks `uspecs.config.json` exists and has `environment`, the platform's skills directory is populated, all `.md`-relative links resolve, and reports CLI version drift. |
+
+### Source-dir resolution
+
+`paths.ts → resolveSourceDirs()` looks for skills and references in two places:
+
+1. **Production** — `<package>/templates/skills` and `<package>/templates/references` inside the installed npm package. The build script copies the repo's `skills/` and `references/` into `templates/` on every build.
+2. **Development** — when running directly from a checkout with no `templates/` dir, walks up from the CLI module location until it finds sibling `skills/` and `references/` directories.
+
+Production wins when both are present, so a published package never accidentally serves files from a stale checkout.
+
+### Publish safety
+
+Three defensive layers prevent accidentally publishing this package to a non-public registry (e.g., an Uber internal registry that may be configured globally):
+
+1. `package.json → publishConfig.registry` pins the publish target to `https://registry.npmjs.org/`
+2. A local `packages/cli/.npmrc` overrides any user-level registry config for this directory
+3. `prepublishOnly → scripts/check-registry.mjs` runs before every `npm publish` and aborts with a non-zero exit if the resolved registry isn't `registry.npmjs.org`
+
+Always publish from inside `packages/cli/` so the local `.npmrc` is honored.
+
+### `uspecs.config.json` fields written by the CLI
+
+| Field | Written by | Notes |
+|---|---|---|
+| `environment` | `init` (always) and `install` only when no value already present | Primary host: `cursor` \| `claude-code` \| `codex` |
+| `mcpProvider` | `init` (always) | `figma-mcp` \| `figma-console` |
+| `cliVersion` | `init`, `install`, `update` | Used by `doctor` to surface drift between recorded version and installed CLI |
+| `templateKeys`, `fontFamily` | `firstrun` skill (not the CLI) | Filled by the agent on first run after install |
 
 ## Documentation Site
 
@@ -515,22 +754,47 @@ docs/
 
 ## Reference Files
 
-### Skills (Cursor — full set)
+### Skill source (platform-neutral — `skills/`)
+
+Every skill is authored once at the repo root in `skills/<name>/SKILL.md` with `{{skill:name}}` and `{{ref:path}}` tokens. The CLI's render engine rewrites those tokens per host at install time. **Always edit these source files**, never the per-host generated copies.
+
+**Figma-native path:**
 
 | File | Content |
 |------|---------|
-| `.cursor/skills/create-anatomy/SKILL.md` | Anatomy: extraction, marker rendering, attribute table |
-| `.cursor/skills/create-property/SKILL.md` | Property: variant axis and boolean toggle exhibits |
-| `.cursor/skills/create-voice/SKILL.md` | Screen reader: merge analysis, platform sections, property tables |
-| `.cursor/skills/create-color/SKILL.md` | Color: consolidated extraction (style-over-variable token resolution, composite style detection, axis classification, boolean gating, sub-component tagging, mode discovery), AI strategy selection, element-to-token mapping tables, composite breakdown with hierarchy indicators |
-| `.cursor/skills/create-api/SKILL.md` | API: main table, sub-component tables, configuration examples |
-| `.cursor/skills/create-structure/SKILL.md` | Structure: dynamic columns, hierarchy indicators, dimensional tables |
-| `.cursor/skills/create-motion/SKILL.md` | Motion: timeline bars, pre-computed easing segments, detail table |
-| `.cursor/skills/firstrun/SKILL.md` | First run: environment selection, skill sync, template library configuration |
+| `skills/create-anatomy/SKILL.md` | Anatomy: extraction, marker rendering, attribute table |
+| `skills/create-property/SKILL.md` | Property: variant axis and boolean toggle exhibits |
+| `skills/create-voice/SKILL.md` | Screen reader: merge analysis, platform sections, property tables |
+| `skills/create-color/SKILL.md` | Color: consolidated extraction (style-over-variable token resolution, composite style detection, axis classification, boolean gating, sub-component tagging, mode discovery), AI strategy selection, element-to-token mapping tables, composite breakdown with hierarchy indicators |
+| `skills/create-api/SKILL.md` | API: main table, sub-component tables, configuration examples |
+| `skills/create-structure/SKILL.md` | Structure: dynamic columns, hierarchy indicators, dimensional tables |
+| `skills/create-motion/SKILL.md` | Motion: timeline bars, pre-computed easing segments, detail table |
 
-### Skills (Claude Code and Codex)
+**Component markdown path:**
 
-Only `firstrun` is committed in `.claude/skills/` and `.agents/skills/` — all other skills are gitignored and generated by `./utils/sync-skills.sh`. The synced copies have adjusted relative paths (`../../` → `../../../`) and generic invocation references (`@skill-name` → `the skill-name skill`). Always edit `.cursor/skills/` and re-run the sync script.
+| File | Content |
+|------|---------|
+| `skills/create-component-md/SKILL.md` | Orchestrator: preflight + schema validation, Step 4.5 composition review, `extract-api` inline run, parallel fan-out of `extract-structure` / `extract-color` / `extract-voice` as subagents, Step 8.5 reconciliation, Step 9 `.md` render, Step 9.5 integrity check, Step 10.5 recursion manifest |
+| `skills/extract-api/SKILL.md` | Interpret API / properties / sub-components / examples from `_base.json`; emit `{slug}-api.json` + shared `api-dictionary.json` |
+| `skills/extract-structure/SKILL.md` | Interpret variant axes, dimensions, `subComponentVariantWalks`, slot contents, cross-variant diffs; emit `{slug}-structure.json` with `coverageMatrix` audit artifact |
+| `skills/extract-color/SKILL.md` | Interpret per-element fills/strokes/effects, axis classification, boolean delta, variable-mode detection, rendering strategy; emit `{slug}-color.json` |
+| `skills/extract-voice/SKILL.md` | Interpret focus order, merge analysis, per-state VoiceOver/TalkBack/ARIA tables, slot insertion plans; emit `{slug}-voice.json` |
+
+**Setup:**
+
+| File | Content |
+|------|---------|
+| `skills/firstrun/SKILL.md` | First run: prompts for MCP provider and environment, syncs skills to the chosen platform via the CLI, configures the Figma template library |
+
+### Per-host generated artifacts
+
+These directories are produced by `npx uspec-skills install`/`update` from the platform-neutral source above. They are **gitignored in consumer projects** and **never edited directly**:
+
+- `.cursor/skills/` — Cursor host. Cross-skill references rendered as `@skill-name`; relative paths to `references/` use `../../`.
+- `.claude/skills/` — Claude Code CLI host. Cross-skill references rendered as `the skill-name skill`; relative paths to `references/` use `../../../`.
+- `.agents/skills/` — Codex CLI host. Same rendering as Claude Code.
+
+In this monorepo we keep a checked-in copy of `.cursor/skills/` because the development repo itself uses uSpec; consumer projects only have the directory matching their chosen host.
 
 ### Host configuration and utilities
 
@@ -541,20 +805,44 @@ Only `firstrun` is committed in `.claude/skills/` and `.agents/skills/` — all 
 | `.mcp.json` | Shared MCP config (Claude Code reads this by default) |
 | `.codex/config.toml` | Codex MCP config |
 | `.cursor/mcp.json` | Cursor MCP config (gitignored — user configures locally) |
-| `utils/sync-skills.sh` | Syncs skills from `.cursor/skills/` to `.claude/skills/` and `.agents/skills/` |
+| `utils/sync-skills.sh` | **Legacy.** Pre-CLI sync script kept for backward compatibility. New work should rely on `npx uspec-skills install` / `update` instead — see the [Skill Source and CLI](#skill-source-and-cli-packagescli) section. |
 
 ### Agent Instruction Files
 
+Each domain owns one canonical instruction file that both the Figma-native `create-<type>` skill and the read-only `extract-<type>` sub-skill reference. The `component-md` instruction file is unique to the markdown path.
+
+All instruction files live under `references/<area>/` at the repo root and are shipped to consumer projects by the CLI as `./references/<area>/...`. From inside a `SKILL.md`, link to them via the `{{ref:area/filename.md}}` token (the render engine inserts the host-correct relative path).
+
 | File | Content |
 |------|---------|
-| `anatomy/agent-anatomy-instruction.md` | Anatomy annotation: extraction validation checklist, note-writing guidelines, property-aware unhide decisions, nearest-edge marker placement, inline marker detection, slot preferred instance enrichment |
-| `screen-reader/agent-screenreader-instruction.md` | Screen reader spec: data schema, platform reference (VoiceOver/TalkBack/ARIA), merge analysis guidance |
-| `screen-reader/voiceover.md` | iOS accessibility properties reference |
-| `screen-reader/talkback.md` | Android semantics and roles reference |
-| `screen-reader/aria.md` | ARIA roles and states reference |
-| `color/agent-color-instruction.md` | Color annotation: strategy selection (A vs B), token resolution rules (styles over variables), element-to-token mapping, composite style breakdown, hierarchy indicator rendering, rendering decisions |
-| `api/agent-api-instruction.md` | API overview: property classification rules, sub-component patterns (slot vs fixed), naming conventions, validation checklist |
-| `api/api-library.md` | API documentation reference patterns |
-| `structure/agent-structure-instruction.md` | Structure spec: interpretation guidance, section planning, dimensional comparison rules, anomaly detection |
-| `motion/agent-motion-instruction.md` | Motion spec: JSON schema (with pre-computed segments), rendering rules, timeline layout |
-| `motion/export-timeline.jsx` | After Effects export script: keyframe extraction, segment computation, cubic-bezier conversion, value formatting, keyframe stripping |
+| `references/anatomy/agent-anatomy-instruction.md` | Anatomy annotation: extraction validation checklist, note-writing guidelines, property-aware unhide decisions, nearest-edge marker placement, inline marker detection, slot preferred instance enrichment |
+| `references/screen-reader/agent-screenreader-instruction.md` | Screen reader spec: data schema, platform reference (VoiceOver/TalkBack/ARIA), merge analysis guidance. Consumed by both `create-voice` and `extract-voice`. |
+| `references/screen-reader/voiceover.md` | iOS accessibility properties reference |
+| `references/screen-reader/talkback.md` | Android semantics and roles reference |
+| `references/screen-reader/aria.md` | ARIA roles and states reference |
+| `references/color/agent-color-instruction.md` | Color annotation: strategy selection (A vs B), token resolution rules (styles over variables), element-to-token mapping, composite style breakdown, hierarchy indicator rendering, rendering decisions. Consumed by both `create-color` and `extract-color`. |
+| `references/api/agent-api-instruction.md` | API overview: property classification rules, sub-component patterns (slot vs fixed), naming conventions, validation checklist. Consumed by both `create-api` and `extract-api`. |
+| `references/api/api-library.md` | API documentation reference patterns |
+| `references/structure/agent-structure-instruction.md` | Structure spec: interpretation guidance, section planning, dimensional comparison rules, sub-component variant walk read-path, anomaly detection. Consumed by both `create-structure` and `extract-structure`. |
+| `references/motion/agent-motion-instruction.md` | Motion spec: JSON schema (with pre-computed segments), rendering rules, timeline layout |
+| `references/motion/export-timeline.jsx` | After Effects export script: keyframe extraction, segment computation, cubic-bezier conversion, value formatting, keyframe stripping |
+| `references/property/agent-property-instruction.md` | Property exhibit interpretation: variant axis classification, boolean-to-slot linkage, validation. Consumed by `create-property`. |
+| `references/component-md/agent-component-md-instruction.md` | Component markdown renderer: section plan, how to compose API + Structure + Color + Voice into a single `.md`, referenced-child disclosure rules, recursion manifest format |
+| `references/component-md/component-md-template.md` | Reference template for the final `.md` output (headings, table shapes, disclaimers) |
+
+### Figma plugin (`figma-plugin/`)
+
+| File | Content |
+|------|---------|
+| `figma-plugin/README.md` | Install, use, validate, and hand-off instructions for the uSpec Extract plugin |
+| `figma-plugin/docs/base-json-schema.md` | Canonical `_base.json` field reference, phase map, audit checklist |
+| `figma-plugin/manifest.json` | Figma plugin manifest |
+| `figma-plugin/scripts/build.mjs` | esbuild bundler (writes `dist/code.js`, `dist/ui.html`) |
+| `figma-plugin/scripts/validate-base.mjs` | Ajv schema validator — shell-executed by `create-component-md` Step 1 |
+| `figma-plugin/src/code.ts` | Sandbox entry point; orchestrates all phases |
+| `figma-plugin/src/ui.html` + `src/ui.ts` | Plugin UI iframe (checklist for child classification, download, clipboard) |
+| `figma-plugin/src/types.ts` | Shared types between sandbox and iframe |
+| `figma-plugin/src/safe.ts` | Defensive property accessors (`safeLen`, `sg`, `sidStr`) |
+| `figma-plugin/src/phaseA.ts` … `phaseH.ts` | Extraction phases A–H (see the [phase map](#figma-plugin-figma-plugin) above) |
+| `figma-plugin/src/phaseI.ts` | Phase I — constitutive sub-component variant walks; uses `extractDims` exported from `phaseE.ts` |
+| `figma-plugin/src/childComposition.ts` | Phase F′ — first-guess child classification |

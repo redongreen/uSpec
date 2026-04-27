@@ -1,9 +1,13 @@
 ---
 title: "Getting Started"
-description: "Set up your AI agent, connect Figma via MCP, and configure your template library, then create your first spec"
+description: "Set up your AI agent, connect Figma, and run your first spec. Covers both rendering paths: Figma-native and Component Markdown"
 ---
 
 This page covers everything you need to go from zero to your first generated spec.
+
+<Info>
+  uSpec supports two rendering paths. This page sets up the **Figma-native** path (annotations rendered into Figma). The **Component Markdown** path (single `.md` spec via the uSpec Extract plugin) has its own walkthrough on the [Component Markdown page](/specs/component-md).
+</Info>
 
 <CardGroup cols={2}>
   <Card title="Setup instructions" icon="download" href="#setup-instructions">
@@ -18,11 +22,20 @@ This page covers everything you need to go from zero to your first generated spe
 
 ## Setup instructions
 
-uSpec connects an AI coding agent to Figma through an MCP (Model Context Protocol) server. You need three things:
+uSpec connects an AI coding agent to Figma through an MCP (Model Context Protocol) server. Setup depends on which rendering path you plan to use.
+
+**Figma-native path (this walkthrough).** Annotations are rendered back into your Figma file. You need three pieces:
 
 1. **AI agent host**: the coding environment that runs uSpec skills (Cursor, Claude Code, or Codex)
 2. **Figma MCP**: the bridge that connects your agent to Figma files (either Figma Console MCP or native Figma MCP)
 3. **Template library**: the Figma file containing documentation templates
+
+**Component Markdown path.** A single `.md` spec is written to disk. You need two pieces:
+
+1. **AI agent host** (same as above)
+2. **uSpec Extract Figma plugin**: replaces the MCP + template library requirement. Either install from [Figma Community](https://www.figma.com/community/plugin/1627610958749858141), or — if you prefer the latest source — clone the uSpec repo and build it locally from `figma-plugin/`. The [Component Markdown install guide](/specs/component-md#what-you-need) walks through both options.
+
+For the Component Markdown path, follow the [agent host setup below](#1-set-up-your-agent-host), then jump to the [Component Markdown install and usage guide](/specs/component-md).
 
 <Note>
   You only need to complete this setup once. After that, you can generate specs anytime by opening the project in your agent host.
@@ -38,15 +51,17 @@ uSpec connects an AI coding agent to Figma through an MCP (Model Context Protoco
       <Step title="Download Cursor">
         Go to [cursor.com](https://cursor.com) and download the app for your platform.
       </Step>
-      <Step title="Clone the uSpec repository">
-        Clone the repository to your local machine.
+      <Step title="Open your project in Cursor">
+        uSpec installs into your existing project — you do not need to clone the uSpec repo. Open any folder where you want to use uSpec.
+      </Step>
+      <Step title="Install uSpec">
+        In the project's terminal, run:
 
         ```bash
-        git clone https://github.com/redongreen/uSpec.git
+        npx uspec-skills init
         ```
-      </Step>
-      <Step title="Open the project in Cursor">
-        Open the `uSpec` folder in Cursor. The agent skills in `.cursor/skills/` load automatically.
+
+        Choose **Cursor** when prompted. The CLI installs all skills into `.cursor/skills/` and references into `./references/`, then writes `uspecs.config.json`.
       </Step>
       <Step title="Select the right model">
         uSpec skills are token-intensive and require a model with high context capacity. In Cursor's chat, select **OpenAI GPT 5.4 High** or **Opus 4.6 High** or above. OpenAI 5.4 High is more economical to use.
@@ -58,31 +73,26 @@ uSpec connects an AI coding agent to Figma through an MCP (Model Context Protoco
     </Steps>
 
     <Check>
-      Verify skills are available by typing `@create-voice` in Cursor's chat. It should autocomplete to the skill file.
+      Verify skills are available by typing `@create-voice` or `@create-component-md` in Cursor's chat. Either should autocomplete to the skill file.
     </Check>
   </Tab>
 
   <Tab title="Claude Code">
-    Claude Code is Anthropic's terminal-based coding agent. The `firstrun` skill is pre-installed in `.claude/skills/` — running it deploys all other skills.
+    Claude Code is Anthropic's terminal-based coding agent.
 
     <Steps>
       <Step title="Install Claude Code">
         Follow the [Claude Code installation guide](https://code.claude.com/docs/en/overview) to install the CLI.
       </Step>
-      <Step title="Clone the uSpec repository">
-        Clone the repository to your local machine.
-
-        ```bash
-        git clone https://github.com/redongreen/uSpec.git
-        ```
+      <Step title="Open your project">
+        uSpec installs into your existing project. `cd` into any folder where you want to use uSpec.
       </Step>
-      <Step title="Open the project">
-        Navigate to the `uSpec` folder. Claude Code reads `CLAUDE.md` for project instructions and discovers the `firstrun` skill in `.claude/skills/` automatically.
-
+      <Step title="Install uSpec">
         ```bash
-        cd uSpec
-        claude
+        npx uspec-skills init
         ```
+
+        Choose **Claude Code CLI** when prompted. The CLI installs all skills into `.claude/skills/` and references into `./references/`, then writes `uspecs.config.json`.
       </Step>
       <Step title="Select the right model">
         Use **OpenAI GPT 5.4 High** or **Opus 4.6 High** or above. uSpec skills are token-intensive and require high context capacity. OpenAI 5.4 High is more economical to use.
@@ -90,30 +100,26 @@ uSpec connects an AI coding agent to Figma through an MCP (Model Context Protoco
     </Steps>
 
     <Check>
-      Run `claude` in the project directory. Claude Code should load `CLAUDE.md` and recognize the `firstrun` skill.
+      Run `claude` in the project directory. Claude Code should discover the `firstrun` skill from `.claude/skills/firstrun/`.
     </Check>
   </Tab>
 
   <Tab title="Codex">
-    Codex is OpenAI's coding agent. The `firstrun` skill is pre-installed in `.agents/skills/` — running it deploys all other skills.
+    Codex is OpenAI's coding agent.
 
     <Steps>
       <Step title="Install Codex">
         Follow the [Codex setup guide](https://developers.openai.com/codex/) to install the CLI.
       </Step>
-      <Step title="Clone the uSpec repository">
-        Clone the repository to your local machine.
-
-        ```bash
-        git clone https://github.com/redongreen/uSpec.git
-        ```
+      <Step title="Open your project">
+        uSpec installs into your existing project. `cd` into any folder where you want to use uSpec.
       </Step>
-      <Step title="Open the project">
-        Navigate to the `uSpec` folder. Codex reads `AGENTS.md` for project instructions and discovers the `firstrun` skill in `.agents/skills/`.
-
+      <Step title="Install uSpec">
         ```bash
-        cd uSpec
+        npx uspec-skills init
         ```
+
+        Choose **Codex CLI** when prompted. The CLI installs all skills into `.agents/skills/` and references into `./references/`, then writes `uspecs.config.json`.
       </Step>
       <Step title="Select the right model">
         Use **OpenAI GPT 5.4 High** or **Opus 4.6 High** or above. uSpec skills are token-intensive and may produce incomplete output with lower-capacity models. OpenAI 5.4 High is more economical to use.
@@ -121,10 +127,19 @@ uSpec connects an AI coding agent to Figma through an MCP (Model Context Protoco
     </Steps>
 
     <Check>
-      Codex should discover the `firstrun` skill listed in `AGENTS.md`. Type `$firstrun` to get started, or use `/skills` to browse what's available.
+      Codex should discover the `firstrun` skill from `.agents/skills/firstrun/`. Type `$firstrun` to get started, or use `/skills` to browse what's available.
     </Check>
   </Tab>
 </Tabs>
+
+<Tip>
+  **Using more than one agent host?** Run `npx uspec-skills install --platform <name>` for each additional host in the same project. The CLI installs into the host's directory without touching the others, so you can have `.cursor/skills/`, `.claude/skills/`, and `.agents/skills/` side by side.
+
+  ```bash
+  npx uspec-skills install --platform claude-code
+  npx uspec-skills install --platform codex
+  ```
+</Tip>
 
 ---
 
@@ -343,10 +358,10 @@ uSpec supports two Figma MCP providers. Choose one based on your setup:
 
 ### 3. Run firstrun
 
-The `firstrun` skill is your single entry point for setting up uSpec. It asks which platform you're using, deploys skills to the right directory, and configures your template library.
+The `firstrun` skill configures your Figma template library. Platform selection and skill installation are handled by `npx uspec-skills init` (Step 1) — `firstrun` only handles the Figma side.
 
 <Note>
-  You only need to run `firstrun` once per environment. It handles both skill deployment and template configuration.
+  You only need to run `firstrun` once per project. It reads your platform and MCP choice from `uspecs.config.json` and uses them to extract template keys from your Figma library.
 </Note>
 
 #### Get the template file
@@ -410,14 +425,15 @@ uSpec renders documentation using Figma component templates. You need to add the
       </Tab>
     </Tabs>
   </Step>
-  <Step title="Answer the prompts">
-    The agent asks three questions:
-    1. **Which Figma MCP?** — Select Figma Console MCP (Southleft) or Figma MCP (Native). This determines how the agent connects to Figma.
-    2. **Which environment?** — Select Cursor, Claude Code CLI, or Codex CLI. This deploys all skills to the right directory.
-    3. **Library link** — Paste the link to your Figma template library (Uber designers can type "skip").
+  <Step title="Answer the library prompt">
+    The agent asks one question:
+
+    **Library link** — Paste the link to your Figma template library (Uber designers can type "skip").
+
+    Your Figma MCP and platform were already configured by `npx uspec-skills init`, so the agent reads them from `uspecs.config.json` instead of asking again.
   </Step>
   <Step title="Wait for confirmation">
-    The agent extracts component keys from your templates and writes the configuration automatically.
+    The agent extracts component keys from your templates and merges them into `uspecs.config.json` automatically.
   </Step>
 </Steps>
 
@@ -429,21 +445,27 @@ uSpec renders documentation using Figma component templates. You need to add the
 
 ## Create your first spec
 
-Before running a skill, confirm all three setup steps are complete:
+Before running a skill, confirm your setup is complete for the path you want to use.
 
-1. Your agent host is open with the uSpec project and skills are available
+**Figma-native path:**
+
+1. Your agent host is open in the project where you ran `npx uspec-skills init` and skills are available
 2. Your Figma MCP is connected (Desktop Bridge plugin for Console MCP, or native MCP server running)
-3. You've run `firstrun` — the template library is configured (`uspecs.config.json` has your template keys and MCP provider)
+3. You've run `firstrun`. The template library is configured (`uspecs.config.json` has your template keys and MCP provider)
 
-Every prompt follows the same format:
+**Component Markdown path:**
+
+1. Your agent host is open in the project where you ran `npx uspec-skills init` and skills are available
+2. The **uSpec Extract** Figma plugin is installed (from Figma Community or via local dev install)
+3. You have a `_base.json` file produced by running the plugin on a component
+
+### Example prompt: Figma-native path
+
+Reference a skill, paste a Figma link, and describe anything the agent can't infer from the design: states, variants, behavior, or interaction details.
 
 <Frame>
   <img src="/images/example-skill.png" alt="Prompt format showing skill name, Figma component link, and additional context" />
 </Frame>
-
-Reference a skill, paste a Figma link, and describe anything the agent can't infer from the design: states, variants, behavior, or interaction details.
-
-### Example prompt
 
 <Tabs>
   <Tab title="Cursor">
@@ -462,7 +484,7 @@ Reference a skill, paste a Figma link, and describe anything the agent can't inf
     The button has a text label and an optional leading icon.
     ```
 
-    You can also skip the `/` and describe what you need — Claude auto-discovers the skill from its description.
+    You can also skip the `/` and describe what you need. Claude auto-discovers the skill from its description.
   </Tab>
   <Tab title="Codex">
     ```
@@ -476,7 +498,43 @@ Reference a skill, paste a Figma link, and describe anything the agent can't inf
   </Tab>
 </Tabs>
 
+### Example prompt: Component Markdown path
+
+Reference the skill and point it at the `_base.json` produced by the plugin. No Figma link is required.
+
+<Tabs>
+  <Tab title="Cursor">
+    ```
+    @create-component-md baseJsonPath=~/Downloads/text-field-_base.json
+    ```
+  </Tab>
+  <Tab title="Claude Code">
+    ```
+    /create-component-md baseJsonPath=~/Downloads/text-field-_base.json
+    ```
+  </Tab>
+  <Tab title="Codex">
+    ```
+    $create-component-md baseJsonPath=~/Downloads/text-field-_base.json
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  See the [Component Markdown guide](/specs/component-md) for the full plugin install, usage, and cost walkthrough.
+</Tip>
+
 ### Available skills
+
+The skills split into two groups based on where the documentation is delivered.
+
+**Component Markdown (output is a single `.md` file):**
+
+| Skill | What it generates |
+|-------|-------------------|
+| `create-component-md` | Single self-contained `.md` covering API, structure, color tokens, and screen-reader behavior. Ships with the uSpec Extract Figma plugin. [Full guide →](/specs/component-md) |
+
+**Figma-native (output is rendered into the Figma file):**
 
 | Skill | What it generates |
 |-------|-------------------|
@@ -488,26 +546,59 @@ Reference a skill, paste a Figma link, and describe anything the agent can't inf
 | `create-structure` | Dimensional specs for spacing, padding, and sizing |
 | `create-motion` | Animation timeline and easing spec from After Effects data |
 
+<Note>
+  `create-component-md` has its own setup path. Instead of a Figma link, it takes a `_base.json` produced by the **uSpec Extract** Figma plugin. See the [Component Markdown guide](/specs/component-md) for the plugin install and usage walkthrough.
+</Note>
+
 ### What happens when you run a skill
 
-<Steps>
-  <Step title="Template import">
-    The agent imports the documentation template into your current Figma page.
-  </Step>
-  <Step title="Content population">
-    Component name, guidelines, properties, and tables are filled in automatically.
-  </Step>
-  <Step title="Section cloning">
-    Sections are cloned for each variant, state, or property in your component.
-  </Step>
-  <Step title="Validation">
-    A screenshot is captured and verified. Issues are fixed automatically.
-  </Step>
-</Steps>
+The pipeline differs depending on the path.
 
-<Check>
-  If a documentation frame appears in your Figma file, your setup is working correctly.
-</Check>
+<Tabs>
+  <Tab title="Figma-native">
+    <Steps>
+      <Step title="Template import">
+        The agent imports the documentation template into your current Figma page.
+      </Step>
+      <Step title="Content population">
+        Component name, guidelines, properties, and tables are filled in automatically.
+      </Step>
+      <Step title="Section cloning">
+        Sections are cloned for each variant, state, or property in your component.
+      </Step>
+      <Step title="Validation">
+        A screenshot is captured and verified. Issues are fixed automatically.
+      </Step>
+    </Steps>
+
+    <Check>
+      If a documentation frame appears in your Figma file, your setup is working correctly.
+    </Check>
+  </Tab>
+  <Tab title="Component Markdown">
+    <Steps>
+      <Step title="Preflight">
+        The orchestrator validates `_base.json` against the plugin schema and stages it into `.uspec-cache/{componentSlug}/`.
+      </Step>
+      <Step title="API dictionary">
+        `extract-api` runs first and writes `api-dictionary.json`. The dictionary keeps the three downstream specialists aligned on property names and states.
+      </Step>
+      <Step title="Parallel fan-out">
+        `extract-structure`, `extract-color`, and `extract-voice` run as three parallel subagents in a single batch.
+      </Step>
+      <Step title="Reconciliation">
+        The orchestrator compares specialist outputs for typed disagreements and re-dispatches the owning specialist when needed.
+      </Step>
+      <Step title="Render">
+        The renderer fills a single Markdown template with the reconciled data and writes `components/{componentSlug}.md` under your working directory.
+      </Step>
+    </Steps>
+
+    <Check>
+      If a new `.md` appears under `./components/` in your working directory, your setup is working correctly.
+    </Check>
+  </Tab>
+</Tabs>
 
 ### Tips for better output
 
@@ -518,17 +609,28 @@ Reference a skill, paste a Figma link, and describe anything the agent can't inf
 
 ## Best practices
 
-### Do
+### Do (both paths)
 
 - **Start a new agent session for every prompt.** Each skill consumes significant context. A fresh session ensures the model has full capacity and avoids degraded output.
+- **Run on a high-capacity model.** Figma-native skills work on OpenAI GPT 5.4 High or Opus 4.6 High. `create-component-md` uses parallel subagents and needs Opus 4.7 High or better.
+
+### Do (Figma-native only)
+
 - **Confirm the MCP connection before running a skill.** For Console MCP, run the Desktop Bridge plugin in Figma. For native MCP, ensure the server is running. Verify the connection in your agent before starting. If the agent can't reach Figma, the skill will fail.
 - **Run one agent per Figma file at a time.** The MCP supports multiple connections, but all agents share one active page and file context. Finish one skill before starting the next.
 
-### Don't
+### Don't (Figma-native only)
 
 - **Interact with the Figma frame while a skill is running.** The agent writes to the frame in multiple steps. Clicking, selecting, or editing mid-generation can break node references and corrupt the output.
 - **Run multiple agents on the same file simultaneously.** They override each other's page navigation and produce corrupted specs. If you need parallel generation, use separate Figma files.
+
+### Don't (both paths)
+
 - **Reuse a long chat session for multiple skills.** Accumulated history reduces available context and degrades output quality. Start fresh each time.
+
+<Note>
+  The Component Markdown path does not write to Figma, so the Figma-interaction caveats above do not apply. You can run multiple `create-component-md` skills in parallel against different components safely.
+</Note>
 
 ---
 
@@ -536,21 +638,21 @@ Reference a skill, paste a Figma link, and describe anything the agent can't inf
 
 <AccordionGroup>
   <Accordion title="Skills not loading">
+    Run `npx uspec-skills doctor` from your project root. It reports any missing skills, missing references, or broken links.
+
     <Tabs>
       <Tab title="Cursor">
-        - Confirm the uSpec project folder is open in Cursor (not a parent directory)
-        - Check that `.cursor/skills/` contains the skill folders
-        - Restart Cursor after cloning the repository
+        - Confirm the project folder is open in Cursor (not a parent directory)
+        - Check that `.cursor/skills/` contains the skill folders. If empty, re-run `npx uspec-skills install --platform cursor`.
+        - Restart Cursor after running `npx uspec-skills init` so it picks up the new skills.
       </Tab>
       <Tab title="Claude Code">
-        - Confirm you're running `claude` from the `uSpec` project root
-        - Check that `CLAUDE.md` exists at the project root
-        - Only `firstrun` is available before initial setup — run `/firstrun` to deploy all skills
+        - Confirm you're running `claude` from the project root where you ran `npx uspec-skills init`
+        - Check that `.claude/skills/` contains the skill folders. If empty, re-run `npx uspec-skills install --platform claude-code`.
       </Tab>
       <Tab title="Codex">
-        - Confirm you're in the `uSpec` project directory
-        - Check that `AGENTS.md` exists at the project root
-        - Only `firstrun` is available before initial setup — run `$firstrun` to deploy all skills
+        - Confirm you're in the project directory where you ran `npx uspec-skills init`
+        - Check that `.agents/skills/` contains the skill folders. If empty, re-run `npx uspec-skills install --platform codex`.
       </Tab>
     </Tabs>
   </Accordion>

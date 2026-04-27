@@ -1,15 +1,18 @@
 # uSpec
 
-Generate design system documentation for your UI components — directly from your AI agent to Figma.
+Generate design system documentation for your UI components, directly from your AI agent.
 
-You describe a component, an agent skill analyzes it using your Figma file as context, and renders the spec directly in your Figma file. Supports both [Figma Console MCP](https://github.com/southleft/figma-console-mcp) and [native Figma MCP](https://github.com/figma/figma-mcp).
+You describe a component, an agent skill analyzes it using your Figma file as context, and the output is rendered into Figma or written to a portable `.md` file. Supports both [Figma Console MCP](https://github.com/southleft/figma-console-mcp) and [native Figma MCP](https://github.com/figma/figma-mcp).
 
 Works with **Cursor**, **Claude Code**, and **Codex**.
+
+> **New in v2.0** — `create-component-md`: generate one markdown file per component (API, structure, color, screen-reader). An artifact LLM tools can build from and humans can query. Requires the [uSpec Extract Figma plugin](figma-plugin/) (built locally from this repo); the other skills work directly through your Figma MCP and need no plugin.
 
 ## What you can generate
 
 | Spec type | What you get |
 |-----------|--------------|
+| Component Markdown | One `.md` per component covering API, structure, color, and screen-reader behavior |
 | API Spec | Properties, values, defaults, and configuration examples |
 | Color Annotation | Design token mapping for every element and state |
 | Structure Spec | Dimensions, spacing, and padding across density and size variants |
@@ -20,7 +23,15 @@ Works with **Cursor**, **Claude Code**, and **Codex**.
 
 ## Get started
 
-Full documentation, installation guide, and examples at **[uSpec.design](https://uspec.design/)**.
+In your project, run:
+
+```bash
+npx uspec-skills init
+```
+
+The CLI detects whether you are using Cursor, Claude Code, or Codex, installs all skills and references into the right directory, and writes `uspecs.config.json`. Then ask your agent to run the `firstrun` skill to extract your Figma template keys.
+
+Full documentation and examples at **[uSpec.design](https://uspec.design/)**.
 
 ## License
 

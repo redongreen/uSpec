@@ -1,27 +1,30 @@
 # Utils
 
-## sync-skills.sh
+## Rendering skills locally for development
 
-Syncs skill files from `.cursor/skills/` (source of truth) to `.claude/skills/` and/or `.agents/skills/`.
+The canonical source of truth for skills is `skills/` (platform-neutral SKILL.md files using `{{skill:}}`, `{{ref:}}`, and `{{repo:}}` tokens) plus `references/` for shared instruction docs.
 
-### What it does
-
-1. Copies every `SKILL.md` from `.cursor/skills/<name>/` to the target directories
-2. Adjusts relative paths (`../../` → `../../../`) for the different directory depth
-3. Replaces Cursor-specific `@skill-name` references with generic phrasing (e.g., `the \`firstrun\` skill`)
-
-### When to run it
-
-Run after editing any `SKILL.md` in `.cursor/skills/`:
+To render skills into your own working tree for testing, run the CLI's internal render command from the repo root:
 
 ```bash
-./utils/sync-skills.sh                        # sync all skills to both targets
-./utils/sync-skills.sh create-voice            # sync one skill to both targets
-./utils/sync-skills.sh --target claude         # sync all skills to .claude/skills/ only
-./utils/sync-skills.sh --target codex          # sync all skills to .agents/skills/ only
-./utils/sync-skills.sh --target claude create-voice  # sync one skill to .claude/ only
+cd packages/cli
+npm install
+npm run build
+
+# render for one platform into the repo root (rendered output is gitignored)
+node dist/index.js render --target cursor --out ../..
+node dist/index.js render --target claude-code --out ../..
+node dist/index.js render --target codex --out ../..
 ```
 
-The `--target` flag is used by the `firstrun` skill to deploy skills to the user's chosen platform. Without a flag, skills sync to both targets (developer workflow).
+After rendering, `.cursor/skills/`, `.claude/skills/`, or `.agents/skills/` will contain the resolved per-platform output. These directories are listed in `.gitignore` — they are build artifacts, never committed.
 
-Never edit files in `.claude/skills/` or `.agents/skills/` directly — they get overwritten by the sync.
+## End-user install
+
+End users do not run any of the above. They run:
+
+```bash
+npx uspec-skills init
+```
+
+which detects their agent platform, installs all skills + references into their project, and writes `uspecs.config.json`. See [packages/cli/README.md](../packages/cli/README.md) for the CLI's full command reference.

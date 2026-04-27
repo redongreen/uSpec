@@ -1,6 +1,7 @@
 {
   "mcpProvider": "figma-mcp",
   "environment": "cursor",
+  "extractionSource": "plugin",
   "fontFamily": "Uber Move",
   "templateKeys": {
     "screenReader": "6351e6a91a6785702ffa57f7e7ae085fe9f83f57",
@@ -10,5 +11,8 @@
     "propertyOverview": "401fa98128d882dc93c3d5987ed094b1ec66b9f3",
     "structureSpec": "9f5f7bdc834004ea47e59bb1502aab66348f1c99",
     "motionSpec": "31bc00ff1f47b602cb7129b24b1f3271e7c7b5dd"
+  },
+  "reconciliation": {
+    "autoRetry": true
   }
 }
