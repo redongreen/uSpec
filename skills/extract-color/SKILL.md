@@ -254,12 +254,12 @@ When the hint fires:
     "subCompSetNames": ["<name>", "..."],
     "trigger": "all-sub" | "transparent-parent" | "background-only",
     "source": "derivative-of-_childComposition",
-    "reason": "Parent component is a pure container — all constitutive children own their own color story. See Step 10.5's recursion manifest for follow-up runs.",
-    "action": "See the recursion manifest — every constitutive child with a non-null subCompSetId already has a create-component-md follow-up queued."
+    "reason": "Some painted pixels on this parent are rendered inside constitutive sub-component instances; the canonical color spec for those pixels lives on each child's own .md. The parent's flattened color attribution is fully measured here from colorWalk[] and is authoritative for the parent.",
+    "action": "Optional: run create-component-md on each constitutive child to produce the per-child canonical color spec. The parent .md is shippable as-is — do not treat this hint as a gap."
   }
   ```
 - Keep the parent component name as the annotation title for the current run.
-- Note the container relationship in `generalNotes`, referencing `_childComposition` as the decisive signal.
+- Note the container relationship in `generalNotes` using **neutral, authoritative framing**: the parent's tokens are flattened from `colorWalk[]` and are authoritative for shipping the parent; child specs hold the per-child internal canon. Do **not** editorialize the parent's Color section as informational, provisional, placeholder, or pending. The hint suggests deeper recursion into child specs; it does not weaken the parent's own spec.
 - Do **not** issue a Step 3-delta to reproduce the plugin's work — the delta budget (50 lines) is too small, and a container re-run is an orchestrator-level decision.
 
 **Malformed input.** If `_base.json._childComposition` is missing, the file was not produced by the uSpec Extract plugin. Record a `_base.json` schema warning in `_extractionArtifacts.schemaWarnings[]` ("missing _childComposition in _base.json — re-run the uSpec Extract plugin") and leave `_containerRerunHint` null. Do not attempt to infer a hint from color symptoms alone.
@@ -341,7 +341,7 @@ Run **every** check below against your assembled color dataset. An unchecked box
 - [ ] Container detection (Step 4 §1b) uses _base.json._childComposition.children[] filtered to classification === "constitutive" as the primary signal; symptom checks are only confirming evidence
 - [ ] _containerRerunHint is emitted only when the constitutive-sub-component list is non-empty AND at least one symptom (all-sub / transparent-parent / background-only) also holds
 - [ ] When the hint fires, `source` is set to "derivative-of-_childComposition"
-- [ ] generalNotes mentions the container relationship when _containerRerunHint is non-null
+- [ ] generalNotes mentions the container relationship using neutral/authoritative framing when _containerRerunHint is non-null — parent tokens are described as measured from colorWalk[] (authoritative); child specs hold child-internal canon. No "pure container", "informational", "provisional", "placeholder", or "pending" framing.
 - [ ] Every note is 3–8 words
 - [ ] _deltaExtractions[] records every Step 3-delta call that fired this run (empty array if none)
 - [ ] _base.json._extractionNotes.warnings were surfaced in the summary if non-empty

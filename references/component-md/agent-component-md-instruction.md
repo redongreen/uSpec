@@ -45,6 +45,7 @@ The template (`component-md/component-md-template.md`) uses `{{UPPER_SNAKE}}` pl
 | `{{VARIANT_AXES_SUMMARY}}` | One-line summary of variant axes, their values, and defaults | yes |
 | `{{COMPOSITION_SUBSECTION}}` | Composition classification summary (see **Composition subsection**). Emits `### Composition` plus one bullet per constitutive + referenced child. Empty string when `_childComposition.children` is empty. | yes |
 | `{{KNOWN_GAPS}}` | Severity-tagged anomalies block (see **Known gaps**). Emit `_No gaps detected._` when empty. | yes |
+| `{{FOLLOWUPS}}` | Optional next-step work block (see **Follow-ups**). Emit `_None._` when empty. NOT a defect list — describes optional, additive work like producing per-child canonical specs. | yes |
 | `{{CROSS_SECTION_INVARIANTS}}` | Observations that hold across sections (see **Cross-section invariants**) | yes |
 | `{{API_BODY}}` | Rendered API section (see **API body rendering**) | yes |
 | `{{STRUCTURE_BODY}}` | Rendered Structure section (see **Structure body rendering**) | yes |
@@ -117,11 +118,18 @@ Compute each section's confidence independently from the same gap sources used b
   - `_Confidence: high._` when all four counts are zero.
   - `_Confidence: medium — {inferred} inferred row(s); {altNotMeasured} non-default-size row(s) unmeasured._` when `defaultNotMeasured === 0 && parityGaps === 0` but either `inferred > 0` or `altNotMeasured > 0`.
   - `_Confidence: low — {defaultNotMeasured} default-size row(s) unmeasured; {parityGaps} advertised axis value(s) never measured. Treat measured rows as the source of truth; surface gaps from Known gaps before implementing._` when `defaultNotMeasured > 0` or `parityGaps > 0`.
-- **Color confidence.** Let `containerHint = !!color.data._containerRerunHint`. Let `modeGaps` be the count of entries in `color.data._extractionArtifacts.modeDetection.unresolvedModes || []` (zero when the key is absent). Let `strategyRisk` be `true` when `color.data._extractionArtifacts.strategy === "B"` AND `structure.confidence === "low"` (mode-indexed color on a low-confidence structure skeleton is higher-risk). Emit:
-  - `_Confidence: high._` when none apply.
-  - `_Confidence: medium — container component; re-run create-component-md on nested sub-components (see Action line in Known gaps)._` when `containerHint`.
+- **Color confidence.** This section has TWO independent signals: a base classification (`high` / `medium` / `low`) and an optional, append-only **container aside**. Container-ness NEVER lowers the base classification — the parent's tokens are flattened from `colorWalk[]` and are authoritative for the parent's painted pixels. The aside only points engineers at optional follow-up work for canonical per-child specs.
+
+  **Base classification.** Let `modeGaps` be the count of entries in `color.data._extractionArtifacts.modeDetection.unresolvedModes || []` (zero when the key is absent). Let `strategyRisk` be `true` when `color.data._extractionArtifacts.strategy === "B"` AND `structure.confidence === "low"` (mode-indexed color on a low-confidence structure skeleton is higher-risk). Emit:
+  - `_Confidence: high._` when neither signal applies.
   - `_Confidence: medium — {modeGaps} mode(s) unresolved._` when `modeGaps > 0`.
   - `_Confidence: low — consolidated strategy atop a low-confidence structure; verify token↔state alignment before implementing._` when `strategyRisk`.
+
+  **Container aside (append-only).** When `color.data._containerRerunHint` is non-null, append the following sentence to the confidence line with a single leading space — DO NOT modify the base classification, DO NOT use the words "informational", "provisional", "placeholder", or "pending":
+
+  > _Note: this component embeds constitutive sub-components; the parent's color tokens documented here are authoritative. Per-child canonical specs are an optional follow-up — see Follow-ups._
+
+  A high-confidence container therefore renders as `_Confidence: high._ _Note: this component embeds constitutive sub-components; …_` — the engineer sees the parent is fully measured AND that a deeper recursion is available.
 - **Voice confidence.** Let `platformGaps` be the count of state × platform cells in `voice.data.states` where the platform table is missing or explicitly flagged `> Missing from extraction — re-run extract-voice.` Let `antiPatternGaps` be the number of focus stops that failed the anti-pattern `Do NOT` checklist (when `voice.data._extractionArtifacts.antiPatternAudit` is emitted by extract-voice; when absent, treat as zero — the audit is advisory for now). Emit:
   - `_Confidence: high._` when both counts are zero.
   - `_Confidence: medium — {platformGaps} platform section(s) missing from extraction; re-run extract-voice._` when `platformGaps > 0` and `antiPatternGaps === 0`.
@@ -314,12 +322,12 @@ This sub-block lists every gap the renderer could not auto-fix — it is the pri
 3. **Inferred rows per structure section** — same shape, rows where `row.provenance === "inferred"`.
 4. **Identity-unresolved sub-components** — count entries in `api.data` where `_identityResolved === false`.
 5. **Delta-extraction audit** — union of `_deltaExtractions[]` across the four cache files.
-6. **Container rerun hint** — `color.data._containerRerunHint`, if present.
+6. _(reserved — the former `_containerRerunHint` source moved to the Follow-ups block; container-ness is not a gap)._
 7. **Self-check failures** — any `_selfCheck.missingChildren` entries recorded in `_base.json.variants[*]`.
 8. **Composition gaps** — from `_base.json` top-level `_childComposition`:
-   - **Container (high).** All top-level children are classified `constitutive` AND each has a non-null `subCompSetId` AND none of the expected sibling specs (`./{slug}.md` for every constitutive child) exists on disk. Severity: **High**. Wording: `Container component — every top-level child is a constitutive component-set and has no sibling spec yet. This spec is incomplete until child specs exist.`
    - **Referenced without spec (medium).** Any `referenced` child whose `./{slug}.md` cannot be located on disk. Severity: **Medium**. Action: `run create-component-md on {slug} (or document where its spec lives)`.
    - **Ambiguous children (medium).** Every entry still in `_childComposition.ambiguousChildren[]`. Severity: **Medium**. Action: `resolve classification for "{name}"; currently treated as referenced by default.`
+   - **Note.** A pure container (every top-level child is a constitutive component-set, sibling specs missing) is NOT a defect — it is an expected shape and goes into the Follow-ups block, not Known gaps. The parent's API/Structure/Color/Voice surfaces are still measured and authoritative for the parent.
 9. **Prop-coverage parity** — walk every enumerated property in `api.data.properties[]` (one with a comma-separated `values` list that is not `"true, false"`, `"string"`, `"number"`, or `"(instance)" / "(slot)"`). For each, compute:
    - `advertised` = the set of values listed in the API row (trim, lower-case).
    - `measured` = the set of values covered by Structure. Collection rules:
@@ -344,9 +352,7 @@ This sub-block lists every gap the renderer could not auto-fix — it is the pri
 | Not-measured row in a non-default size bucket | `medium` |
 | `_identityResolved === false` | `medium` |
 | Inferred row in any section | `low` |
-| `_containerRerunHint` present | `medium` |
 | `_deltaExtractions[]` entry | `low` (informational) |
-| Composition: container (all constitutive, no sibling specs) | `high` |
 | Composition: referenced without sibling spec | `medium` |
 | Composition: ambiguous child (defaulted to referenced) | `medium` |
 | Prop-coverage parity: axis advertised but not measured across all values | `high` |
@@ -369,13 +375,7 @@ Emit the heading `### Unresolved`, then one line per severity bucket that has at
 
 Compact summaries should be scannable, e.g. `3 not-measured rows in "Input" (default size)`, `HIERWALK_MISSING_CHILDREN: variant "size=Large"`, `identity unresolved: "trailing icon"`. Truncate the summary list after 6 items per severity with `… and <N> more`. When all three buckets are empty inside this sub-block, emit `_None._` as the sub-block body (the sub-block heading still appears when the Auto-reconciled sub-block has content; otherwise the whole `{{KNOWN_GAPS}}` value collapses to `_No gaps detected._` per the block structure rules).
 
-**Action items.** When `color.data._containerRerunHint` is present, append an **Action** line immediately below the severity buckets (still inside the Unresolved sub-block, before the Auto-reconciled heading):
-
-```
-- **Action** — Container component detected (`<trigger>`). Re-run `create-component-md` against: <comma-joined subCompSetNames>. _(source: color._containerRerunHint.reason)_
-```
-
-Render one `Action` line per distinct hint source. Do not bury the container hint in a generic Low-severity bullet — the engineer needs a concrete follow-up command.
+**Action items.** Container hints are NOT rendered here — they go in the Follow-ups block (see `## Follow-ups` below). The Unresolved sub-block is reserved for actual defects the engineer must address before implementing.
 
 ### Auto-reconciled
 
@@ -406,6 +406,33 @@ Emit the heading `### Auto-reconciled`, then:
 - The reconciliations file is missing → treat `autoReconciled = retries = unresolved = []`. The Unresolved sub-block still renders the other 9 sources; the Auto-reconciled sub-block renders `_None._` (and the footer is skipped).
 - The reconciliations file is present but malformed → the Step 9.5 integrity check aborts the orchestrator before the renderer runs. The renderer never has to handle a malformed reconciliations file at render time.
 - An `unresolved[]` entry references a specialist that is not `"structure" | "color" | "voice"` → render the summary line anyway, substituting the unknown specialist name verbatim. A strange specialist name is itself a signal the engineer needs to see.
+
+## Follow-ups
+
+The `{{FOLLOWUPS}}` block lists **optional, additive next steps** the user may run after this `.md` is produced. It is structurally separate from `## Known gaps` because nothing here is a defect — every item describes work that would deepen documentation coverage but is not required for the current `.md` to be implementable.
+
+**Sources:**
+
+1. **Container — per-child canonical specs.** When `color.data._containerRerunHint` is non-null, emit one bullet:
+
+   ```
+   - **Per-child canonical specs (optional).** This component embeds constitutive sub-components: `<comma-joined subCompSetNames>`. The parent's color/structure/API surfaces above are authoritative for the parent. Run `create-component-md` on each child node to also produce its own canonical spec at `./{child-slug}.md`. _(source: color._containerRerunHint)_
+   ```
+
+2. **Recursion manifest entries.** When the orchestrator's Step 10.5 recursion manifest lists any constitutive children with non-null `subCompSetId`, surface them here as a single bullet:
+
+   ```
+   - **Constitutive children:** `<comma-joined child slugs with node ids>`. See the Step 10.5 recursion manifest in the orchestrator's terminal output for copy-pasteable commands.
+   ```
+
+3. **Other extension hooks.** Reserved — additional sources may be added without expanding `Known gaps`.
+
+**Rendering rules:**
+
+- Emit each non-empty bullet in the order above.
+- When no source fires, emit the single line `_None._` as the entire block body.
+- DO NOT label any item as a gap, defect, or required action. Use neutral, additive language ("optional", "deepen coverage", "if you also want…").
+- DO NOT downgrade any per-section confidence header on the strength of a Follow-ups item. Confidence is a property of what was measured for THIS spec; Follow-ups describes work outside it.
 
 ## Cross-section invariants
 
@@ -460,7 +487,9 @@ Before the orchestrator writes the final file, verify:
 - [ ] The voice block has exactly 3 platform sub-sections per state.
 - [ ] Cross-section invariants block is ≤ 6 bullets.
 - [ ] Cross-references block either has bullets or explicitly says "No cross-references detected between sections."
-- [ ] Known gaps block is present and aggregates provenance + `_extractionNotes.warnings` + `_deltaExtractions` + `_identityResolved=false` + `_containerRerunHint` + `_selfCheck.missingChildren` + reconciliations (`data.unresolved[]`).
+- [ ] Known gaps block is present and aggregates provenance + `_extractionNotes.warnings` + `_deltaExtractions` + `_identityResolved=false` + `_selfCheck.missingChildren` + reconciliations (`data.unresolved[]`). It does NOT contain any container-hint–derived entries — those live in the Follow-ups block.
+- [ ] Follow-ups block (`{{FOLLOWUPS}}`) is present. When `_containerRerunHint` is non-null, the block contains the per-child canonical-specs bullet (and the recursion-manifest pointer when applicable). When neither source fires, the block contains the literal `_None._`.
+- [ ] No Color confidence header reads `_Confidence: medium — container component;…_`. Container-ness only appears as the append-only neutral aside on the confidence line, never as the base classification.
 - [ ] When reconciliations.json exists with content, the Known gaps block has both `### Unresolved` and `### Auto-reconciled` sub-blocks (not a flat list). When it exists but every array is empty, and no other gap sources fire, the entire block collapses to `_No gaps detected._`.
 - [ ] Every section confidence header that appends a reconciliation tail uses the exact template `_Reconciliation: {autoN} auto-fixed, {retryN} retried, {unresolvedN} unresolved._` — counts are integers (never omitted, never rendered as "none").
 - [ ] Every structure row with `provenance="not-measured"` renders with the `[unmeasured]` badge and `"—"` in every value column.

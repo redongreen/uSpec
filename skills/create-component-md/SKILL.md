@@ -230,11 +230,11 @@ For each specialist in `[extract-structure, extract-color, extract-voice]`:
 
 **Join before proceeding.** Wait for all three subagent returns. Do NOT advance to Step 8.5 until every return has landed. If any subagent fails (returns an error or no path), abort with a diagnostic naming the failing specialist — partial completion is never silently tolerated.
 
-**Container hint collection.** After all three subagents return, open `{cachePath}/{componentSlug}-color.json` with a targeted read and check `data._containerRerunHint`. If non-null, surface it to the user:
+**Container hint collection.** After all three subagents return, open `{cachePath}/{componentSlug}-color.json` with a targeted read and check `data._containerRerunHint`. If non-null, surface it to the user using the neutral, authoritative framing below. **Do not** describe the parent's color spec as informational, provisional, placeholder, or pending — the parent's tokens are flattened from `colorWalk[]` and the parent .md is shippable as-is.
 
-> Container component detected: all color entries belong to sub-components (`<subCompSetNames joined>`). The rendered .md will document the parent only. For complete color coverage, see the Step 10.5 recursion manifest for the full set of follow-up runs.
+> Constitutive sub-components detected (`<subCompSetNames joined>`). The parent .md fully documents the parent's own color tokens (authoritative, measured from `colorWalk[]`). The recursion manifest in Step 10.5 lists each constitutive child as an **optional follow-up** if you also want a per-child canonical color spec; running them is not required for the parent .md to be complete.
 
-Collect the hint for inclusion in the Step 10 final summary. Continue past this — do not abort.
+Collect the hint for inclusion in the Step 10 Follow-ups (not Known gaps). Continue past this — do not abort.
 
 **Flush phase context.** Keep only: the three cache-file paths + three one-line summaries. The subagents already discarded their internal context when they returned; the parent was never exposed to it.
 
@@ -460,11 +460,11 @@ Then a short paragraph:
 
 > The `.md` is now the source of truth. Cache files at `{cachePath}` can be deleted once you're satisfied with the output (they're gitignored and will be re-generated on the next run).
 
-If any phase reported warnings, delta extractions, or a container re-run hint, append a short bullet list summarizing them so the user can file follow-ups. The container hint (if present) should recommend specific sub-component node IDs as targets for a follow-up `create-component-md` run.
+If any phase reported warnings or delta extractions, append a short bullet list summarizing them so the user can file follow-ups. A container re-run hint (if present) is **not** a defect — describe it as an *optional* per-child canonical-spec follow-up, and reuse the neutral framing from Step 6: the parent's color tokens are authoritative and the parent .md is shippable as-is.
 
 ### Step 10.5: Recursion manifest (composition follow-ups)
 
-After the final summary, read the revised `_childComposition` from `_base.json` and emit a **recursion manifest**. This is a copy-pasteable to-do block, not an automated loop — the orchestrator does not recurse on its own.
+After the final summary, read the revised `_childComposition` from `_base.json` and emit a **recursion manifest**. This is a copy-pasteable to-do block, not an automated loop — the orchestrator does not recurse on its own. The manifest lists **optional** follow-up runs to produce per-child canonical specs; the parent .md emitted in Step 10 is already complete and shippable on its own merits.
 
 **Emit one "recurse" entry only for children that satisfy BOTH conditions:**
 1. `classification === "constitutive"` (P1 or P2 match), AND
@@ -477,8 +477,8 @@ Format:
 ```
 Composition of {COMPONENT}:
   constitutive:
-    - {child-slug-1} (node {subCompSetId}) → needs create-component-md run
-    - {child-slug-2} (node {subCompSetId}) → needs create-component-md run
+    - {child-slug-1} (node {subCompSetId}) → optional create-component-md run for child canonical spec
+    - {child-slug-2} (node {subCompSetId}) → optional create-component-md run for child canonical spec
   referenced (documented inline, no recursion):
     - {primitive-1} (node {subCompSetId}) — see ./{primitive-1-slug}.md [exists? yes/no]
     - {primitive-2} (node {subCompSetId}) — see ./{primitive-2-slug}.md [exists? yes/no]
@@ -491,7 +491,7 @@ Shape interpretation:
 - A P3/P5-heavy component (a composition that arranges independent primitives) produces the opposite shape.
 - A P6-only component (no embedded components, only its own vectors and text) produces an empty manifest — no follow-ups.
 
-For each `constitutive` entry, the user is expected to run `create-component-md` on that node next. For each `referenced` entry whose sibling spec does not exist, the user is expected to run `create-component-md` on that node or document where its spec lives.
+For each `constitutive` entry, the user **may optionally** run `create-component-md` on that node to produce a per-child canonical spec — the parent .md is already complete without those runs. For each `referenced` entry whose sibling spec does not exist, the user is expected to run `create-component-md` on that node or document where its spec lives.
 
 Do NOT auto-chain runs. The manifest is terminal output for this invocation only.
 

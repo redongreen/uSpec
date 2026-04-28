@@ -16,8 +16,16 @@
 ## Known gaps
 
 <!-- Aggregated severity-tagged anomalies: missing measurements, identity gaps, extraction warnings. -->
+<!-- This block is for DEFECTS only. Optional follow-ups (per-child canonical specs, recursion suggestions) live in ## Follow-ups below. -->
 
 {{KNOWN_GAPS}}
+
+## Follow-ups
+
+<!-- Optional, additive next steps. NOT defects — the .md above is implementable as-is. -->
+<!-- Includes: per-child canonical specs for constitutive sub-components, recursion-manifest pointers. -->
+
+{{FOLLOWUPS}}
 
 **Cross-section invariants.** {{CROSS_SECTION_INVARIANTS}}
 
