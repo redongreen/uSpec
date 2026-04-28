@@ -227,7 +227,7 @@ These are auto-corrections npm makes silently. They are harmless and don't affec
 
 ### Layered registry safety
 
-Before any `npm publish` runs, three layers of protection check that you're publishing to public npm and not, say, an Uber internal registry:
+Before any `npm publish` runs, three layers of protection check that you're publishing to public npm.
 
 1. **`packages/cli/package.json` → `publishConfig.registry`** pins `https://registry.npmjs.org/` for this package.
 2. **`packages/cli/.npmrc`** sets `registry=https://registry.npmjs.org/` for this directory, overriding any user-level or environment registry config.
