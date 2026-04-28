@@ -703,7 +703,7 @@ Production wins when both are present, so a published package never accidentally
 
 ### Publish safety
 
-Three defensive layers prevent accidentally publishing this package to a non-public registry (e.g., an Uber internal registry that may be configured globally):
+Three defensive layers prevent accidentally publishing this package to a non-public registry:
 
 1. `package.json → publishConfig.registry` pins the publish target to `https://registry.npmjs.org/`
 2. A local `packages/cli/.npmrc` overrides any user-level registry config for this directory
