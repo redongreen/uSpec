@@ -27,12 +27,13 @@ Copy this checklist and update as you progress:
 Task Progress:
 - [ ] Step 1: Read MCP provider from uspecs.config.json
 - [ ] Step 1b: Verify MCP connection
-- [ ] Step 4: Get library link
-- [ ] Step 5: Navigate to the library file / extract fileKey
-- [ ] Step 6: Search for template components
-- [ ] Step 7: Extract component keys
-- [ ] Step 7b: Detect font family from template
-- [ ] Step 8: Write config to uspecs.config.json
+- [ ] Step 4: Ask "Uber employee?" — Yes (use internal library) or No (paste link)
+- [ ] Step 4a (Yes only): Write Uber template keys + fontFamily to config, then jump to Step 9
+- [ ] Step 5 (No only): Navigate to the library file / extract fileKey
+- [ ] Step 6 (No only): Search for template components
+- [ ] Step 7 (No only): Extract component keys
+- [ ] Step 7b (No only): Detect font family from template
+- [ ] Step 8 (No only): Write config to uspecs.config.json
 - [ ] Step 9: Display success message
 ```
 
@@ -63,21 +64,44 @@ If the MCP itself is not reachable (tool not found, server error):
 
 If the call returns a file-not-found error, that's fine — it means the MCP is connected. Proceed.
 
-### Step 4: Get Library Link
+### Step 4: Ask Whether the User Is a Uber Employee
 
-Ask the user:
+Ask the user exactly this:
 
-> **Paste the link to your Figma template library file.**
-> Uber designers can skip this — type "skip" to use the internal library.
+> **Are you a Uber employee?**
+> - **Yes** — uSpec will use the built-in Uber template library (no link needed).
+> - **No** — paste the link to your Figma template library file.
 
-Wait for the user's answer. Save the URL as `LIBRARY_URL`.
+Wait for the user's answer.
 
-If the user types "skip", use the pre-configured internal library URL (if one exists in `uspecs.config.json`). If no pre-configured URL exists, tell the user:
-> No internal library URL is configured. Please provide a Figma link to your template library.
+- If the answer is **Yes** (or any clear affirmative such as "yes", "y", "skip", "uber"), proceed to **Step 4a** and skip Steps 5, 6, 7, and 7b entirely.
+- If the answer is **No** or the user pastes a Figma URL, save the URL as `LIBRARY_URL` and continue with Step 5. **For `figma-mcp` only:** extract `FILE_KEY` from the URL. Figma URLs follow the pattern `figma.com/design/:fileKey/:fileName`. For branch URLs (`figma.com/design/:fileKey/branch/:branchKey/:fileName`), use `:branchKey` as the `FILE_KEY`. Save this for all subsequent `use_figma` / `search_design_system` / `get_screenshot` calls.
 
-**For `figma-mcp` only:** Extract `FILE_KEY` from the URL. Figma URLs follow the pattern `figma.com/design/:fileKey/:fileName`. For branch URLs (`figma.com/design/:fileKey/branch/:branchKey/:fileName`), use `:branchKey` as the `FILE_KEY`. Save this for all subsequent `use_figma` / `search_design_system` / `get_screenshot` calls.
+### Step 4a: Write Built-in Uber Template Config (Yes branch only)
 
-### Step 5: Navigate to the Library File
+When the user answers Yes in Step 4, the agent already has the correct template keys and font family for the Uber-internal library. Write them to `uspecs.config.json`, preserving every existing field (`mcpProvider`, `environment`, `cliVersion`, and any other unknown fields). The merged file should look like:
+
+```json
+{
+  "mcpProvider": "...preserved...",
+  "environment": "...preserved...",
+  "cliVersion": "...preserved...",
+  "fontFamily": "Uber Move",
+  "templateKeys": {
+    "screenReader": "6351e6a91a6785702ffa57f7e7ae085fe9f83f57",
+    "colorAnnotation": "0b939a05e7b403b481d5221b08f33c97dc4acd39",
+    "anatomyOverview": "a552bd211756add2661ed757a5aeafba24bd59a9",
+    "apiOverview": "a182560cbe538de07f49f0aed5fadeea7d418e1c",
+    "propertyOverview": "401fa98128d882dc93c3d5987ed094b1ec66b9f3",
+    "structureSpec": "9f5f7bdc834004ea47e59bb1502aab66348f1c99",
+    "motionSpec": "31bc00ff1f47b602cb7129b24b1f3271e7c7b5dd"
+  }
+}
+```
+
+Then **jump directly to Step 9** (Success Message). Do not run Steps 5, 6, 7, 7b, or 8 — no MCP calls or library navigation are needed for Uber employees.
+
+### Step 5: Navigate to the Library File (No branch only)
 
 **If `MCP_PROVIDER` = `figma-console`:**
 - `figma_navigate` — Open the template library URL
@@ -86,7 +110,7 @@ If the user types "skip", use the pre-configured internal library URL (if one ex
 - No navigation call needed — `use_figma` takes `fileKey` directly. The `FILE_KEY` extracted in Step 4 is used for all subsequent calls. Optionally, verify the file is accessible:
   - `use_figma` with `fileKey = FILE_KEY`, `code = "return figma.root.children.map(p => p.name);"`, `description = "List pages in template library"`
 
-### Step 6: Search for Template Components
+### Step 6: Search for Template Components (No branch only)
 
 Required template names (case-insensitive search):
 1. "Screen reader"
@@ -103,7 +127,7 @@ Required template names (case-insensitive search):
 **If `MCP_PROVIDER` = `figma-mcp`:**
 - `search_design_system` with `query` for each template name, `fileKey = FILE_KEY`, and `includeComponents: true`
 
-### Step 7: Extract Component Keys
+### Step 7: Extract Component Keys (No branch only)
 
 For each found component, extract its component key. The search results include the `componentKey` (Console MCP) or `key` (native MCP) field.
 
@@ -119,7 +143,7 @@ Build a mapping of template type to key:
 If any template is not found, report which ones are missing:
 > Could not find the following templates: [list]. Please ensure your library file contains components with these exact names.
 
-### Step 7b: Detect Font Family from Template
+### Step 7b: Detect Font Family from Template (No branch only)
 
 Using the node ID of one of the found template components (e.g., the Overview or API component):
 
@@ -145,7 +169,7 @@ return 'Inter';
 
 Save the result as `DETECTED_FONT_FAMILY`. If the script returns an error or no text node is found, it defaults to `Inter`.
 
-### Step 8: Write Config to uspecs.config.json
+### Step 8: Write Config to uspecs.config.json (No branch only)
 
 Read the existing `uspecs.config.json` (which already has `mcpProvider`, `environment`, and `cliVersion` from `npx uspec-skills init`), then add `fontFamily` and `templateKeys` while preserving every existing field. The merged file should look like:
 
