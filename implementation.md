@@ -114,7 +114,7 @@ Agent workflows are defined as skills. Each skill has a `SKILL.md` with frontmat
 
 **Skill source of truth.** The platform-neutral `skills/<name>/SKILL.md` files at the repo root are the source of truth — they contain `{{skill:name}}` and `{{ref:path}}` tokens that the CLI rewrites at install time. Per-platform directories (`.cursor/skills/`, `.claude/skills/`, `.agents/skills/`) and the bundled `packages/cli/templates/` directory are **generated artifacts** — never edit them directly. See the [Skill Source and CLI](#skill-source-and-cli-packagescli) section below.
 
-**Editing skills:** Edit `skills/<name>/SKILL.md` (and any `references/` files), then `cd packages/cli && npm run build` to refresh the bundled `templates/` copy. Run `npx uspec-skills update` from any consumer project to pick up the changes. The legacy `utils/sync-skills.sh` script is retained for now but is no longer the supported install path.
+**Editing skills:** Edit `skills/<name>/SKILL.md` (and any `references/` files), then `cd packages/cli && npm run build` to refresh the bundled `templates/` copy. Run `npx uspec-skills update` from any consumer project to pick up the changes.
 
 ## Figma MCP Tools
 
@@ -784,7 +784,7 @@ Every skill is authored once at the repo root in `skills/<name>/SKILL.md` with `
 
 | File | Content |
 |------|---------|
-| `skills/firstrun/SKILL.md` | First run: prompts for MCP provider and environment, syncs skills to the chosen platform via the CLI, configures the Figma template library |
+| `skills/firstrun/SKILL.md` | First run: reads `mcpProvider` and `environment` from `uspecs.config.json` (already written by `npx uspec-skills init`), verifies the Figma MCP connection, then either writes the built-in Uber template keys or extracts component keys from the user's library, detects the font family, and writes `templateKeys` + `fontFamily` to `uspecs.config.json` |
 
 ### Per-host generated artifacts
 
@@ -805,7 +805,6 @@ In this monorepo we keep a checked-in copy of `.cursor/skills/` because the deve
 | `.mcp.json` | Shared MCP config (Claude Code reads this by default) |
 | `.codex/config.toml` | Codex MCP config |
 | `.cursor/mcp.json` | Cursor MCP config (gitignored — user configures locally) |
-| `utils/sync-skills.sh` | **Legacy.** Pre-CLI sync script kept for backward compatibility. New work should rely on `npx uspec-skills install` / `update` instead — see the [Skill Source and CLI](#skill-source-and-cli-packagescli) section. |
 
 ### Agent Instruction Files
 
