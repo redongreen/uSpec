@@ -3,6 +3,33 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V2.1 — May 2026" description="Figma plugin layout-wrapper descent and sub-component placement dedup">
+  ## uSpec V2.1
+
+  The uSpec Extract Figma plugin now handles layout-wrapper FRAMEs and repeated sub-component placements correctly, so the classification checklist surfaces the real sub-components and arrays of identical instances are documented as one entry with a count instead of N duplicates. A coordinated `uspec-skills` patch keeps `create-component-md` from misreading the new entry shapes.
+
+  ### Layout-wrapper descent (Figma plugin 2.1.0)
+
+  - Designers commonly wrap a component's real sub-components in a single auto-layout FRAME for clipping, scroll, padding, or grouping (for example, a Button group's `group` wrapper for the `overflow=scroll` variant). The plugin now descends through these wrappers so the classification UI surfaces the actual sub-components instead of the wrapper
+  - Each wrapper is recorded as an explicit decorative entry in `_childComposition.children[]` with `topLevelInstanceId: "wrapper:<depth>"` and `classificationEvidence: ["layout-wrapper"]`, so layout chrome remains visible to downstream consumers
+  - `idx:N` in `topLevelInstanceId` now indexes into the *effective* container (post wrapper descent), not the variant root. Phase I and `treeHierarchical` are unaffected
+
+  ### Sub-component placement dedup (Figma plugin 2.1.0)
+
+  - Repeated placements of the same sub-component (for example, six Selection Button instances inside a Button group) now collapse to one `_childComposition` entry instead of N. The designer classifies once; multiplicity is recorded in three new fields:
+    - `placementCount` — number of sibling placements that share the entry's identity
+    - `placementIndices` — original positions in the effective container's children
+    - `placementsVary` — `true` when at least two placements differ in main component or boolean overrides, signalling a heterogeneous array
+  - The plugin UI surfaces a `× N` badge on grouped rows and a `varies in state` tag when `placementsVary` is true, so the designer can spot heterogeneous arrays at a glance
+  - Equivalence fingerprint covers `mainComponentName` (which encodes variant choice for component-set members) and `booleanOverrides` — instance-swap and text-override differences are intentionally not in the fingerprint and remain visible in `treeHierarchical`
+
+  ### `create-component-md` Step 4.5 fix (uspec-skills 0.2.3)
+
+  - The post-extract review previously flagged any `_childComposition` entry without `user-selected` evidence as malformed. The new wrapper FRAME entries legitimately carry `["layout-wrapper"]` evidence, so the check is now scoped to `nodeType === "INSTANCE"` — the only entries the plugin UI asks the designer to confirm
+  - Prevents a spurious "the plugin UI did not reach the designer's confirmation step" warning and a redundant override pass on every plugin run that contains a layout wrapper
+  - Run `npx uspec-skills update` to pick up the fix
+</Update>
+
 <Update label="0.2.2 — April 2026" description="First run experience fix">
   ## uspec-skills 0.2.2
 
