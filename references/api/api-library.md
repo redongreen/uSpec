@@ -45,9 +45,11 @@ Never expose these as API properties. They are handled by platform runtime.
 
 | State     | Handled by                                    |
 | --------- | --------------------------------------------- |
-| `hover`   | CSS `:hover`, platform gesture recognizer     |
+| `hovered` | CSS `:hover`, platform gesture recognizer     |
 | `pressed` | CSS `:active`, `GestureDetector`, `Pressable` |
 | `focused` | CSS `:focus-visible`, platform focus system   |
+
+Use the past-participle form (`hovered`, `pressed`, `focused`) so transient state names read in parallel with persistent ones (`enabled`, `disabled`). Earlier docs and many existing Figma libraries use `hover`; both forms are recognized by the extractor's state-axis matcher, so existing libraries continue to classify correctly without renaming Figma axis options.
 
 
 ### Event Handlers (Code-Level Only)

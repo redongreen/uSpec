@@ -1,6 +1,6 @@
 {
   "name": "uspec-skills",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Install uSpec design-system documentation skills into your AI coding agent (Cursor, Claude Code, or Codex).",
   "license": "MIT",
   "author": "Ian Guisard",

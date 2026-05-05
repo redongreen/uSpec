@@ -329,7 +329,9 @@ const filteredVariants = variantChildren.filter(variant => {
 });
 
 // Phase 1: Walk all variants — color bindings + axis fingerprints + sub-component tagging
-const stateKeywords = ['enabled', 'hover', 'pressed', 'disabled', 'active', 'rest', 'focused', 'selected', 'dragged', 'error', 'loading'];
+// Both `hover` and `hovered` are recognized: `hover` is the historical name in
+// most existing Figma libraries; `hovered` is the canonical name going forward.
+const stateKeywords = ['enabled', 'hover', 'hovered', 'pressed', 'disabled', 'active', 'rest', 'focused', 'selected', 'dragged', 'error', 'loading'];
 const axisTokenSets = {};
 
 const variantColorData = [];
@@ -945,7 +947,7 @@ return { success: true, variant: VARIANT_NAME };
 
 For each variant in the data, run the following script. Replace all `__PLACEHOLDER__` values with actual data.
 
-- `__STATE_COLUMNS_JSON__` is the ordered array of state names that become column headers (e.g. `["Enabled", "Hover", "Pressed", "Active", "Disabled"]`).
+- `__STATE_COLUMNS_JSON__` is the ordered array of state names that become column headers (e.g. `["Enabled", "Hovered", "Pressed", "Active", "Disabled"]`).
 - `__STATE_AXIS_NAME__` is the Figma variant axis name for states (e.g. `"State"`).
 - `__TABLES_JSON__` is the tables array for this variant. Each element has `element`, `tokensByState` (object mapping state name → token), `notes`, and optionally `compositeChildren` — an array of `{ element, value, notes }` objects for multi-layer style breakdowns.
 - `__COLLECTION_ID__` is the variable collection ID for mode-controlled colors (e.g. `"VariableCollectionId:6006:13874"`). Set to `''` if not mode-controlled.
@@ -1287,7 +1289,7 @@ return { success: true, variant: VARIANT_NAME };
 2. Verify:
    - All variant sections are present with correct titles (for mode-controlled components: one section per Type × Mode combination)
    - Tables within each variant have correct element-to-token mappings with resolved semantic tokens
-   - **Strategy B previews**: Each variant's preview container shows **all state instances side by side with labels** (e.g., Enabled, Hover, Pressed, Active, Disabled)
+   - **Strategy B previews**: Each variant's preview container shows **all state instances side by side with labels** (e.g., Enabled, Hovered, Pressed, Active, Disabled)
    - **Strategy A previews**: Each variant's preview container shows a labeled component instance
    - For mode-controlled components, preview instances display the correct color mode
    - **Composite breakdowns**: Elements with multi-layer styles show nested child rows with hierarchy indicators (vertical line + elbow for middle children, elbow-only for last child). Top-level rows have indicators hidden.
@@ -1313,7 +1315,7 @@ Color spec complete: https://www.figma.com/design/{fileKey}/?node-id={frameId}
 - The instruction file (`{{ref:color/agent-color-instruction.md}}`) contains the data structure reference, examples, and element-to-token mapping rules that guide the analysis phase.
 - Preview frames: Each variant section has a light theme preview container. The `Placeholder` child is removed and replaced with live component instances.
   - **Strategy A**: One labeled instance per container (wrapper frame with instance + text label).
-  - **Strategy B**: Multiple labeled instances per container — one per state column. Each instance is wrapped in a vertical frame with a text label showing the state name (e.g., "Enabled", "Hover"). The preview container uses `HORIZONTAL` layout with `itemSpacing: 24` so instances flow left to right.
+  - **Strategy B**: Multiple labeled instances per container — one per state column. Each instance is wrapped in a vertical frame with a text label showing the state name (e.g., "Enabled", "Hovered"). The preview container uses `HORIZONTAL` layout with `itemSpacing: 24` so instances flow left to right.
 - **Mode-controlled previews**: For components with a variable mode collection (e.g., "Tag color"), each preview instance wrapper has `setExplicitVariableModeForCollection(collection, modeId)` applied so the correct color mode renders. After creating each instance, `clearModesRecursive` is called to remove any baked-in modes so the instance inherits from the wrapper.
 - **Mode-expanded sections**: When `hasModeCollection: true`, every mode is rendered as its own section(s) — one per Type × Mode combination. Section names use the format `"{Type} / {Mode}"` (e.g., "Primary / Gray"). Tokens are resolved per mode via `modeDetection.modeTokenMap` from the extraction output. The `collectionId` and `modeId` are passed to the rendering script for preview mode application.
 - The script uses scored variant matching (exact match first, then best partial match by score) to find the correct variant child directly, rather than creating from the default and calling `setProperties()`. This handles sparse component sets where some variant combinations may not exist.

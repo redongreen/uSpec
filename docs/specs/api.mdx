@@ -74,7 +74,7 @@ The agent looks at three sources in Figma to find all configurable properties:
 - **Variable modes**: properties controlled at the container level (shape, density)
 
 <Note>
-  Transient interactive states like hover and pressed are not included as API properties. Those are handled at runtime by the platform. Only persistent states like disabled, selected, and loading appear as properties.
+  Transient interactive states like hovered and pressed are not included as API properties. Those are handled at runtime by the platform. Only persistent states like disabled, selected, and loading appear as properties.
 </Note>
 
 ## How it works
@@ -123,4 +123,4 @@ The skill renders programmatically, so the output is consistent and repeatable. 
 - **Note required vs. optional**: mention which properties must always be set and which have defaults
 - **Mention sub-components**: if your component has configurable nested elements (e.g., a trailing button inside a section heading), describe their configuration options
 - **Specify defaults**: tell the agent which values are the default configuration
-- **Distinguish persistent from transient states**: mention states like `disabled`, `selected`, or `loading` that should become properties. Transient states like hover and pressed are handled at runtime and won't appear in the API
+- **Distinguish persistent from transient states**: mention states like `disabled`, `selected`, or `loading` that should become properties. Transient states like hovered and pressed are handled at runtime and won't appear in the API

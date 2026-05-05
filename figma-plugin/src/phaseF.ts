@@ -121,9 +121,15 @@ export async function runPhaseF(
   const defaultValues: Record<string, string> = {};
   for (const [a, vals] of Object.entries(axes)) defaultValues[a] = defaultVProps[a] || vals[0];
 
+  // Recognize designer-authored Figma variant axis option names that signal an
+  // interactive-state axis. Both `hover` and `hovered` are accepted: `hover` is
+  // the historical name in most existing libraries; `hovered` is the canonical
+  // name going forward (parallel with `pressed` / `focused` / `disabled`). See
+  // references/api/api-library.md for the recommendation.
   const stateKeywords = [
     'enabled',
     'hover',
+    'hovered',
     'pressed',
     'disabled',
     'active',

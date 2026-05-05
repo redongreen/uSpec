@@ -993,13 +993,13 @@ General notes: "The check component is the visual indicator only — typically n
 ### Check container section
 
 - Section name: "Check container"
-- Description: "Dimensions are constant across all checked states. The outer frame is the visible state layer (hover/pressed), not the tap target — the tap target is defined by the parent component."
-- Preview: All interaction states (rest, hover, pressed) across all checked variants (unchecked, checked, indeterminate) in a grid layout
+- Description: "Dimensions are constant across all checked states. The outer frame is the visible state layer (hovered/pressed), not the tap target — the tap target is defined by the parent component."
+- Preview: All interaction states (rest, hovered, pressed) across all checked variants (unchecked, checked, indeterminate) in a grid layout
 - Columns: Spec | unchecked | checked | indeterminate | Notes
 
 | Spec | unchecked | checked | indeterminate | Notes |
 |---|---|---|---|---|
-| State layer | – | – | – | Visible on hover and pressed |
+| State layer | – | – | – | Visible in hovered and pressed states |
 | ├─ width | 32 | 32 | 32 | Fixed state layer width |
 | ├─ height | 32 | 32 | 32 | Fixed state layer height |
 | └─ cornerRadius | 12 | 12 | 12 | Squircle shape clips the state layer fill |

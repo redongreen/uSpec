@@ -429,7 +429,7 @@ Using gathered context and the extraction data from Step 4b, identify:
 
 **A. Variant properties** from Figma axes (size, type, hierarchy, layout, behavior, etc.)
 - If a broad axis mixes transient and persistent states, decompose it into engineer-friendly API properties instead of copying the axis verbatim.
-- Drop transient interaction visuals such as hover, pressed, and focus unless the component clearly exposes them as persistent configuration.
+- Drop transient interaction visuals such as hovered, pressed, and focused unless the component clearly exposes them as persistent configuration.
 
 **B. Boolean toggles** from instance inspection
 - Separate simple modifiers (`isDisabled`, `showBadge`) from slot-selection booleans that should become enums with `none`.

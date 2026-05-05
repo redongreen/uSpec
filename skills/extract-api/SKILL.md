@@ -137,7 +137,7 @@ Using the working evidence set from Step 3, identify:
 
 **A. Variant properties** from `variantAxes`
 - If a broad axis mixes transient and persistent states, decompose it into engineer-friendly API properties instead of copying the axis verbatim.
-- Drop transient interaction visuals (hover, pressed, focus) unless the component exposes them as persistent configuration.
+- Drop transient interaction visuals (hovered, pressed, focused) unless the component exposes them as persistent configuration.
 
 **B. Boolean toggles** from `booleanProps`
 - Separate simple modifiers (`isDisabled`, `showBadge`) from slot-selection booleans that should become enums with `none`.

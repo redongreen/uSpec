@@ -32,7 +32,7 @@ Reference the skill and paste your Figma link. Include context about states, var
     ```
     @create-color https://www.figma.com/design/abc123/Components?node-id=100:200
 
-    This is a button with enabled, hover, pressed, and disabled states.
+    This is a button with enabled, hovered, pressed, and disabled states.
     Include both Default and Danger variants.
     ```
   </Tab>
@@ -40,7 +40,7 @@ Reference the skill and paste your Figma link. Include context about states, var
     ```
     /create-color https://www.figma.com/design/abc123/Components?node-id=100:200
 
-    This is a button with enabled, hover, pressed, and disabled states.
+    This is a button with enabled, hovered, pressed, and disabled states.
     Include both Default and Danger variants.
     ```
   </Tab>
@@ -48,7 +48,7 @@ Reference the skill and paste your Figma link. Include context about states, var
     ```
     $create-color https://www.figma.com/design/abc123/Components?node-id=100:200
 
-    This is a button with enabled, hover, pressed, and disabled states.
+    This is a button with enabled, hovered, pressed, and disabled states.
     Include both Default and Danger variants.
     ```
   </Tab>
@@ -67,7 +67,7 @@ The structure depends on your component type:
 Components without interactive states (headers, cards, labels) get a single table mapping each element to its token.
   </Tab>
   <Tab title="Interactive">
-Components with states (buttons, checkboxes, inputs) get a separate table per state showing how tokens change across enabled, hover, pressed, and disabled.
+Components with states (buttons, checkboxes, inputs) get a separate table per state showing how tokens change across enabled, hovered, pressed, and disabled.
   </Tab>
   <Tab title="Multi-variant">
 Components with style or color variants (default + danger, primary + secondary) get separate variant sections, each with their own state tables.
@@ -123,7 +123,7 @@ The skill renders programmatically, so the output is consistent and repeatable. 
 
 ## Tips for better output
 
-- **List all states**: enabled, hover, pressed, disabled. The agent maps tokens per state
+- **List all states**: enabled, hovered, pressed, disabled. The agent maps tokens per state
 - **Mention color variants**: if your component has Default and Danger (or similar), describe both
 - **Call out variable mode collections**: if color is controlled by a Figma variable collection (e.g., *"Tag color"* with Default, Success, Warning, Error modes), name the collection and its modes in your prompt. The agent checks for these automatically, but explicit mention ensures nothing is missed
 - **Note sub-components**: if your component contains another component (e.g., a Button inside a Section heading), the agent references it instead of duplicating its tokens

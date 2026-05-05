@@ -102,7 +102,7 @@ Check `childContainerIsVariant`, `rootVariantVisuals`, and `traversedFrames` fro
      - `visible: true`
      - `bbox: { x: 0, y: 0, w: rootSize.w, h: rootSize.h }`
      - `shouldCreateSection: false`
-     - `notes`: write a semantic note (e.g., `"Statelayer — pressed/hover state overlay, 12px corner radius"`)
+     - `notes`: write a semantic note (e.g., `"Statelayer — pressed/hovered state overlay, 12px corner radius"`)
 
 3. **Traversed frames:** For each entry in `traversedFrames` where `hasFills`, `hasStrokes`, or `hasEffects` is true, insert a synthetic element after any root statelayer element with:
    - `isSynthetic: true`
@@ -251,7 +251,7 @@ Synthetic elements represent the root component container or visually-meaningful
 
 - **Root container** (`classification: 'container'`): `"Root container — horizontal auto-layout hosting the component's slots"` or `"Root container — vertical stack layout with {N}px gap"`. Describe the layout mode and what the container organizes. When `rootVariantVisuals.hasStrokes` is true, include the border in this note: `"Root container — circular frame with stroke border, {N}px corner radius"` or `"Root container — horizontal auto-layout with border, {N}px corner radius"`. Do NOT create a separate synthetic element for the stroke.
 - **Root container with fill** (container synthetic + `rootVariantVisuals.hasFills` or `hasEffects`): Combine layout description, fill role, corner radius, and layout orchestration into one note. `"Root container — horizontal auto-layout with solid background fill, pill-shaped ({N}px corner radius), manages leading/trailing icon visibility"`. When `hasEffects` is also true: `"…with background fill and state effects overlay"`. Do NOT create a separate backplate/statelayer element — the fill is a visual property of the container frame itself.
-- **Statelayer** (standalone — root variant with low-opacity fill, no container synthetic): `"Statelayer — pressed/hover state overlay, {N}px corner radius"`
+- **Statelayer** (standalone — root variant with low-opacity fill, no container synthetic): `"Statelayer — pressed/hovered state overlay, {N}px corner radius"`
 - **Backplate** (standalone — root variant with solid fill, no container synthetic): `"Backplate — solid background, {N}px corner radius"`
 - **Shape container** (traversed frame with fills/strokes): `"Shape container — bordered {component} box, {N}px corner radius"` or `"Shape — filled indicator area, {N}px corner radius"`
 - When both stroke and fill are present: `"Shape container — fill and border change with checked/unchecked state, {N}px corner radius"`
@@ -305,7 +305,7 @@ When the user provides design notes alongside the Figma link (behavioral descrip
 | Trailing slot | `slot` | false | "Hidden slot" | "Trailing slot — hidden by default, shown via `trailingContent` toggle. Preferred: Badge, Icon Button." |
 | container (synthetic) | `container` | true | "Container" | "Root container — horizontal auto-layout hosting the component's slots" |
 | container with fill (synthetic) | `container` | true | "Container" + separate "Backplate" | "Root container — horizontal auto-layout with solid background fill, pill-shaped (99px corner radius), manages icon visibility" |
-| statelayer (standalone synthetic) | `structural` | true | "Frame with fills" | "Statelayer — pressed/hover state overlay, 12px corner radius" |
+| statelayer (standalone synthetic) | `structural` | true | "Frame with fills" | "Statelayer — pressed/hovered state overlay, 12px corner radius" |
 | shape (synthetic) | `structural` | true | "Traversed frame" | "Shape container — bordered checkbox box, fill and border change with state, 6px corner radius" |
 
 ---

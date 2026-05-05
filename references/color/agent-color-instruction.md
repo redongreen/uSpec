@@ -51,11 +51,11 @@ Ask these diagnostic questions:
 1. **Is this static content?** (Header, card, label)
    → One variant (component name or "Default") with one "Spec" table.
 
-2. **Does the component have interactive states?** (Enabled, Hover, Pressed, Disabled)
+2. **Does the component have interactive states?** (Enabled, Hovered, Pressed, Disabled)
    → Each state becomes its own variant entry with one "Spec" table.
 
 3. **Does the component have visual variants?** (Default, Negative, Primary, etc.)
-   → Combine with states: one variant per visual-variant + state combination (e.g., "Default / Enabled", "isNegative / Hover").
+   → Combine with states: one variant per visual-variant + state combination (e.g., "Default / Enabled", "isNegative / Hovered").
 
 4. **Are there nested components?** → See the **Sub-Components (Nested Components)** section below for handling rules and the container/slot special case.
 
@@ -69,7 +69,7 @@ For each visual element in the component:
 
 **Consolidated extraction data:** When using the SKILL.md workflow, use the extraction output fields (`variantColorData`, `axisClassification`, `booleanDelta`, `modeDetection`) directly rather than re-analyzing from scratch. See the Step 4b output contract in the SKILL.md for field definitions.
 
-**Key insight:** Element names should be consistent across states. If "Background" appears in Enabled state, use "Background" in Hover state too—don't rename it.
+**Key insight:** Element names should be consistent across states. If "Background" appears in Enabled state, use "Background" in Hovered state too—don't rename it.
 
 ### Token Resolution Priority: Styles over Variables
 
@@ -132,7 +132,7 @@ interface ColorAnnotationData {
 }
 
 interface ColorVariantData {
-  name: string;           // Section heading. Use state name ("Enabled"), combined name ("Default / Hover"), mode name ("Success"), or component name for static components.
+  name: string;           // Section heading. Use state name ("Enabled"), combined name ("Default / Hovered"), mode name ("Success"), or component name for static components.
   variantProperties?: Record<string, string>;  // Figma property keys → values for preview instance creation
   tables: ColorTableData[];
 }
@@ -163,7 +163,7 @@ interface ConsolidatedColorAnnotationData {
   componentName: string;
   generalNotes?: string;
   renderingStrategy: "B";
-  stateColumns: string[];  // Ordered state names as column headers, e.g. ["Enabled", "Hover", "Pressed", "Active", "Disabled"]
+  stateColumns: string[];  // Ordered state names as column headers, e.g. ["Enabled", "Hovered", "Pressed", "Active", "Disabled"]
   stateAxisName: string;   // Figma variant axis name for states, e.g. "State"
   collectionId?: string;   // Variable collection ID for mode-controlled colors (e.g. "VariableCollectionId:6006:13874"). Null if not mode-controlled.
   variants: ConsolidatedVariantData[];
@@ -241,7 +241,7 @@ Write a short sentence (3-8 words) describing the element's purpose or role:
 | Thumb | "Draggable indicator showing current value" |
 | Track | "Background bar showing total range" |
 | Label | "Text displaying the current value" |
-| State layer | "Hover/press feedback overlay" |
+| State layer | "Hovered/pressed feedback overlay" |
 | stroke | "Border around the control" |
 | Background | "Container surface color" |
 | Icon | "Visual indicator for the action" |
@@ -296,7 +296,7 @@ For each entry with a `subComponentName`, evaluate these signals:
 3. **Is it hosted in a slot?** → Lean toward **exclude.** Slot content is interchangeable by design; documenting one possible child's internals as if they were fixed is misleading. Note the slot and its default content in `generalNotes`.
 4. **Does the parent explicitly override the sub-component's colors?** (e.g., the parent binds a different token to the nested instance's fill) → **Include** the overridden token, because the parent owns that decision.
 
-When in doubt: if the sub-component has its own variant axis (e.g., State: Enabled/Hover/Pressed) or is documented elsewhere in the design system, exclude it and reference it in `generalNotes`.
+When in doubt: if the sub-component has its own variant axis (e.g., State: Enabled/Hovered/Pressed) or is documented elsewhere in the design system, exclude it and reference it in `generalNotes`.
 
 #### Worked examples
 
@@ -385,7 +385,7 @@ Use only when a non-state color-relevant multiplier exists AND Strategy A would 
 
 #### Decision Logic (Two-Gate Model)
 
-1. Identify color-relevant axes (tokens differ across values) and the state axis (values like Enabled, Hover, Pressed, Disabled)
+1. Identify color-relevant axes (tokens differ across values) and the state axis (values like Enabled, Hovered, Pressed, Disabled)
 2. **Gate 1 — Viability:** A non-state color-relevant multiplier must exist:
    - A mode-controlled collection with 2+ modes (e.g., Tag's 11 color modes), OR
    - A non-state color-relevant axis with 2+ values (e.g., Type: Primary/Secondary)
@@ -412,14 +412,14 @@ Each `variant` entry in the JSON becomes a **visual section** in the rendered ou
 | Component type | Variant structure | Table structure |
 |---|---|---|
 | **Static** (header, card, label) | One variant (component name or "Default") | One table named "Spec" |
-| **Interactive, one visual variant** (text field, switch, slider) | One variant **per state** (Enabled, Hover, Pressed, etc.) | One table named "Spec" per variant |
+| **Interactive, one visual variant** (text field, switch, slider) | One variant **per state** (Enabled, Hovered, Pressed, etc.) | One table named "Spec" per variant |
 | **Interactive, multiple visual variants** (button: Default/Negative/Primary, checkbox: Default/isNegative) | One variant **per combination** of visual variant + state | One table named "Spec" per variant |
 | **Mode-controlled colors** (tag, badge, alert) | One variant **per mode** (Default, Success, Warning), or per Type × Mode combination if types exist | One table named "Spec" per variant |
-| **Mode-controlled + interactive** (tag with states, badge with hover) | Apply two-gate model: if non-state multiplier exists AND Strategy A sections > 6 → Strategy B (one variant per Type × Mode, states as columns); otherwise Strategy A (one variant per state × mode combination) | Strategy B: one multi-column table per variant. Strategy A: one "Spec" table per variant |
+| **Mode-controlled + interactive** (tag with states, badge with hovered state) | Apply two-gate model: if non-state multiplier exists AND Strategy A sections > 6 → Strategy B (one variant per Type × Mode, states as columns); otherwise Strategy A (one variant per state × mode combination) | Strategy B: one multi-column table per variant. Strategy A: one "Spec" table per variant |
 
 ### Why states become variants
 
-Each variant renders as its own section with a preview. When a component has states (Enabled, Hover, Disabled, etc.), treating each state as its own variant ensures the output reads as:
+Each variant renders as its own section with a preview. When a component has states (Enabled, Hovered, Disabled, etc.), treating each state as its own variant ensures the output reads as:
 
 ```
 [State name]
@@ -429,14 +429,14 @@ Each variant renders as its own section with a preview. When a component has sta
 
 If states were nested as tables under a single variant, all state tables would appear under one preview, making it hard to see which tokens apply to which visual state.
 
-**Exception (Strategy B):** When both gates pass (non-state multiplier exists AND Strategy A sections > 6), states are consolidated into columns within a single table to avoid too many sections. Each section still gets its own preview showing **all state instances side by side with labels** (Enabled, Hover, Pressed, etc.). For mode-controlled components, each preview instance has the correct color mode applied via `setExplicitVariableModeForCollection`.
+**Exception (Strategy B):** When both gates pass (non-state multiplier exists AND Strategy A sections > 6), states are consolidated into columns within a single table to avoid too many sections. Each section still gets its own preview showing **all state instances side by side with labels** (Enabled, Hovered, Pressed, etc.). For mode-controlled components, each preview instance has the correct color mode applied via `setExplicitVariableModeForCollection`.
 
 ### Naming variants
 
 | Scenario | Variant name |
 |---|---|
-| Single visual variant, multiple states | Use the state name directly: `"Enabled"`, `"Hover"`, `"Disabled"` |
-| Multiple visual variants, multiple states | Combine: `"Default / Enabled"`, `"Default / Hover"`, `"isNegative / Enabled"` |
+| Single visual variant, multiple states | Use the state name directly: `"Enabled"`, `"Hovered"`, `"Disabled"` |
+| Multiple visual variants, multiple states | Combine: `"Default / Enabled"`, `"Default / Hovered"`, `"isNegative / Enabled"` |
 | Mode-controlled colors (no types) | Use the mode name: `"Default"`, `"Success"`, `"Warning"` |
 | Mode-controlled colors (with types) | Combine type and mode: `"Primary / Gray"`, `"Secondary / Orange"` |
 | Static component | Use the component name or `"Default"` |
@@ -449,11 +449,11 @@ Determine states from what you see in Figma, not from a fixed list:
 
 | Component | Typical States |
 |-----------|---------------|
-| Button | Enabled, Hover, Pressed, Disabled, Loading |
-| Checkbox | Enabled, Hover, Pressed, Disabled |
-| Switch | Enabled, Hover, Pressed, Disabled |
-| Tab | Enabled, Hover, Pressed |
-| Input | Enabled, Hover, Focused, Disabled, Error |
+| Button | Enabled, Hovered, Pressed, Disabled, Loading |
+| Checkbox | Enabled, Hovered, Pressed, Disabled |
+| Switch | Enabled, Hovered, Pressed, Disabled |
+| Tab | Enabled, Hovered, Pressed |
+| Input | Enabled, Hovered, Focused, Disabled, Error |
 | Static content | Spec (single table) |
 
 ---
@@ -463,8 +463,8 @@ Determine states from what you see in Figma, not from a fixed list:
 | If you see... | Questions to ask | Result |
 |---------------|------------------|--------|
 | Single frame with no state variations | Static content? Yes | One variant, one "Spec" table |
-| State matrix (Enabled/Hover/Disabled rows) | Interactive states? Yes | One variant per state, each with one "Spec" table |
-| Frames named "Default", "Negative" + states | Multiple visual variants with states? | One variant per combination: "Default / Enabled", "Default / Hover", etc. |
+| State matrix (Enabled/Hovered/Disabled rows) | Interactive states? Yes | One variant per state, each with one "Spec" table |
+| Frames named "Default", "Negative" + states | Multiple visual variants with states? | One variant per combination: "Default / Enabled", "Default / Hovered", etc. |
 | Frames named "Default", "Negative" without states | Multiple visual variants, no states? | One variant per visual variant, each with one "Spec" table |
 | Extraction entries with `subComponentName` | Nested component? Yes | Apply token ownership framework: include leaf instances (icons), exclude full sub-components (buttons) and note in `generalNotes` |
 | Hex color with no token reference | Hardcoded color | Use hex, note in `generalNotes` |
@@ -485,7 +485,7 @@ When a component has mode-controlled colors with interactive states, create one 
   "componentName": "Tag",
   "generalNotes": "Color variants (Gray, Orange, Yellow, Green, Blue, Purple, Magenta, Teal, Lime, Red, Brand) are controlled via 'Tag color' variable mode at the container level. Size and Behavior axes do not affect color tokens.",
   "renderingStrategy": "B",
-  "stateColumns": ["Enabled", "Hover", "Pressed", "Active", "Disabled"],
+  "stateColumns": ["Enabled", "Hovered", "Pressed", "Active", "Disabled"],
   "stateAxisName": "State",
   "collectionId": "VariableCollectionId:6006:13874",
   "variants": [
@@ -501,7 +501,7 @@ When a component has mode-controlled colors with interactive states, create one 
               "element": "Container fill",
               "tokensByState": {
                 "Enabled": "Tag/Gray/backgroundPrimary",
-                "Hover": "Tag/Gray/backgroundPrimary",
+                "Hovered": "Tag/Gray/backgroundPrimary",
                 "Pressed": "Tag/Gray/backgroundPrimary",
                 "Active": "Tag/Gray/backgroundPrimary",
                 "Disabled": "Tag/Gray/backgroundStateDisabled"
@@ -512,18 +512,18 @@ When a component has mode-controlled colors with interactive states, create one 
               "element": "State layer",
               "tokensByState": {
                 "Enabled": "none",
-                "Hover": "hoverOverlayAlpha",
+                "Hovered": "hoverOverlayAlpha",
                 "Pressed": "pressedOverlayAlpha",
                 "Active": "none",
                 "Disabled": "none"
               },
-              "notes": "Hover/press feedback overlay"
+              "notes": "Hovered/pressed feedback overlay"
             },
             {
               "element": "Label",
               "tokensByState": {
                 "Enabled": "Tag/Gray/contentPrimary",
-                "Hover": "Tag/Gray/contentPrimary",
+                "Hovered": "Tag/Gray/contentPrimary",
                 "Pressed": "Tag/Gray/contentPrimary",
                 "Active": "Tag/Gray/contentPrimary",
                 "Disabled": "Tag/Gray/contentStateDisabled"
@@ -546,7 +546,7 @@ When a component has mode-controlled colors with interactive states, create one 
               "element": "Container fill",
               "tokensByState": {
                 "Enabled": "Tag/Orange/backgroundPrimary",
-                "Hover": "Tag/Orange/backgroundPrimary",
+                "Hovered": "Tag/Orange/backgroundPrimary",
                 "Pressed": "Tag/Orange/backgroundPrimary",
                 "Active": "Tag/Orange/backgroundPrimary",
                 "Disabled": "Tag/Orange/backgroundStateDisabled"
@@ -569,7 +569,7 @@ When a component has mode-controlled colors with interactive states, create one 
               "element": "Container fill",
               "tokensByState": {
                 "Enabled": "Tag/Gray/backgroundSecondary",
-                "Hover": "Tag/Gray/backgroundSecondary",
+                "Hovered": "Tag/Gray/backgroundSecondary",
                 "Pressed": "Tag/Gray/backgroundSecondary",
                 "Active": "Tag/Gray/backgroundSecondary",
                 "Disabled": "Tag/Gray/backgroundStateDisabled"
@@ -734,12 +734,12 @@ Each state becomes its own variant with one "Spec" table:
       ]
     },
     {
-      "name": "Hover",
+      "name": "Hovered",
       "tables": [
         {
           "name": "Spec",
           "elements": [
-            { "element": "Background fill", "token": "interactivePrimaryHover", "notes": "Button fill on hover" },
+            { "element": "Background fill", "token": "interactivePrimaryHover", "notes": "Button fill in hovered state" },
             { "element": "Label", "token": "contentInversePrimary", "notes": "Button text" }
           ]
         }
@@ -777,19 +777,19 @@ When a component has visual variants AND states, combine them in the variant nam
         {
           "name": "Spec",
           "elements": [
-            { "element": "State layer (backplate)", "token": "none", "notes": "Hover/press feedback overlay. Hidden at rest." },
+            { "element": "State layer (backplate)", "token": "none", "notes": "Hovered/pressed feedback overlay. Hidden at rest." },
             { "element": "stroke", "token": "contentTertiary", "notes": "Checkbox border" }
           ]
         }
       ]
     },
     {
-      "name": "Default / Hover",
+      "name": "Default / Hovered",
       "tables": [
         {
           "name": "Spec",
           "elements": [
-            { "element": "State layer (backplate)", "token": "hoverOverlayAlpha", "notes": "Hover feedback overlay" },
+            { "element": "State layer (backplate)", "token": "hoverOverlayAlpha", "notes": "Hovered feedback overlay" },
             { "element": "stroke", "token": "contentTertiary", "notes": "Checkbox border" }
           ]
         }
@@ -801,7 +801,7 @@ When a component has visual variants AND states, combine them in the variant nam
         {
           "name": "Spec",
           "elements": [
-            { "element": "State layer (backplate)", "token": "none", "notes": "Hover/press feedback overlay. Hidden at rest." },
+            { "element": "State layer (backplate)", "token": "none", "notes": "Hovered/pressed feedback overlay. Hidden at rest." },
             { "element": "stroke", "token": "bigRedContentSecondary", "notes": "Error state border" }
           ]
         }
@@ -828,7 +828,7 @@ Before proceeding to the rendering steps, verify:
 | ☐ **States are variants, not nested tables** (Strategy A) | Each state is its own variant entry (gets its own preview), not multiple tables under a single variant |
 | ☐ **States are columns, not sections** (Strategy B) | States appear as column headers in the consolidated table, not as separate variant sections |
 | ☐ **Token names are clean** | No raw CSS variable syntax (`var(--content/contentPrimary)` → `contentPrimary`). Path-format names (e.g., `background/primary`) are valid when the variable has no `codeSyntax.WEB` — do not manually convert. |
-| ☐ **Element names consistent across states** | Same element uses the same name in every variant (e.g., "Background" is not renamed to "Fill" in Hover) |
+| ☐ **Element names consistent across states** | Same element uses the same name in every variant (e.g., "Background" is not renamed to "Fill" in Hovered) |
 | ☐ **Sub-component token ownership applied** | Entries with `subComponentName` evaluated using the token ownership framework: leaf instances (icons, dividers) included with parent ownership; full sub-components (buttons, badges) excluded and noted in `generalNotes` |
 | ☐ **Hidden-in-composition filter applied** | No emitted element row has `none` (or `none (hard-coded)`) in every state column. Such elements have been moved from the table to a single sentence in `generalNotes` with the specified wording. Elements visible in ≥1 state remain in the table. |
 | ☐ **Notes on every element** | Every element has a 3-8 word description; no empty notes or bare `"–"` |
@@ -846,7 +846,7 @@ Before proceeding to the rendering steps, verify:
 ## Common Mistakes
 
 - **Empty notes:** Never use `"–"` alone; every element needs a brief description
-- **Inconsistent element names:** Use the same name across states (don't rename "Background" to "Fill" in Hover)
+- **Inconsistent element names:** Use the same name across states (don't rename "Background" to "Fill" in Hovered)
 - **Incorrect sub-component token handling:** Apply the token ownership framework. Don't blindly include all sub-component tokens (over-documenting) or blindly exclude them (under-documenting). Leaf instances belong in the parent spec; full sub-components with their own variants/states belong in their own spec
 - **Hardcoded hex values:** If you see `#000000` instead of a token, use the hex but note it in `generalNotes`
 - **Missing states:** Document all states visible in Figma, not just Enabled

@@ -43,7 +43,7 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
         - Make sure you're using a high-context model — **OpenAI GPT 5.4 High** or **Opus 4.6 High** or above. OpenAI 5.4 High is more economical to use. Lower-capacity models may truncate skill instructions and produce incomplete specs.
         - Start a **new agent session** for each prompt to give the model full context capacity
         - Add more context to your prompt: describe all states, variants, and behaviors
-        - Specify states explicitly (e.g., "enabled, hover, pressed, disabled")
+        - Specify states explicitly (e.g., "enabled, hovered, pressed, disabled")
         - Include a screenshot for complex components
         - Mention any non-obvious interactions or behaviors
       </Accordion>
@@ -301,7 +301,7 @@ If the agent's output is incomplete or doesn't match your expectations, the issu
 
 The agent can only document what it can see in Figma or what you describe. If states, variants, or behaviors are missing from the output:
 
-- **Add them to your prompt**: explicitly list all states (enabled, hover, pressed, disabled, selected, loading)
+- **Add them to your prompt**: explicitly list all states (enabled, hovered, pressed, disabled, selected, loading)
 - **Describe behavioral modes**: fill vs. hug width, truncation rules, multi-select behavior
 - **Mention invisible constraints**: tap target minimums, aspect ratios, focus order preferences
 

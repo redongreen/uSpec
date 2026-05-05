@@ -3,6 +3,26 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V2.1.1 — May 2026" description="Standardize transient state naming on past-participle form (hovered)">
+  ## uSpec V2.1.1
+
+  Transient interactive state names now use the past-participle form (`hovered`, `pressed`, `focused`) so they read in parallel with persistent ones (`enabled`, `disabled`). Previously the recommendation mixed `hover` with the participle forms, which read inconsistently in property tables, color spec column headers, and prompt examples. This is a non-breaking change: existing Figma libraries that name their state-axis options `hover` continue to be recognized.
+
+  ### Recommendation update
+
+  - `references/api/api-library.md` now recommends `hovered` alongside `pressed` and `focused`. The recommendation table also explicitly documents that earlier docs and many existing Figma libraries use `hover`, and that both forms are recognized by the extractor.
+  - All instruction files (`agent-api`, `agent-color`, `agent-structure`, `agent-anatomy`) and skill prose updated to use `Hovered` / `hovered` in state listings, JSON examples, and worked examples.
+  - Mintlify spec pages, Getting started examples, and Troubleshooting prompt suggestions updated to match.
+
+  ### Backwards compatibility (figma-plugin 2.1.1)
+
+  - The `stateKeywords` matcher in `figma-plugin/src/phaseF.ts` and `skills/create-color/SKILL.md` accepts **both** `hover` and `hovered` as state-axis option names, so designers who keep the legacy name continue to get correct axis classification.
+  - Real design-token identifiers (`hoverOverlayAlpha`, `interactivePrimaryHover`, etc.) are unchanged — these are platform variable names, not state labels.
+  - Generated specs continue to render whichever form the source Figma file uses; output is truthful pass-through, not a silent rewrite.
+
+  Run `npx uspec-skills update` to pick up the recommendation. No action needed on Figma libraries unless you want to rename your state-axis options to match.
+</Update>
+
 <Update label="V2.1 — May 2026" description="Figma plugin layout-wrapper descent and sub-component placement dedup">
   ## uSpec V2.1
 
