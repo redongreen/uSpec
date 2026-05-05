@@ -213,7 +213,7 @@ Downstream interpretation skills (`extract-api`, `extract-structure`, `extract-c
         "mainComponentName": "<string or null>",
         "parentSetName": "<string or null>",
         "subCompSetId": "<id or null>",
-        "topLevelInstanceId": "<idx:N for top-level children | slot:<slotName>:pref:<componentKey> for slot-preferred | slot:<slotName>:child:<idx>:<nodeId> for slot-default-child>",
+        "topLevelInstanceId": "<idx:N for top-level children of the *effective* container (see Layout-Wrapper Descent below) | wrapper:<depth> for layout wrapper FRAMEs that were descended through (depth 0 = outermost) | slot:<slotName>:pref:<componentKey> for slot-preferred | slot:<slotName>:child:<idx>:<nodeId> for slot-default-child>",
         "nodeType": "INSTANCE|FRAME|TEXT|VECTOR|...",
         "booleanOverrides": { "<propName>": "<bool>" } /* instance-scoped overrides from componentProperties on the placed instance; slot-preferred entries leave this empty — read preferredInstances[].booleanDefaults for the referenced component's defaults */,
         "subCompVariantAxes": { "<axisName>": ["<option>", "..."] } /* axes the sub-component itself exposes; for slot-preferred entries, mirrored from preferredInstances[].variantAxes so Phase I can walk it when constitutive */,
@@ -221,7 +221,10 @@ Downstream interpretation skills (`extract-api`, `extract-structure`, `extract-c
         "classificationReason": "<one-line reason>",
         "classificationEvidence": ["<signal>", "..."],
         "origin": "top-level|slot-preferred|slot-default-child",
-        "slotName": "<slot property name when origin !== 'top-level'; null otherwise>"
+        "slotName": "<slot property name when origin !== 'top-level'; null otherwise>",
+        "placementCount": "<integer; how many sibling placements share this entry's sub-component identity. 1 for solo placements; N for the homogeneous-array pattern (e.g. 6 for 'button group contains 6 selection-button instances'). Always 1 for wrapper:N entries and slot-origin entries.>",
+        "placementIndices": "<array of integers; original positions of all placements in the effective container's children, in order. [<self-index>] for solo top-level placements; [i, j, ...] for dedup'd top-level placements; [] for wrapper:N entries and slot-origin entries (which have no idx:N counterpart).>",
+        "placementsVary": "<bool; true when ≥2 placements differ on (mainComponentName, booleanOverrides) — i.e. the array is heterogeneous and the spec author may want to surface state demonstration. false for solo placements and homogeneous arrays. Read variants[*].treeHierarchical[<index>].instanceConfig for per-placement detail when this is true.>"
       }
     ],
     "ambiguousChildren": [
@@ -254,6 +257,42 @@ The plugin walks the component tree **once** per variant and emits three distinc
 All three views are produced from the same Figma walk inside Phase E per variant; the script emits into three separate arrays rather than walking three times. `revealedColorWalk` is produced in Phase G alongside `revealedTree`.
 
 **Layout tree** (`variants[].layoutTree`) is a compact Figma-only structure describing auto-layout nesting. Emitted once per variant from the `treeHierarchical` pass. Consumed by `extract-structure` Step 7 reasoning.
+
+### Layout-Wrapper Descent
+
+Designers commonly wrap a component's real sub-components in a single auto-layout FRAME (for clipping, scroll containers, padding, or visual grouping — e.g. Button group's `group` wrapper for the `overflow=scroll` variant). Without descent, the classification UI and `_childComposition.children[]` would only see the wrapper and miss the actual sub-components inside.
+
+**Rule (`getEffectiveChildContainer` in `safe.ts`):** while a node has exactly one child, that child is a `FRAME`, and the child has `layoutMode !== 'NONE'`, descend into it. Recurse so nested wrappers (`Variant > FRAME > FRAME > instances`) are also unwrapped.
+
+The rule is applied uniformly in:
+
+- `sendPreview()` — checklist enumeration
+- `buildFirstGuess()` — `_childComposition.children[]` synthesis
+- `extract()` post-walk validation — for `idx:N` lookups against `treeHierarchical`
+- `flatWalk()` in Phase E — for `slotIndex` detection
+- `hierWalk()` in Phase E — for `effective depth 0` promotion (see Depth Contract below)
+
+**`treeHierarchical` itself is unchanged in shape** — it still walks the real tree from the variant root, so wrapper FRAMEs remain visible there with all their dimensions, padding, and clipsContent data intact. The only change is the *depth metadata* attached to inner nodes: an INSTANCE sitting inside a wrapper chain now carries the same `subCompSetId`, `subCompVariantAxes`, and `booleanOverrides` it would carry if it were a direct child of the variant root, and its own children are walked one level (matching the existing top-level-INSTANCE descent rule).
+
+Each descended-through wrapper is emitted as an explicit `{ classification: "decorative", origin: "top-level", topLevelInstanceId: "wrapper:<depth>", classificationEvidence: ["layout-wrapper"] }` entry in `_childComposition.children[]` so the layout chrome is never silently dropped.
+
+`idx:N` in `topLevelInstanceId` indexes into the **effective container's** children, not the variant root's. Phase I is unaffected (it dispatches on `subCompSetId`, not on `idx`).
+
+### Sub-Component Placement Dedup
+
+The classification UI asks one question per distinct sub-component — "constitutive or referenced?" — so N placements of the same main component (e.g. six "selection button" placements inside a button group) collapse to **one** `_childComposition.children[]` entry instead of N. This matches the structural intent: an array sub-component is one classification with a count, not N independent decisions. Same principle as the slot-preferred dedup that's been in `sendPreview` since v1 (`seenMainIds`), now extended to top-level direct children via the shared `groupBySubComp` helper.
+
+**Dedup key:** `subCompSetId || mainComponentName` (set id when the sub-component is a `COMPONENT_SET` member, name fallback for plain components without a parent set).
+
+**Equivalence fingerprint (v1):** `mainComponentName + JSON-stringified booleanOverrides`. `mainComponentName` encodes the variant choice for `COMPONENT_SET` members (e.g. `"state=default, size=medium"`), so variant-different and boolean-different placements are detected. Instance-swap and text-override differences are intentionally not in the v1 fingerprint — extend `safe.ts` `groupBySubComp` callers in both `sendPreview` and `buildFirstGuess` simultaneously if you need them.
+
+The first occurrence of each group becomes the representative entry; multiplicity is preserved in `placementCount`, `placementIndices`, and `placementsVary` so consumers can:
+
+- Render arrays as arrays without re-walking the tree (`placementCount > 1`).
+- Detect heterogeneous arrays that may need state demonstration (`placementsVary: true`).
+- Map back to specific nodes inside `variants[*].treeHierarchical` when per-placement detail is needed (`placementIndices`).
+
+`treeHierarchical` / `treeFlat` / `colorWalk` are unaffected — they still emit one entry per actual Figma node.
 
 ---
 

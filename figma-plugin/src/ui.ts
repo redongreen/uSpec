@@ -235,9 +235,19 @@ function renderInstanceRow(c: PreviewChild): HTMLElement {
   const row = document.createElement('div');
   row.className = 'child';
 
+  // Name plus a "× N" placement-count badge for sub-components placed multiple times in
+  // the parent (the homogeneous-array pattern: e.g. button group's six selection buttons
+  // collapse to one row with × 6). The designer classifies once; multiplicity is data.
   const name = document.createElement('div');
   name.className = 'child-name';
   name.textContent = c.name;
+  if (c.placementCount && c.placementCount > 1) {
+    const badge = document.createElement('span');
+    badge.className = 'count-badge';
+    badge.textContent = `× ${c.placementCount}`;
+    name.appendChild(document.createTextNode(' '));
+    name.appendChild(badge);
+  }
   row.appendChild(name);
 
   const seg = document.createElement('div');
@@ -267,7 +277,11 @@ function renderInstanceRow(c: PreviewChild): HTMLElement {
       : c.origin === 'slot-default-child'
         ? 'default fill · '
         : '';
-  meta.innerHTML = `${escapeHtml(originTag)}${escapeHtml(parent)} · <span class="filename">${escapeHtml(
+  // Surface the "placements vary" signal so the designer knows the homogeneous-array
+  // assumption is broken (e.g. one of the six items is in a different state). They can
+  // still classify once — variation is reported in the JSON for the spec generator.
+  const variesTag = c.placementsVary ? 'varies in state · ' : '';
+  meta.innerHTML = `${escapeHtml(originTag)}${escapeHtml(variesTag)}${escapeHtml(parent)} · <span class="filename">${escapeHtml(
     c.classificationReason
   )}</span>`;
   row.appendChild(meta);

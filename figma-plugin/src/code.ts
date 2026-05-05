@@ -15,10 +15,16 @@ import { runPhaseG } from './phaseG';
 import { runPhaseH } from './phaseH';
 import { runPhaseI } from './phaseI';
 import { buildFirstGuess } from './childComposition';
-import { slugify, sg } from './safe';
+import {
+  slugify,
+  sg,
+  getEffectiveChildContainer,
+  getEffectiveChildContainerOfWalked,
+  groupBySubComp,
+} from './safe';
 import { resolvePreferredComponent } from './resolveKey';
 
-const PLUGIN_VERSION = '2.0.0';
+const PLUGIN_VERSION = '2.1.0';
 
 figma.showUI(__html__, { width: 420, height: 620, themeColors: true });
 
@@ -69,7 +75,13 @@ async function sendPreview(): Promise<void> {
       : target;
 
     const children: PreviewChild[] = [];
-    const kids = sg(defaultVariant, 'children');
+    // Descend through any single auto-layout FRAME wrappers (e.g. a clipping/scroll
+    // container) so the checklist surfaces the real top-level sub-components, not the
+    // wrapper. The wrapper itself is recorded as a decorative entry below so consumers
+    // of `_childComposition` can still see it.
+    const { container: effectiveContainer, wrappers } =
+      getEffectiveChildContainer(defaultVariant);
+    const kids = sg(effectiveContainer, 'children');
     const parentName = target.name;
     const escaped = parentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const nameRegex = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i');
@@ -96,6 +108,38 @@ async function sendPreview(): Promise<void> {
       }
     };
 
+    // Surface every descended-through wrapper as an explicit decorative entry, indexed
+    // by descent depth (`wrapper:0` = outermost). Keeps layout chrome visible to the
+    // designer (UI shows it under "Decorative") and to consumers of _childComposition.
+    wrappers.forEach((w: any, depth: number) => {
+      children.push({
+        name: w.name,
+        nodeType: w.type,
+        mainComponentName: null,
+        parentSetName: null,
+        subCompSetId: null,
+        topLevelInstanceId: `wrapper:${depth}`,
+        booleanOverrides: {},
+        subCompVariantAxes: {},
+        classification: 'decorative',
+        classificationReason:
+          'Layout wrapper FRAME — descended for sub-component classification.',
+        classificationEvidence: ['layout-wrapper'],
+        origin: 'top-level',
+        slotName: null,
+        placementCount: 1,
+        placementIndices: [],
+        placementsVary: false,
+      });
+    });
+
+    // Build a raw entry per direct child of the effective container, BEFORE dedup. The
+    // dedup pass below collapses N placements of the same sub-component into one entry
+    // with `placementCount: N` so the classification UI asks the designer one question
+    // per sub-component, not N. The original positions are preserved in
+    // `placementIndices` so consumers can map back to specific nodes in
+    // `treeHierarchical[*].children[*]`.
+    const rawTopLevel: PreviewChild[] = [];
     if (Array.isArray(kids)) {
       for (let i = 0; i < kids.length; i++) {
         const c: any = kids[i];
@@ -113,6 +157,9 @@ async function sendPreview(): Promise<void> {
           classificationEvidence: [],
           origin: 'top-level',
           slotName: null,
+          placementCount: 1,
+          placementIndices: [i],
+          placementsVary: false,
         };
         if (c.type === 'INSTANCE') {
           try {
@@ -141,8 +188,27 @@ async function sendPreview(): Promise<void> {
           entry.classificationReason = 'Non-instance node — not a sub-component.';
           entry.classificationEvidence.push('not-instance');
         }
-        children.push(entry);
+        rawTopLevel.push(entry);
       }
+    }
+
+    // Dedup top-level INSTANCE entries by sub-component identity. Same key + fingerprint
+    // as buildFirstGuess so the preview, the first guess, and the user-classification
+    // round-trip all agree on `topLevelInstanceId: idx:<firstOccurrence>`.
+    const groups = groupBySubComp(
+      rawTopLevel,
+      (e) => {
+        if (e.nodeType !== 'INSTANCE') return null;
+        return e.subCompSetId || e.mainComponentName || null;
+      },
+      (e) => `${e.mainComponentName || ''}|${JSON.stringify(e.booleanOverrides || {})}`
+    );
+    for (const g of groups) {
+      const rep = g.representative;
+      rep.placementCount = g.members.length;
+      rep.placementIndices = g.indices;
+      rep.placementsVary = g.varies;
+      children.push(rep);
     }
 
     // Scan SLOT properties so the UI can surface every component the designer either
@@ -232,6 +298,9 @@ async function sendPreview(): Promise<void> {
               classificationEvidence: [],
               origin: 'slot-preferred',
               slotName,
+              placementCount: 1,
+              placementIndices: [],
+              placementsVary: false,
             };
             classifyInstance(entry);
             children.push(entry);
@@ -298,6 +367,9 @@ async function sendPreview(): Promise<void> {
               classificationEvidence: [],
               origin: 'slot-default-child',
               slotName,
+              placementCount: 1,
+              placementIndices: [],
+              placementsVary: false,
             };
             classifyInstance(entry);
             children.push(entry);
@@ -510,6 +582,12 @@ async function extract(
         classificationEvidence: ['user-selected'],
         origin: uc.origin,
         slotName: uc.slotName,
+        // Slot-origin entries don't dedup across direct-child placements; they're already
+        // de-dup'd per-slot by `seenMainIds` in sendPreview. Keep the placement* fields
+        // populated with neutral defaults so downstream consumers can read them uniformly.
+        placementCount: 1,
+        placementIndices: [],
+        placementsVary: false,
       });
     }
 
@@ -577,6 +655,13 @@ async function extract(
     // `children` array in the default variant's treeHierarchical. Surface any miss as a
     // warning. Slot-origin entries are skipped — their `topLevelInstanceId` uses a
     // `slot:...` scheme and they don't appear as direct children of the variant tree.
+    //
+    // `idx:N` is indexed against the *effective* container — the same descent rule used
+    // by sendPreview / buildFirstGuess — so we apply the same descent here before the
+    // lookup, otherwise the validation would race ahead of any wrapper FRAME.
+    const { container: effectiveWalkedContainer } = getEffectiveChildContainerOfWalked(
+      defaultVariantResult.treeHierarchical
+    );
     const missingConstitutiveChildren = childComposition.children
       .filter(
         (c) =>
@@ -587,7 +672,7 @@ async function extract(
       )
       .filter((c) => {
         const idx = Number((c.topLevelInstanceId || '').replace('idx:', ''));
-        const entry = defaultVariantResult.treeHierarchical?.children?.[idx];
+        const entry = effectiveWalkedContainer.children?.[idx];
         return !entry || !Array.isArray(entry.children) || entry.children.length === 0;
       });
     if (missingConstitutiveChildren.length > 0) {

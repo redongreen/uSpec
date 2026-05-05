@@ -40,3 +40,8 @@ packages/cli/templates/
 # Throwaway React scratch project for validating generated component-md specs.
 # Not part of the open-source distribution.
 component-example/
+
+# Local component-md outputs from running create-component-md against the
+# maintainer's own design system. Not part of the open-source distribution —
+# consumer projects DO track their own components/ folder.
+components/

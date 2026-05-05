@@ -1,6 +1,6 @@
 {
   "name": "uspec-extract",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Figma plugin that walks a selected component + its sub-components and emits the complete _base.json the create-component-md skill chain consumes.",
   "scripts": {

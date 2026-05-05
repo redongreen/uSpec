@@ -4,12 +4,26 @@
 //   depth = -1  → wrapper pass over the variant root. Emits the root entry, then recurses its
 //                 children at depth 0. The `isTopLevelInstance` check below fires for INSTANCE
 //                 children at depth 0 so they descend one level into their subtree.
-//   depth = 0   → direct child of the variant root. INSTANCE here is a top-level sub-component
-//                 and gets descended once.
+//   depth = 0   → direct child of the *effective* container — i.e. the variant root or, when
+//                 the variant wraps its sub-components in a single auto-layout FRAME chain,
+//                 the deepest such wrapper. Children of nodes in `ctx.wrapperIds` keep depth 0
+//                 instead of incrementing, so an INSTANCE sitting inside a wrapper still gets
+//                 the full top-level metadata block (subCompSetId, variant axes, boolean
+//                 overrides) and gets descended once. Wrapper FRAMEs themselves stay in the
+//                 walked tree so layoutTree / dimensions data is preserved.
 //   depth >= 1  → descendant of a top-level INSTANCE. Non-INSTANCE nodes keep recursing;
 //                 INSTANCE nodes stop (they are sub-sub-components, out of scope).
 
-import { safeLen, sg, sidStr, rv, md, rgbToHex } from './safe';
+import {
+  safeLen,
+  sg,
+  sidStr,
+  rv,
+  md,
+  rgbToHex,
+  getEffectiveChildContainer,
+  getEffectiveChildContainerOfWalked,
+} from './safe';
 
 export type PhaseEVariantResult = {
   id: string;
@@ -31,6 +45,11 @@ export type PhaseEVariantResult = {
 type WalkContext = {
   styleIdInlineSamples: Record<string, any>;
   referencedVariableIds: Set<string>;
+  // Node ids of layout-wrapper FRAMEs descended through by `getEffectiveChildContainer`.
+  // hierWalk consults this set to keep `effective depth` at 0 across the wrapper chain so
+  // INSTANCEs sitting inside a wrapper still receive top-level metadata (subCompSetId,
+  // variant axes, boolean overrides) and get descended one level into their subtree.
+  wrapperIds: Set<string>;
 };
 
 async function resolveBinding(node: any, prop: string): Promise<string | null> {
@@ -352,7 +371,13 @@ async function hierWalk(
   const isTopLevelInstance = depth === 0 && node.type === 'INSTANCE';
   const kids = sg(node, 'children');
   if (kids && kids.length > 0 && (node.type !== 'INSTANCE' || isTopLevelInstance)) {
-    const childDepth = depth === -1 ? 0 : depth + 1;
+    // Layout-wrapper FRAMEs (precomputed in ctx.wrapperIds) keep effective depth at 0
+    // so the INSTANCE sitting at the bottom of the wrapper chain is treated as a real
+    // top-level sub-component (gets subCompSetId, variant axes, etc.).
+    let childDepth: number;
+    if (depth === -1) childDepth = 0;
+    else if (ctx.wrapperIds.has((node as any).id)) childDepth = depth;
+    else childDepth = depth + 1;
     const arr: any[] = [];
     for (const c of kids) arr.push(await hierWalk(c, childDepth, ctx));
     entry.children = arr;
@@ -408,13 +433,9 @@ async function flatWalk(variant: any): Promise<any[]> {
   rootEl.name =
     variant.parent && variant.parent.type === 'COMPONENT_SET' ? variant.parent.name : variant.name;
   elements.push(rootEl);
-  let childContainer = variant;
-  if (
-    variant.children.length === 1 &&
-    variant.children[0].type === 'FRAME' &&
-    variant.children[0].layoutMode !== 'NONE'
-  )
-    childContainer = variant.children[0];
+  // Descend through any layout-wrapper FRAMEs so identically-named sibling instances
+  // (which share `slotIndex`) are detected against the real container, not a wrapper.
+  let { container: childContainer } = getEffectiveChildContainer(variant);
   if (childContainer.children.length === 1 && childContainer.children[0].type === 'SLOT')
     childContainer = childContainer.children[0];
   async function walk(container: any) {
@@ -545,9 +566,16 @@ export async function runPhaseE(variantId: string): Promise<PhaseEVariantResult>
   const variant = await figma.getNodeByIdAsync(variantId);
   if (!variant) throw new Error('Variant not found: ' + variantId);
 
+  // Precompute the wrapper chain so hierWalk can promote INSTANCEs sitting inside it to
+  // effective depth 0. The walked tree itself still contains the wrapper FRAMEs — only
+  // the depth-counting changes.
+  const { container: effectiveLive, wrappers } = getEffectiveChildContainer(variant);
+  const wrapperIds = new Set<string>(wrappers.map((w: any) => w.id));
+
   const ctx: WalkContext = {
     styleIdInlineSamples: {},
     referencedVariableIds: new Set<string>(),
+    wrapperIds,
   };
 
   const payload: Partial<PhaseEVariantResult> = {
@@ -563,16 +591,19 @@ export async function runPhaseE(variantId: string): Promise<PhaseEVariantResult>
   payload.colorWalk = await colorWalk(variant, '', null, ctx);
 
   // Post-walk validation: every top-level INSTANCE child should have its `children`
-  // array populated after the walk. Missing entries are reported to the caller via
-  // `_selfCheck.missingChildren` so a `HIERWALK_MISSING_CHILDREN` warning can be raised.
-  const walkedChildren = Array.isArray(payload.treeHierarchical.children)
-    ? payload.treeHierarchical.children
+  // array populated after the walk. "Top-level" is measured against the effective
+  // container so a wrapper FRAME doesn't mask missing inner-instance children.
+  const { container: effectiveWalked } = getEffectiveChildContainerOfWalked(
+    payload.treeHierarchical
+  );
+  const walkedChildren = Array.isArray(effectiveWalked.children)
+    ? effectiveWalked.children
     : [];
   const missingChildren: PhaseEVariantResult['_selfCheck']['missingChildren'] = [];
-  const variantKids = sg(variant, 'children');
-  if (Array.isArray(variantKids)) {
-    for (let i = 0; i < variantKids.length; i++) {
-      const src = variantKids[i];
+  const effectiveKids = sg(effectiveLive, 'children');
+  if (Array.isArray(effectiveKids)) {
+    for (let i = 0; i < effectiveKids.length; i++) {
+      const src = effectiveKids[i];
       const srcKids = sg(src, 'children');
       if (src.type === 'INSTANCE' && Array.isArray(srcKids) && srcKids.length > 0) {
         const walked = walkedChildren[i];

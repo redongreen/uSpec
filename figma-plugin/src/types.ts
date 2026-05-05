@@ -22,6 +22,16 @@ export type PreviewChild = {
   // Populated when origin !== 'top-level'. Identifies which slot the entry belongs to so
   // the UI can group entries and downstream consumers can trace the classification back.
   slotName: string | null;
+  // Sub-component multiplicity. When the parent contains N placements of the same main
+  // component (e.g. six "selection button" placements inside a button group), the
+  // classification UI surfaces ONE row for the sub-component and records the multiplicity
+  // here so downstream consumers can distinguish "homogeneous array of N" from "single
+  // placement". 1/[<self-index>]/false for solo placements; N/[i, j, ...]/bool for
+  // dedup'd placements. Always 1/[]/false for wrapper FRAME entries (`wrapper:N`) and
+  // for slot-origin entries (which already dedup separately via `seenMainIds`).
+  placementCount: number;
+  placementIndices: number[];
+  placementsVary: boolean;
 };
 
 export type Preview = {
