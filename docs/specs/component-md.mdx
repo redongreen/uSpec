@@ -137,8 +137,8 @@ flowchart TB
 ```
 
 <Steps>
-  <Step title="Preflight">
-    The orchestrator validates `_base.json` against the plugin schema, stages it into `.uspec-cache/{componentSlug}/`, and reviews any designer-in-the-loop classifications from the plugin.
+  <Step title="Preflight + prepare">
+    The orchestrator shells out to `uspec-skills component-md prepare`, which validates `_base.json` against the bundled plugin schema, stages it into `.uspec-cache/{componentSlug}/`, and writes a prepare manifest plus four compact evidence slices. The agent parses the JSON manifest and uses those slices to steer the downstream specialists.
   </Step>
   <Step title="API dictionary (solo)">
     `extract-api` runs first, inline in the parent context. It produces the component's property dictionary and writes `api-dictionary.json`. The dictionary keeps the three downstream specialists aligned on property names and state vocabularies.
@@ -204,11 +204,17 @@ The accordions below cover issues with the generated `.md` itself. For plugin in
 
 <AccordionGroup>
   <Accordion title="Validation error: _base.json does not match schema">
-    The plugin output failed Ajv schema validation.
+    The plugin output failed Ajv schema validation during the CLI prepare stage.
 
     - Confirm the plugin version matches the skill version. If you updated one without the other, the schema can drift.
     - Re-run the plugin and try again.
-    - If the problem persists, run the validator directly to see the full diagnostic:
+    - Run the prepare command directly to see the full diagnostic:
+
+    ```bash
+    npx uspec-skills component-md prepare --base ~/Downloads/your-component-_base.json --json
+    ```
+
+    Contributors running from source can also use:
 
     ```bash
     node figma-plugin/scripts/validate-base.mjs ~/Downloads/your-component-_base.json

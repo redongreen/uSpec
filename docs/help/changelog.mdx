@@ -3,6 +3,28 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V2.6 — July 2026" description="Deterministic Component Markdown prepare stage in the CLI — validate, stage, and slice _base.json before the AI interpretation pass — shipping in uspec-skills 0.3.2">
+  ## uSpec V2.6
+
+  The [Component Markdown](/specs/component-md) pipeline now opens with a **deterministic CLI prepare stage** before any AI interpretation runs. `uspec-skills component-md prepare` validates the plugin's `_base.json`, stages it into `.uspec-cache/{componentSlug}/`, and writes a prepare manifest plus four compact evidence slices — one per specialist domain. The orchestrator and `extract-*` skills consume those slices directly, so the agent no longer re-derives the same facts from the full 500 KB+ base file on every pass.
+
+  ### New CLI command: `component-md prepare`
+
+  - **`npx uspec-skills component-md prepare --base <path> [--json]`** validates against the bundled Ajv schema (same contract as the Figma plugin validator), stages `{componentSlug}-_base.json`, and writes:
+    - `{componentSlug}-prepare-manifest.json` — hash, paths, readiness flags, one-line summary
+    - `{componentSlug}-evidence-{api,structure,color,voice}.json` — compact domain slices for the four specialists
+  - **`create-component-md` Step 1** now shells out to this command instead of manually validating and staging. The skill resolves the CLI in order: local monorepo build → published npm → version-pinned `@0.3.2`.
+  - **`extract-*` evidence fast path** — when a prepare evidence file's `_meta.baseSourceHash` matches the staged base, the specialist uses the slice for Step 3 instead of rebuilding from the full `_base.json`.
+
+  ### Why this matters
+
+  - Prepare runs in ~200 ms and is fully deterministic — two runs against the same `_base.json` produce byte-identical evidence slices.
+  - The four AI interpretation passes start from compact, pre-classified inputs, reducing token load and eliminating repeated schema validation work.
+  - npm consumers no longer need the `figma-plugin/` package on disk to validate exports.
+
+  Run `npx uspec-skills update` to pick up the skill changes (this release ships as `uspec-skills` 0.3.2). No action needed on Figma libraries or the uSpec Extract plugin.
+</Update>
+
 <Update label="V2.5 — June 2026" description="Component Markdown specs now open the Structure section with an Anatomy layer tree, and the reconciliation pass stops flagging top-level booleans and decomposed states as false-positive gaps — shipping in uspec-skills 0.3.1">
   ## uSpec V2.5
 

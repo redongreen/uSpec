@@ -2,13 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, cp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve, dirname } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(__dirname, '..', '..', '..');
-const tagFixture = join(repoRoot, 'tag-_base.json');
+const tagFixture = join(__dirname, 'fixtures', 'tag-_base.json');
 const cliEntry = join(__dirname, '..', 'dist', 'index.js');
 
 function runPrepare(cwd, extraArgs = []) {

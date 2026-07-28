@@ -62,16 +62,31 @@ Read `uspecs.config.json` at the project root. Extract:
 
 **`baseJsonPath` is required.** If it is missing, abort with a one-line diagnostic: "run the uSpec Extract plugin in Figma and rerun with `baseJsonPath=<path>` — see `figma-plugin/README.md`."
 
-**Run the deterministic prepare stage first.** Shell out (non-interactive):
+**Run the deterministic prepare stage first.** Resolve the CLI executable **before** shelling out — do not assume `npx uspec-skills` is new enough to expose `component-md prepare`.
 
-```bash
-npx uspec-skills component-md prepare --base "<baseJsonPath>" --json \
-  $( [ -n "$optionalContext" ] && printf %s "--context \"$optionalContext\"" )
-```
+**CLI resolution order** (try each; stop at the first that works):
 
-If the user passed an explicit output path, append `--output "<outputPath>"`.
+1. **Local dev checkout** — when `packages/cli/dist/index.js` exists in the project root:
+   ```bash
+   node packages/cli/dist/index.js component-md prepare --base "<baseJsonPath>" --json
+   ```
+   If missing but `packages/cli/` exists, run `npm run build:cli` from the project root once, then retry step 1.
 
-- Any non-zero exit → abort with the CLI stderr (validation/staging failure). Do **not** fall back to manual validation or staging.
+2. **Published npm** — when step 1 is unavailable:
+   ```bash
+   npx uspec-skills component-md prepare --base "<baseJsonPath>" --json
+   ```
+   When this fails with `unknown command: component-md`, retry once with an explicit version pin:
+   ```bash
+   npx uspec-skills@0.3.2 component-md prepare --base "<baseJsonPath>" --json
+   ```
+
+3. **Abort** — when both paths fail, stop with:
+   > `component-md prepare` is unavailable. In the uSpec repo run `npm run build:cli`, then rerun create-component-md. Else run `npx uspec-skills update` after upgrading to uspec-skills ≥ 0.3.2.
+
+Append `--context "<optionalContext>"` when the orchestrator received non-empty `optionalContext`. Append `--output "<outputPath>"` when the user passed an explicit output path.
+
+- Any non-zero exit from a working CLI → abort with stderr (validation/staging failure). Do **not** fall back to manual validation or staging once a CLI with `component-md prepare` is available.
 - Parse the JSON manifest from stdout. Keep: `componentSlug`, `cachePath`, `stagedBasePath`, `outputPath`, `baseSourceHash`, `readiness`, `summaries`, `paths.evidence`, and the one-line `summaryLine`.
 
 From the manifest, also read `_meta.fileKey`, `_meta.nodeId`, `_meta.componentSlug`, `_meta.optionalContext`, `_meta.extractionSource` via the staged base at `stagedBasePath` only when a field is missing from the manifest (prefer manifest summaries).

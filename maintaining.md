@@ -28,7 +28,7 @@
                                      ▼
                   ┌──────────────────────────────────┐
                   │  registry.npmjs.org              │
-                  │  uspec-skills@0.2.x              │
+                  │  uspec-skills@0.3.x              │
                   └──────────────────────────────────┘
                                      │
                                      │  npx uspec-skills@latest init
@@ -54,7 +54,7 @@ uSpec/
 │   └── <area>/*.md               agent instructions, reference material
 │
 ├── packages/cli/                 the published CLI lives here
-│   ├── package.json              "name": "uspec-skills", "version": "0.2.x"
+│   ├── package.json              "name": "uspec-skills", "version": "0.3.x"
 │   ├── .npmrc                    pins this folder's npm registry to public npm
 │   ├── src/                      TypeScript source for the CLI
 │   ├── scripts/
@@ -80,7 +80,7 @@ The `dist/` and `templates/` folders inside `packages/cli/` are **build outputs*
 
 When a user runs `npx uspec-skills@latest init` in some random folder, here's the chain:
 
-1. **`npx`** queries `registry.npmjs.org` for the package called `uspec-skills`, gets the version tagged `latest` (currently `0.2.0`), and downloads the tarball.
+1. **`npx`** queries `registry.npmjs.org` for the package called `uspec-skills`, gets the version tagged `latest` (currently `0.3.2`), and downloads the tarball.
 2. The tarball contains `dist/index.js` (the bundled CLI) and `templates/` (the skills + references that ship with this version).
 3. `npx` runs the `bin` defined in `package.json` (`uspec-skills` → `./dist/index.js`).
 4. The CLI walks up from the user's current directory looking for a project marker (`.git/`, `package.json`, or `uspecs.config.json`). If none is found, it bootstraps into the current directory (this is the fix that shipped in `0.1.1`).
@@ -168,18 +168,18 @@ If you add or remove a page, update `docs/docs.json` so it appears in the naviga
 
 ## Versioning rules of thumb
 
-You're on `0.2.x`. The `0.x.y` range is npm's convention for "early, expect breakage." Use it deliberately:
+You're on `0.3.x`. The `0.x.y` range is npm's convention for "early, expect breakage." Use it deliberately:
 
 | What you changed | Bump | Example |
 |---|---|---|
-| Fixed a bug, edited a skill, improved an error message | patch | `0.2.0` → `0.2.1` |
-| Added a new skill, added a new CLI command, added a new field to `uspecs.config.json` | patch (still 0.x — anything goes) | `0.2.1` → `0.2.2` |
-| Renamed a CLI flag, changed config schema, removed a skill | minor | `0.2.x` → `0.3.0` |
+| Fixed a bug, edited a skill, improved an error message | patch | `0.3.1` → `0.3.2` |
+| Added a new skill, added a new CLI command, added a new field to `uspecs.config.json` | patch (still 0.x — anything goes) | `0.3.2` → `0.3.3` |
+| Renamed a CLI flag, changed config schema, removed a skill | minor | `0.3.x` → `0.4.0` |
 | You're confident the CLI surface is stable and you'll commit to not breaking it | major | `0.x.y` → `1.0.0` |
 
-Bumps in `0.2.x` are cheap. Don't agonize. Once you ship `1.0.0`, every breaking change costs a major bump.
+Bumps in `0.3.x` are cheap. Don't agonize. Once you ship `1.0.0`, every breaking change costs a major bump.
 
-**Versioning the product vs. the CLI.** "uSpec" the product is at V2.0 (per the changelog and docs). `uspec-skills` the npm package is at `0.2.0` and versions on its own track. They are not the same number — and shouldn't be. Compare React (v18, the framework) vs. `create-react-app` (v5, the CLI). The product version goes in the changelog and docs; the npm version goes in `package.json`.
+**Versioning the product vs. the CLI.** "uSpec" the product is at V2.6 (per the changelog and docs). `uspec-skills` the npm package is at `0.3.2` and versions on its own track. They are not the same number — and shouldn't be. Compare React (v18, the framework) vs. `create-react-app` (v5, the CLI). The product version goes in the changelog and docs; the npm version goes in `package.json`.
 
 ## Publishing in detail
 
@@ -215,6 +215,31 @@ npm publish --access public
 # 5. Verify it landed
 npm view uspec-skills version
 #    Should print your new version. Sometimes there's a few-second lag.
+```
+
+### GitHub tag and release
+
+After merging to `main` and publishing to npm, tag the release commit and create a GitHub Release. Product version (`v2.6.0`) and npm version (`0.3.2`) are separate — the tag uses the product version; the npm tarball uses `package.json`.
+
+```bash
+# From repo root, on main after merge
+git pull origin main
+git tag -a v2.6.0 -m "uSpec V2.6 / uspec-skills 0.3.2"
+git push origin v2.6.0
+
+# Create the GitHub Release (notes from docs/help/changelog.mdx)
+gh release create v2.6.0 \
+  --title "uSpec V2.6" \
+  --notes-file /tmp/v2.6-release-notes.md \
+  --latest
+```
+
+Write `/tmp/v2.6-release-notes.md` from the matching `<Update>` block in `docs/help/changelog.mdx` before running `gh release create`. Mintlify auto-deploys docs from `main` within 1–2 minutes — no separate docs publish step.
+
+If a product release tag already exists on `main` but has no GitHub Release (e.g. `v2.5.0` was tagged without `gh release create`), backfill it:
+
+```bash
+gh release create v2.5.0 --title "uSpec V2.5" --notes-file /tmp/v2.5-release-notes.md
 ```
 
 You'll see warnings like:
@@ -348,9 +373,15 @@ For when you've done this enough times to skip the explanations:
 cd packages/cli
 # bump "version" in package.json
 npm run build
+npm run test                     # prepare tests + typecheck via build
 npm publish --dry-run            # sanity check
 npm publish --access public      # opens browser for web-based 2FA approval
 npm view uspec-skills version    # verify
+
+# After merge to main
+git tag -a v2.6.0 -m "uSpec V2.6 / uspec-skills 0.3.2"
+git push origin v2.6.0
+gh release create v2.6.0 --title "uSpec V2.6" --notes-file /tmp/v2.6-release-notes.md --latest
 ```
 
 ```bash
@@ -366,6 +397,7 @@ npx --yes uspec-skills@<just-published-version> doctor
 | Edit a reference doc | Edit `references/<area>/*.md`, bump version, build, publish |
 | Add a new skill | New folder under `skills/`, update `implementation.md`/`CLAUDE.md`/`AGENTS.md`, bump, build, publish |
 | Edit CLI behavior | Edit `packages/cli/src/`, bump, build, publish |
+| Ship a product release | Merge to `main`, publish npm, tag `vX.Y.Z`, `gh release create` |
 | Edit docs site | Edit `docs/*.mdx`, push to `main`. No publish. |
 | Edit Figma plugin | Edit `figma-plugin/src/`, push to `main`, publish the update to Figma Community. No npm publish. |
 | Roll back a bad publish | Ship a patch. Don't unpublish. |

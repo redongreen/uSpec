@@ -599,7 +599,7 @@ The plugin walks the selected `COMPONENT` or `COMPONENT_SET` (a selected variant
 
 **Inline font capture.** Text style IDs are recorded, but inline font family + style + size + weight are also captured on every text node so typography data survives even when a library-linked text style cannot be resolved.
 
-**Schema + validator.** The full `_base.json` shape is documented in [`figma-plugin/docs/base-json-schema.md`](figma-plugin/docs/base-json-schema.md). An Ajv validator lives at `figma-plugin/scripts/validate-base.mjs` and is shell-executed by the orchestrator's Step 1 — non-zero exit aborts the run with the validator's FAIL output.
+**Schema + validator.** The full `_base.json` shape is documented in [`figma-plugin/docs/base-json-schema.md`](figma-plugin/docs/base-json-schema.md). The orchestrator's Step 1 calls `uspec-skills component-md prepare`, which bundles the same Ajv schema (ported from `figma-plugin/scripts/validate-base.mjs`) so npm consumers do not need the plugin package on disk. Non-zero exit aborts the run with the validator's FAIL output. The plugin-local validator remains available for contributors who run `figma-plugin/` from source.
 
 ### `create-component-md` orchestrator
 
@@ -611,17 +611,16 @@ Inputs:
 
 Workflow (abridged — the canonical checklist lives in `.cursor/skills/create-component-md/SKILL.md`):
 
-1. **Preflight.** Read `uspecs.config.json`, load `_base.json`, run the Ajv validator. Extract `_meta.{fileKey, nodeId, componentSlug, optionalContext, extractionSource}`.
-2. **Resolve `componentSlug`** and the output path (default `./components/{componentSlug}.md`). Create `./components/` (tracked) and `.uspec-cache/{componentSlug}/` (gitignored).
+1. **Preflight + prepare.** Read `uspecs.config.json`, then shell out to `uspec-skills component-md prepare --base "<baseJsonPath>" --json` (local `packages/cli/dist/index.js` in the monorepo, or `npx uspec-skills@<version>` for consumers). The CLI validates against the bundled Ajv schema, stages `{componentSlug}-_base.json` into `.uspec-cache/{componentSlug}/`, and writes a prepare manifest plus four domain-specific evidence slices (`evidence-api`, `evidence-structure`, `evidence-color`, `evidence-voice`). Parse the JSON manifest from stdout; any non-zero exit aborts the run. Do **not** fall back to manual validation or staging once a working CLI is available.
+2. **Resolve `componentSlug`** and the output path (default `./components/{componentSlug}.md`) from the manifest. Create `./components/` (tracked) if missing; `.uspec-cache/{componentSlug}/` is created by prepare.
 3. **Announce the plan.** One-line summary of what will be generated.
-4. **Stage `_base.json`** into `.uspec-cache/{componentSlug}/_base.json`.
-5. **Run `extract-api` inline in the parent.** Produces `{componentSlug}-api.json` and `api-dictionary.json`. The dictionary lands in the parent so downstream specialists can read it.
-6. **Parallel fan-out.** Dispatch `extract-structure`, `extract-color`, `extract-voice` as three `generalPurpose` subagents in a single batch. Each subagent holds its own `_base.json` + `api-dictionary.json` context; the parent keeps only the returned one-line summary + cache-file path from each.
-7. **Reconciliation (Step 8.5).** Compare the three specialist artifacts for typed disagreements (e.g., same element classified as `constitutive` in structure but `referenced` in voice; variant axis present in one artifact and absent in another). When `reconciliation.autoRetry === true`, re-run the offending specialist with the mismatch payload attached, up to a bounded retry count. Write the final verdict to `reconciliation.json`.
-8. **Render the `.md`** per `component-md/agent-component-md-instruction.md` using all four cache files + `api-dictionary.json`.
-9. **Integrity check (Step 9.5).** Validate every cache file's shape, assert axis-name consistency across artifacts, assert voice state platform coverage, assert the `coverageMatrix` artifact from `extract-structure` is `complete === true`, and recount `framesWalked` independently. Abort on failure.
-10. **Audit + summary.** Emit a one-line run summary.
-11. **Recursion manifest (Step 10.5).** Emit a manifest of constitutive children so the caller can fan out to generate per-child `.md` specs without re-walking `_base.json`.
+4. **Run `extract-api` inline in the parent.** Pass `evidenceApiPath` from the manifest when the hash matches. Produces `{componentSlug}-api.json` and `api-dictionary.json`. The dictionary lands in the parent so downstream specialists can read it.
+5. **Parallel fan-out.** Dispatch `extract-structure`, `extract-color`, `extract-voice` as three `generalPurpose` subagents in a single batch. Each subagent receives its domain's evidence path from the manifest when the hash matches (evidence fast path); otherwise it reads the staged base. The parent keeps only the returned one-line summary + cache-file path from each.
+6. **Reconciliation (Step 8.5).** Compare the three specialist artifacts for typed disagreements (e.g., same element classified as `constitutive` in structure but `referenced` in voice; variant axis present in one artifact and absent in another). When `reconciliation.autoRetry === true`, re-run the offending specialist with the mismatch payload attached, up to a bounded retry count. Write the final verdict to `reconciliation.json`.
+7. **Render the `.md`** per `component-md/agent-component-md-instruction.md` using all four cache files + `api-dictionary.json`.
+8. **Integrity check (Step 9.5).** Validate every cache file's shape, assert axis-name consistency across artifacts, assert voice state platform coverage, assert the `coverageMatrix` artifact from `extract-structure` is `complete === true`, and recount `framesWalked` independently. Abort on failure.
+9. **Audit + summary.** Emit a one-line run summary.
+10. **Recursion manifest (Step 10.5).** Emit a manifest of constitutive children so the caller can fan out to generate per-child `.md` specs without re-walking `_base.json`.
 
 ### `.uspec-cache/` layout
 
@@ -629,13 +628,18 @@ Produced per component by the orchestrator. `.uspec-cache/` is gitignored.
 
 ```
 .uspec-cache/{componentSlug}/
-├── _base.json                      staged copy of plugin output
-├── {componentSlug}-api.json        from extract-api
-├── {componentSlug}-structure.json  from extract-structure
-├── {componentSlug}-color.json      from extract-color
-├── {componentSlug}-voice.json      from extract-voice
-├── api-dictionary.json             shared dictionary that steers structure/color/voice
-└── reconciliation.json             Step 8.5 verdicts + retry log
+├── {componentSlug}-_base.json              staged copy of plugin output (written by prepare)
+├── {componentSlug}-prepare-manifest.json   prepare stage manifest (hash, paths, readiness)
+├── {componentSlug}-evidence-api.json       deterministic API evidence slice (prepare)
+├── {componentSlug}-evidence-structure.json deterministic structure evidence slice (prepare)
+├── {componentSlug}-evidence-color.json     deterministic color evidence slice (prepare)
+├── {componentSlug}-evidence-voice.json     deterministic voice evidence slice (prepare)
+├── {componentSlug}-api.json                from extract-api
+├── {componentSlug}-structure.json          from extract-structure
+├── {componentSlug}-color.json              from extract-color
+├── {componentSlug}-voice.json              from extract-voice
+├── api-dictionary.json                     shared dictionary that steers structure/color/voice
+└── reconciliation.json                     Step 8.5 verdicts + retry log
 ```
 
 ### `extract-*` interpreter skills
@@ -643,6 +647,7 @@ Produced per component by the orchestrator. `.uspec-cache/` is gitignored.
 Shared shape across all four:
 
 - **Read-only.** No MCP calls except an optional Step 3-delta ping if a measurement is missing from `_base.json` and `figmaLink` was passed. The delta path writes tiny `_deltaExtractions` entries into the cache artifact so the orchestrator can surface them in the audit.
+- **Evidence fast path.** When `uspec-skills component-md prepare` has already written a domain evidence file and its `_meta.baseSourceHash` matches the staged base, the specialist uses that compact slice for Step 3 instead of re-deriving from the full `_base.json`.
 - **Paired instruction file.** Each `extract-<type>` references the canonical `agent-<type>-instruction.md` for domain rules (same instruction file the Figma-native `create-<type>` skill uses). The skill teaches the read-path over `_base.json` fields; the instruction file teaches the interpretation rules.
 - **Deterministic output paths.** `{componentSlug}-<type>.json` under the component's cache directory, plus any `_deltaExtractions` requests.
 - **Provenance flags.** Every row / cell carries a `provenance` tag (`measured`, `inferred`, `delta`, or `"—"` with a reason) so the orchestrator and downstream readers can trust or challenge values without re-running the pipeline.
@@ -694,7 +699,8 @@ packages/cli/
 │       ├── install.ts           non-interactive (re-)install for a platform
 │       ├── update.ts            wraps install — re-render after package upgrade
 │       ├── doctor.ts            verify install + report drift
-│       └── render.ts            internal render driver
+│       ├── render.ts            internal render driver
+│       └── component-md.ts      validate/stage _base.json + build evidence slices
 ├── scripts/
 │   ├── build.mjs                esbuild → dist/index.js + copy templates/
 │   └── check-registry.mjs       prepublishOnly safety guard (blocks non-public registries)
@@ -710,6 +716,7 @@ packages/cli/
 | `npx uspec-skills install [--platform p]` | Non-interactive (re-)install. Reads `environment` from `uspecs.config.json` if `--platform` is omitted. Idempotent. When called with `--platform` for a secondary host, preserves the primary `environment` field already in the config. |
 | `npx uspec-skills update` | Re-renders skills against the currently installed CLI version. Run after upgrading the package. |
 | `npx uspec-skills doctor` | Verifies install: checks `uspecs.config.json` exists and has `environment`, the platform's skills directory is populated, all `.md`-relative links resolve, and reports CLI version drift. |
+| `npx uspec-skills component-md prepare --base <path> [--output <path>] [--context <text>] [--json]` | Validates a plugin-produced `_base.json`, stages it into `.uspec-cache/{slug}/`, and writes the prepare manifest plus four evidence slices. Used by `create-component-md` Step 1. `--json` prints the manifest to stdout for agent consumption. |
 
 ### Source-dir resolution
 
@@ -856,7 +863,7 @@ All instruction files live under `references/<area>/` at the repo root and are s
 | `figma-plugin/docs/base-json-schema.md` | Canonical `_base.json` field reference, phase map, audit checklist |
 | `figma-plugin/manifest.json` | Figma plugin manifest |
 | `figma-plugin/scripts/build.mjs` | esbuild bundler (writes `dist/code.js`, `dist/ui.html`) |
-| `figma-plugin/scripts/validate-base.mjs` | Ajv schema validator — shell-executed by `create-component-md` Step 1 |
+| `figma-plugin/scripts/validate-base.mjs` | Ajv schema validator for contributors running the plugin from source; the bundled CLI prepare command ports the same schema for npm consumers |
 | `figma-plugin/src/code.ts` | Sandbox entry point; orchestrates all phases |
 | `figma-plugin/src/ui.html` + `src/ui.ts` | Plugin UI iframe (checklist for child classification, download, clipboard) |
 | `figma-plugin/src/types.ts` | Shared types between sandbox and iframe |
