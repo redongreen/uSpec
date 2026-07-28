@@ -7,6 +7,7 @@
   "scripts": {
     "build:cli": "cd packages/cli && npm install --no-audit --no-fund && npm run build",
     "typecheck:cli": "cd packages/cli && npm run typecheck",
+    "prepare:component-md": "node packages/cli/dist/index.js component-md prepare",
     "dev:render": "cd packages/cli && node dist/index.js render --target cursor --out ../.. && node dist/index.js render --target claude-code --out ../.. && node dist/index.js render --target codex --out ../.."
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "uspec-skills",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Install uSpec design-system documentation skills into your AI coding agent (Cursor, Claude Code, or Codex).",
   "license": "MIT",
   "author": "Ian Guisard",
@@ -38,6 +38,7 @@
     "build": "node scripts/build.mjs",
     "build:watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test test/**/*.test.mjs",
     "prepublishOnly": "node scripts/check-registry.mjs && npm run build"
   },
   "engines": {
@@ -48,7 +49,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@inquirer/prompts": "^7.0.0"
+    "@inquirer/prompts": "^7.0.0",
+    "ajv": "^8.17.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

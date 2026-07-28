@@ -26,6 +26,10 @@ commands:
                           platform into <dir>. Used by repo development;
                           end users do not need this.
 
+  component-md prepare    Validate and stage a plugin _base.json, emit
+                          compact evidence slices for create-component-md.
+                          Run: component-md prepare --base <path> [--json]
+
 options:
   -h, --help              Show this help.
   -v, --version           Show version.

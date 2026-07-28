@@ -27,6 +27,7 @@ After `init`, ask your agent to run the `firstrun` skill to extract template key
 | `npx uspec-skills install [--platform p]` | Non-interactive install. Reads `uspecs.config.json` if present, or accepts `--platform cursor \| claude-code \| codex`. Idempotent. |
 | `npx uspec-skills update` | Re-render skills from the installed CLI version. Run after upgrading the package. |
 | `npx uspec-skills doctor` | Verify your install. Reports missing skills, missing references, or broken links. |
+| `npx uspec-skills component-md prepare --base <path> [--json]` | Validate and stage a plugin `_base.json`; writes prepare manifest + evidence slices to `.uspec-cache/`. Used by `create-component-md`. |
 
 ## What gets installed
 
@@ -54,7 +55,7 @@ your-project/
 {
   "mcpProvider": "figma-mcp",
   "environment": "cursor",
-  "cliVersion": "0.2.0"
+  "cliVersion": "0.3.2"
 }
 ```
 

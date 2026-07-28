@@ -21,6 +21,7 @@ The orchestrator calls this skill with these inputs (already resolved — do NOT
 - `mcpProvider` — `figma-console` or `figma-mcp` (only needed if a Step 3-delta escape hatch fires AND a live Figma link was provided to the orchestrator)
 - `deltaAvailable` — boolean. When the orchestrator received only a `baseJsonPath` (no `figmaLink`), this is `false` and the Step 3-delta escape hatch must not fire; log the gap in `data._deltaExtractions[]` with `unavailable: "no-figma-link"` and continue with best-effort output.
 - `apiDictionaryPath` — absolute or workspace-relative path to `{cachePath}/{componentSlug}-api-dictionary.json`. Optional. When present, this file is the canonical vocabulary for axis/value/sub-component/state naming (see Step 2.5). When absent, the skill continues with `_dictionaryUnavailable: true` in its output envelope and the renderer treats the produced cache as lower-confidence.
+- `evidencePath` — optional. Path to `{cachePath}/{componentSlug}-evidence-structure.json` from CLI prepare. When present and hash-valid, use `data` as the Step 3 working evidence set.
 
 `fileKey` and `nodeId` are **not** pass-through parameters anymore. Read them from `{cachePath}/{componentSlug}-_base.json._meta.fileKey` and `_meta.nodeId` at the start of Step 1.
 
@@ -134,7 +135,9 @@ When `optionalContext` begins with the literal prefix `create-component-md retry
 
 ### Step 3: Build Working Evidence Set
 
-Populate the structure-side evidence structure by reading **only** from `_base.json`. The key mappings:
+**Evidence fast path (preferred).** When `evidencePath` is provided, read it first. If the file exists, parses as JSON, has `_meta.domain === "structure"`, and `_meta.baseSourceHash` matches `{cachePath}/{componentSlug}-prepare-manifest.json`, treat `data` as the Step 3 evidence set and proceed to Step 4 without rebuilding mappings from the full `_base.json`. Still read `_base.json` for coverage-matrix recounts and any facts missing from the slice.
+
+Populate the structure-side evidence structure by reading **only** from `_base.json` when the fast path is unavailable. The key mappings:
 
 | Evidence field | `_base.json` source |
 | -------------- | ------------------- |

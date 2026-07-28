@@ -20,6 +20,7 @@ The orchestrator calls this skill with these inputs (already resolved — do NOT
 - `optionalContext` — free-form string from the user (may be `"none"`)
 - `mcpProvider` — `figma-console` or `figma-mcp` (only needed if a Step 3-delta escape hatch fires AND a live Figma link was provided to the orchestrator)
 - `deltaAvailable` — boolean. When the orchestrator received **only** a `baseJsonPath` (no `figmaLink`), this is `false` and the Step 3-delta escape hatch must not fire; log the gap in `data._deltaExtractions[]` with `unavailable: "no-figma-link"` and continue with best-effort output.
+- `evidenceApiPath` — optional. Path to `{cachePath}/{componentSlug}-evidence-api.json` from `uspec-skills component-md prepare`. When present and `_meta.baseSourceHash` matches the staged `_base.json`, use `data` as the Step 3 working evidence set and skip rebuilding it from the full base file.
 
 `fileKey` and `nodeId` are **not** pass-through parameters. Read them from `{cachePath}/{componentSlug}-_base.json._meta.fileKey` and `_meta.nodeId` at the start of Step 1 — `_base.json` is the single source of truth for them.
 
@@ -94,7 +95,9 @@ Also: absorb `optionalContext` from the orchestrator as authoritative user guida
 
 ### Step 3: Build Working Evidence Set
 
-Populate the `ComponentEvidence` structure (defined in the instruction file) by reading **only** from `_base.json`. The mapping:
+**Evidence fast path (preferred).** When `evidenceApiPath` is provided, read it first. If the file exists, parses as JSON, has `_meta.domain === "api"`, and `_meta.baseSourceHash` matches the hash recorded in `{cachePath}/{componentSlug}-prepare-manifest.json` (or recomputed from the staged base bytes), treat `data` as the completed Step 3 `ComponentEvidence` projection and proceed directly to Step 4. Still load `{cachePath}/{componentSlug}-_base.json` for Step 4 reasoning that needs fields outside the evidence slice (variant walks, revealed trees, etc.) — but do **not** re-derive the Step 3 table from scratch.
+
+Populate the `ComponentEvidence` structure (defined in the instruction file) by reading **only** from `_base.json` when the fast path is unavailable. The mapping:
 
 | `ComponentEvidence` field | `_base.json` source |
 | ------------------------- | ------------------- |

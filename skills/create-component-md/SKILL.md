@@ -38,11 +38,11 @@ Copy this checklist and update as you progress:
 
 ```
 Task Progress:
-- [ ] Step 1: Preflight — read config, load + validate _base.json, resolve metadata from _meta
-- [ ] Step 2: Resolve componentSlug and output path
+- [ ] Step 1: Preflight — read config, run `uspec-skills component-md prepare`, load manifest
+- [ ] Step 2: Resolve componentSlug and output path (from manifest)
 - [ ] Step 3: Announce the plan
 - [ ] Step 3.5: Composition classification (reasoning gate — internalize before Step 4.5 review)
-- [ ] Step 4: Stage _base.json into cachePath
+- [ ] Step 4: Stage _base.json into cachePath (handled by CLI prepare — verify manifest only)
 - [ ] Step 4.5: Post-extract review — confirm _childComposition (user-selected classifications skip override pass)
 - [ ] Step 5: Run extract-api (reads _base.json, no Figma), flush, verify cache + api-dictionary.json
 - [ ] Step 6: Parallel fan-out — dispatch extract-structure, extract-color, extract-voice as three subagents in a single batch; join on all three summaries
@@ -53,32 +53,70 @@ Task Progress:
 - [ ] Step 10.5: Emit recursion manifest (constitutive children only)
 ```
 
-### Step 1: Preflight
+### Step 1: Preflight (CLI prepare)
 
 Read `uspecs.config.json` at the project root. Extract:
 
 - `mcpProvider` (`figma-console` or `figma-mcp`). Only used if `figmaLink` is also provided AND an interpretation skill's Step 3-delta triggers.
-- `environment` (used only if you need to emit provider-specific guidance).
+- `environment` (`cursor` | `claude-code` | `codex`) — used to resolve the skills directory for subagent dispatch (see Step 6).
 
-**Load and validate `_base.json`.** `baseJsonPath` is required. If it is missing, abort with a one-line diagnostic: "run the uSpec Extract plugin in Figma and rerun with `baseJsonPath=<path>` — see `figma-plugin/README.md`."
+**`baseJsonPath` is required.** If it is missing, abort with a one-line diagnostic: "run the uSpec Extract plugin in Figma and rerun with `baseJsonPath=<path>` — see `figma-plugin/README.md`."
 
-- Read the file.
-- Run the Ajv schema check at `figma-plugin/scripts/validate-base.mjs` (shell out with `node figma-plugin/scripts/validate-base.mjs <path>`) — any non-zero exit aborts with the validator's FAIL output.
-- On success, read `_meta.fileKey`, `_meta.nodeId`, `_meta.componentSlug`, `_meta.optionalContext`, `_meta.extractionSource`.
-- If the caller also passed `optionalContext` and `_meta.optionalContext` is null, stamp it onto the loaded base.
-- The MCP connection check is deferred — it is not needed unless a sub-skill triggers a delta.
+**Run the deterministic prepare stage first.** Resolve the CLI executable **before** shelling out — do not assume `npx uspec-skills` is new enough to expose `component-md prepare`.
 
-If `figmaLink` is also passed alongside `baseJsonPath`, parse it and stash `{fileKey, nodeId}` for potential delta use — but trust `_meta` as the source of truth when they disagree and log a `META_DISAGREES_WITH_LINK` warning for the final summary.
+**CLI resolution order** (try each; stop at the first that works):
+
+1. **Local dev checkout** — when `packages/cli/dist/index.js` exists in the project root:
+   ```bash
+   node packages/cli/dist/index.js component-md prepare --base "<baseJsonPath>" --json
+   ```
+   If missing but `packages/cli/` exists, run `npm run build:cli` from the project root once, then retry step 1.
+
+2. **Published npm** — when step 1 is unavailable:
+   ```bash
+   npx uspec-skills component-md prepare --base "<baseJsonPath>" --json
+   ```
+   When this fails with `unknown command: component-md`, retry once with an explicit version pin:
+   ```bash
+   npx uspec-skills@0.3.2 component-md prepare --base "<baseJsonPath>" --json
+   ```
+
+3. **Abort** — when both paths fail, stop with:
+   > `component-md prepare` is unavailable. In the uSpec repo run `npm run build:cli`, then rerun create-component-md. Else run `npx uspec-skills update` after upgrading to uspec-skills ≥ 0.3.2.
+
+Append `--context "<optionalContext>"` when the orchestrator received non-empty `optionalContext`. Append `--output "<outputPath>"` when the user passed an explicit output path.
+
+- Any non-zero exit from a working CLI → abort with stderr (validation/staging failure). Do **not** fall back to manual validation or staging once a CLI with `component-md prepare` is available.
+- Parse the JSON manifest from stdout. Keep: `componentSlug`, `cachePath`, `stagedBasePath`, `outputPath`, `baseSourceHash`, `readiness`, `summaries`, `paths.evidence`, and the one-line `summaryLine`.
+
+From the manifest, also read `_meta.fileKey`, `_meta.nodeId`, `_meta.componentSlug`, `_meta.optionalContext`, `_meta.extractionSource` via the staged base at `stagedBasePath` only when a field is missing from the manifest (prefer manifest summaries).
+
+The MCP connection check is deferred — it is not needed unless a sub-skill triggers a delta.
+
+If `figmaLink` is also passed alongside `baseJsonPath`, parse it and stash `{fileKey, nodeId}` for potential delta use — but trust manifest / `_meta` as the source of truth when they disagree and log a `META_DISAGREES_WITH_LINK` warning for the final summary.
+
+**Skills directory for downstream dispatch** (from `environment`):
+
+| `environment` | Skills root |
+|---|---|
+| `cursor` | `.cursor/skills/` |
+| `claude-code` | `.claude/skills/` |
+| `codex` | `.agents/skills/` |
 
 ### Step 2: Resolve componentSlug and output path
 
-1. Resolve the component name from `_meta.componentSlug` (plus `component.componentName` for display). No MCP call needed.
-2. Resolve `outputPath`:
-   - If user passed an explicit path, use as-is.
-   - Otherwise, `./components/{componentSlug}.md` in cwd. Create the `./components/` directory (recursive mkdir) if it does not exist — the `components/` folder is tracked in version control (it holds the source-of-truth `.md` specs).
-3. Resolve `cachePath = .uspec-cache/{componentSlug}/`. Create it (recursive mkdir). `.uspec-cache/` is gitignored.
+Use the manifest from Step 1 — do **not** re-derive paths:
 
-**Do not proceed until all of `componentSlug`, `outputPath`, `cachePath` are resolved.** Every subsequent step reads from them.
+1. `componentSlug` = manifest `componentSlug`
+2. `outputPath` = manifest `outputPath`
+3. `cachePath` = manifest `cachePath`
+4. `stagedBasePath` = manifest `stagedBasePath`
+5. `baseSourceHash` = manifest `baseSourceHash`
+6. `evidencePaths` = manifest `paths.evidence`
+
+**Do not proceed until all of the above are resolved.** Every subsequent step reads from them.
+
+Surface manifest `readiness.warnings` and any `readiness.layoutTreeHasNodeIds === false` flag before continuing (same framing as the legacy Step 4 render-meta freshness check).
 
 ### Step 3: Announce the plan (non-blocking)
 
@@ -154,21 +192,24 @@ Most children match exactly one pattern, and the classification follows. For the
 
 If Q1 and Q2 produce contradictory answers, default to **referenced** and log the reasoning in `_base.json._childComposition.ambiguousChildren[]` (Step 4.5 persists this back to disk). Over-referencing is safer than over-spec'ing — a referenced child's spec can be promoted to constitutive later; a child whose property table has been mistakenly copied into the parent is much harder to disentangle.
 
-### Step 4: Stage `_base.json` into the cache
+### Step 4: Verify staged cache (CLI prepare output)
 
-1. Copy the file at `baseJsonPath` to `{cachePath}/{componentSlug}-_base.json`. If the source is already inside `{cachePath}` (user already moved it), skip the copy.
-2. If the caller passed an `optionalContext` and `_meta.optionalContext` is null, update the copied file's `_meta.optionalContext` in place. This is the **only** mutation the orchestrator may do to `_base.json` at this step; the Step 4.5 `_childComposition` rewrite is the other.
-3. Emit a one-line summary:
+The CLI prepare step already validated, staged, and wrote evidence slices. **Do not re-run validation or copy `_base.json` manually.**
+
+1. Confirm `{cachePath}/{componentSlug}-_base.json` exists (manifest `stagedBasePath`).
+2. Confirm the four evidence files exist at manifest `paths.evidence` and each envelope's `_meta.baseSourceHash` equals manifest `baseSourceHash`. If any hash mismatches, re-run Step 1 prepare — do not proceed with stale evidence.
+3. Emit the manifest one-line summary verbatim:
 
    ```
-   base: variants=<V>, bytes=<B>, warnings=<W> → {cachePath}/{componentSlug}-_base.json
+   {summaryLine from manifest}
    ```
 
-   `V` and `B` come from `variants.length` and the serialized byte count; `W` from `_extractionNotes.warnings.length`.
-4. **Flush phase context.** Keep only: `_base.json` path + the one-line summary.
-5. Verify the file has `_meta`, `component`, `variantAxes`, `propertyDefinitions`, `variants[]`, `ownershipHints[]`, `_childComposition`. `crossVariant` is allowed to be `null` (single-variant-axis component). If any required top-level key is missing, abort with a diagnostic asking the user to re-run the uSpec Extract plugin.
-6. If `_extractionNotes.warnings.length > 0`, surface the warnings to the user before continuing. Common codes include `HIERWALK_MISSING_CHILDREN` and walk-validation warnings like "Walked tree is missing children for constitutive instance(s)" — both mean the `.md` may be incomplete and the user should re-extract with a corrected selection.
-7. **Render-meta freshness check.** Spot-check `_base.json.variants[<defaultVariantName>].layoutTree`: if it is an object whose root entry has no `id` field (or `id === undefined`), the file was produced by a pre-render-meta plugin build. Render-meta will still be emitted at Step 9, but every `sectionTargets[*].nodeId` and `groupTargets[*][*].nodeId` will be `null` and the Step 9.5 integrity gate will fail those rules. Surface a warning right here so the user has time to re-extract before the run completes: "render-meta: `_base.json` was produced by a pre-render-meta plugin build (no `id` on `layoutTree` nodes); re-extract with the current uSpec Extract plugin to populate `sectionTargets[*].nodeId` and `groupTargets[*][*].nodeId`. The `.md` will still render, but the downstream `create-*` skills consume this render-meta to resolve sections/groups/markers — without the node ids they must name-walk the live layer tree (a degraded, ambiguous path), so re-extract to get reliable ids." Note: the `create-*` skills no longer have a full-extraction fallback — they require the `.md` and fail fast (plus a bounded per-skill whitelist of minimal reads), so missing render-meta ids degrade their identity resolution rather than triggering a re-extraction.
+   Example shape: `base: variants=36, bytes=509363, warnings=0 → .uspec-cache/tag/tag-_base.json`
+
+4. **Flush phase context.** Keep only: staged base path + evidence paths + one-line summary + manifest readiness flags.
+5. Verify the staged file has `_meta`, `component`, `variantAxes`, `propertyDefinitions`, `variants[]`, `ownershipHints[]`, `_childComposition`. `crossVariant` is allowed to be `null`. If any required top-level key is missing, abort — re-run the uSpec Extract plugin.
+6. If manifest `readiness.warnings` is non-empty, surface those warnings before continuing.
+7. If `readiness.layoutTreeHasNodeIds === false`, surface the render-meta freshness warning (pre-render-meta plugin build) before continuing.
 
 ### Step 4.5: Post-extract review (composition classification)
 
@@ -188,7 +229,7 @@ If `constitutive > 0` **and** every constitutive child has a non-null `subCompSe
 
 ### Step 5: Run extract-api (inline, in the parent)
 
-Follow `.cursor/skills/extract-api/SKILL.md` inline (not as a subagent — the parent needs the resulting dictionary directly). Pass `cachePath`, `componentSlug`, `optionalContext`, `deltaAvailable` (true only when the user provided a `figmaLink`), and — when `deltaAvailable` is true — `fileKey`, `nodeId`, and `mcpProvider` (from `uspecs.config.json`). When the input is plugin-only (no `figmaLink`), explicitly instruct the skill that delta calls are **not available** — any gap surfaces as `_deltaExtractions[]` with `unavailable: "no-figma-link"`.
+Follow `{skillsRoot}extract-api/SKILL.md` inline (not as a subagent — the parent needs the resulting dictionary directly). Pass `cachePath`, `componentSlug`, `optionalContext`, `deltaAvailable` (true only when the user provided a `figmaLink`), `evidenceApiPath` (from manifest `paths.evidence.api`), and — when `deltaAvailable` is true — `fileKey`, `nodeId`, and `mcpProvider` (from `uspecs.config.json`). When the input is plugin-only (no `figmaLink`), explicitly instruct the skill that delta calls are **not available** — any gap surfaces as `_deltaExtractions[]` with `unavailable: "no-figma-link"`.
 
 The skill:
 
@@ -213,14 +254,15 @@ For each specialist in `[extract-structure, extract-color, extract-voice]`:
 - `description` — 3–5 words (e.g., `"Structure pass for Button"`).
 - `subagent_type` — `"generalPurpose"`.
 - `run_in_background` — `false`. The parent must wait for all three returns before proceeding.
-- `prompt` — a fully self-contained instruction with **these seven fields** (no prior chat context is available to the subagent):
-  1. The absolute path to the extract skill's SKILL.md file (e.g., `.cursor/skills/extract-structure/SKILL.md`). Instruct the subagent to read it and follow every step.
+- `prompt` — a fully self-contained instruction with **these eight fields** (no prior chat context is available to the subagent):
+  1. The absolute path to the extract skill's SKILL.md file (e.g., `{skillsRoot}extract-structure/SKILL.md`). Instruct the subagent to read it and follow every step.
   2. `componentSlug` (string).
   3. `cachePath` (string).
   4. `apiDictionaryPath` — the path produced by Step 5.
   5. `optionalContext` — the orchestrator's `optionalContext` string (or `"none"` when absent).
   6. `mcpProvider` — the value from `uspecs.config.json`.
   7. `deltaAvailable` — boolean. `false` when the user provided only a `baseJsonPath`.
+  8. `evidencePath` — the matching manifest evidence file for this specialist (`paths.evidence.structure` | `.color` | `.voice`).
   - Instruct the subagent to return a single-line summary matching the skill's declared return format, followed by the written cache path. Nothing else — not the full payload, not checklists, not screenshots.
 
 **Expected return shapes (the parent parses these):**

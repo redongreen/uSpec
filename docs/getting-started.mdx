@@ -9,6 +9,10 @@ This page covers everything you need to go from zero to your first generated spe
   Every spec flows through one pipeline: the **uSpec Extract** plugin captures your component, `create-component-md` turns that capture into a `.md` spec, and the `create-*` skills render that `.md` into Figma. The full plugin install and `create-component-md` walkthrough lives on the [Component Markdown page](/specs/component-md).
 </Info>
 
+<Warning>
+  **Before you start:** Make sure your agent has an active Figma MCP connection if you plan to run `firstrun` or render specs into Figma. Install and configure Figma MCP by following its current setup instructions. uSpec records your MCP choice, but it does not install or configure the connection for you.
+</Warning>
+
 <CardGroup cols={2}>
   <Card title="Setup instructions" icon="download" href="#setup-instructions">
     Install your AI agent, connect Figma, and configure your template library.
@@ -26,7 +30,7 @@ uSpec runs one pipeline end to end: extract a component, generate its `.md` spec
 
 1. **AI agent host**: the coding environment that runs uSpec skills (Cursor, Claude Code, or Codex)
 2. **uSpec Extract plugin**: the Figma Community plugin that captures a component to `_base.json`, which `create-component-md` turns into the `.md` spec. Install it from the [Figma Community](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) — no local build required. The [Component Markdown install guide](/specs/component-md#what-you-need) covers it in detail.
-3. **Figma MCP**: the bridge that lets the `create-*` skills render annotation frames back into your Figma file (either Figma Console MCP or native Figma MCP)
+3. **Figma MCP**: an active connection that lets the `create-*` skills render annotation frames back into your Figma file
 4. **Template library**: the Figma file containing the documentation templates those render skills clone from
 
 <Note>
@@ -141,214 +145,20 @@ uSpec runs one pipeline end to end: extract a component, generate its `.md` spec
 
 ### 2. Set up Figma MCP
 
-uSpec supports two Figma MCP providers. Choose one based on your setup:
+Figma MCP is an external prerequisite for `firstrun` and every skill that renders documentation into Figma. Install and configure it in your agent host before continuing. Because MCP setup changes independently of uSpec, follow the current instructions provided with your Figma MCP.
 
-<Note>
-  MCP providers update their setup instructions frequently. The configuration examples below are a starting point — always check the provider's documentation for the latest installation steps and options:
-  - **Figma Console MCP**: [docs.figma-console-mcp.southleft.com](https://docs.figma-console-mcp.southleft.com/)
-  - **Native Figma MCP**: [github.com/figma/figma-mcp](https://github.com/figma/figma-mcp)
-</Note>
+<Steps>
+  <Step title="Install and configure Figma MCP">
+    Complete the setup instructions for your agent host and Figma MCP.
+  </Step>
+  <Step title="Verify the connection">
+    Open the Figma file you want to use, then ask your agent to confirm that it can access the file.
+  </Step>
+</Steps>
 
-<Tabs>
-  <Tab title="Figma Console MCP">
-    The [Figma Console MCP](https://github.com/southleft/figma-console-mcp) (by Southleft) connects your agent to Figma Desktop via a Desktop Bridge plugin, giving it access to component data, variables, styles, and screenshots.
-
-    #### Get a Figma personal access token
-
-    <Steps>
-      <Step title="Go to the Figma API settings">
-        Open [figma.com/developers/api#access-tokens](https://www.figma.com/developers/api#access-tokens)
-      </Step>
-      <Step title="Create a token">
-        Click **"Get personal access token"**, enter a description like `Figma Console MCP`, and copy the token. It starts with `figd_`.
-      </Step>
-    </Steps>
-
-    <Warning>
-      Copy the token immediately. You won't be able to see it again after closing the dialog.
-    </Warning>
-
-    #### Configure the MCP in your agent
-
-    <Tabs>
-      <Tab title="Cursor">
-        Add the Figma Console MCP to your Cursor MCP configuration:
-
-        ```json
-        {
-          "mcpServers": {
-            "figma-console": {
-              "command": "npx",
-              "args": ["-y", "figma-console-mcp@latest"],
-              "env": {
-                "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
-              }
-            }
-          }
-        }
-        ```
-
-        Add this to your Cursor MCP settings (global or project-level `.cursor/mcp.json`).
-      </Tab>
-
-      <Tab title="Claude Code">
-        The repo includes a `.mcp.json` at the project root. Open it and replace the placeholder token:
-
-        ```json
-        {
-          "mcpServers": {
-            "figma-console": {
-              "command": "npx",
-              "args": ["-y", "figma-console-mcp@latest"],
-              "env": {
-                "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
-              }
-            }
-          }
-        }
-        ```
-
-        Claude Code reads `.mcp.json` from the project root automatically.
-      </Tab>
-
-      <Tab title="Codex">
-        The repo includes a `.codex/config.toml`. Open it and replace the placeholder token:
-
-        ```toml
-        [mcp_servers.figma-console]
-        command = "npx"
-        args = ["-y", "figma-console-mcp@latest"]
-
-        [mcp_servers.figma-console.env]
-        FIGMA_ACCESS_TOKEN = "figd_YOUR_TOKEN_HERE"
-        ```
-
-        Codex reads MCP configuration from `.codex/config.toml`.
-      </Tab>
-    </Tabs>
-
-    <Tip>
-      This uses the NPX setup, which gives you all 59+ tools including design creation and variable management. Setup instructions may change between releases — for the latest configuration options, alternative installation methods, and troubleshooting, see the [Figma Console MCP documentation](https://docs.figma-console-mcp.southleft.com/).
-    </Tip>
-
-    #### Connect to Figma Desktop
-
-    The **Desktop Bridge plugin** provides real-time access to your Figma file data. It comes bundled with the Figma Console MCP.
-
-    <Steps>
-      <Step title="Install the Desktop Bridge plugin">
-        The Desktop Bridge plugin is included in the `figma-console-mcp` npm package. After running `npx figma-console-mcp@latest`, find the plugin at `node_modules/figma-console-mcp/figma-desktop-bridge/manifest.json`. In Figma Desktop, go to **Plugins → Development → Import plugin from manifest...** and select this file.
-      </Step>
-      <Step title="Run the plugin">
-        Open the Desktop Bridge plugin in your Figma file. It auto-connects via WebSocket. No special launch flags needed.
-      </Step>
-      <Step title="Verify the connection">
-        In your agent, type: *"Check Figma status"*
-
-        The agent should confirm an active connection.
-      </Step>
-    </Steps>
-
-    <Check>
-      When the connection is active, your agent can read Figma file data, take screenshots, and access variables and styles.
-    </Check>
-  </Tab>
-
-  <Tab title="Figma MCP (Native)">
-    The official [Figma MCP](https://github.com/figma/figma-mcp) connects your agent directly to Figma with read and write access. No Desktop Bridge plugin required.
-
-    #### Configure the MCP in your agent
-
-    <Tabs>
-      <Tab title="Cursor">
-        Add the native Figma MCP to your Cursor MCP configuration:
-
-        ```json
-        {
-          "mcpServers": {
-            "figma": {
-              "command": "npx",
-              "args": ["-y", "@anthropic-ai/figma-mcp@latest"],
-              "env": {
-                "FIGMA_API_KEY": "figd_YOUR_TOKEN_HERE"
-              }
-            }
-          }
-        }
-        ```
-
-        Add this to your Cursor MCP settings (global or project-level `.cursor/mcp.json`).
-      </Tab>
-
-      <Tab title="Claude Code">
-        Add the native Figma MCP to `.mcp.json` at the project root:
-
-        ```json
-        {
-          "mcpServers": {
-            "figma": {
-              "command": "npx",
-              "args": ["-y", "@anthropic-ai/figma-mcp@latest"],
-              "env": {
-                "FIGMA_API_KEY": "figd_YOUR_TOKEN_HERE"
-              }
-            }
-          }
-        }
-        ```
-
-        Claude Code reads `.mcp.json` from the project root automatically.
-      </Tab>
-
-      <Tab title="Codex">
-        Add the native Figma MCP to `.codex/config.toml`:
-
-        ```toml
-        [mcp_servers.figma]
-        command = "npx"
-        args = ["-y", "@anthropic-ai/figma-mcp@latest"]
-
-        [mcp_servers.figma.env]
-        FIGMA_API_KEY = "figd_YOUR_TOKEN_HERE"
-        ```
-
-        Codex reads MCP configuration from `.codex/config.toml`.
-      </Tab>
-    </Tabs>
-
-    <Tip>
-      The native Figma MCP supports `use_figma` for running Plugin API JavaScript, `get_screenshot` for visual capture, and `search_design_system` for finding components and variables. Setup instructions may change between releases — for the latest configuration options and full tool list, see the [Figma MCP documentation](https://github.com/figma/figma-mcp).
-    </Tip>
-
-    #### Verify the connection
-
-    <Steps>
-      <Step title="Get a Figma personal access token">
-        Open [figma.com/developers/api#access-tokens](https://www.figma.com/developers/api#access-tokens) and create a token with read/write scopes.
-      </Step>
-      <Step title="Test the connection">
-        In your agent, ask it to run a simple Figma command (e.g., *"List pages in my Figma file"* with a file link). The agent uses `use_figma` to verify connectivity.
-      </Step>
-    </Steps>
-
-    <Check>
-      When the native MCP is connected, your agent can read file structure, execute Plugin API scripts, take screenshots, and search your design system.
-    </Check>
-  </Tab>
-</Tabs>
-
-<Warning>
-  **Test your MCP connection before proceeding.** Run a simple command in your agent to confirm Figma access is working. If the MCP isn't connected, `firstrun` will fail when it tries to read your template library.
-
-  <Tabs>
-    <Tab title="Console MCP">
-      Open the Desktop Bridge plugin in Figma, then ask your agent: *"Check Figma status"*. You should see an active connection. If it doesn't connect, see the [Figma Console MCP documentation](https://docs.figma-console-mcp.southleft.com/) for setup verification.
-    </Tab>
-    <Tab title="Native Figma MCP">
-      Ask your agent: *"List pages in my file"* with a Figma link. The agent should return the page names. If it fails, verify your `FIGMA_API_KEY` and see the [Figma MCP documentation](https://github.com/figma/figma-mcp) for setup verification.
-    </Tab>
-  </Tabs>
-</Warning>
+<Check>
+  Continue when your agent confirms that the Figma MCP connection is active.
+</Check>
 
 ---
 
@@ -365,7 +175,7 @@ The `firstrun` skill configures your Figma template library. Platform selection 
 uSpec renders documentation using Figma component templates. You need to add the templates to your Figma organization before running `firstrun`.
 
 <Note>
-  Uber designers can skip this — the internal template library is already configured. When `firstrun` asks for a library link, type "skip".
+  Uber designers use the built-in template library. When `firstrun` asks whether you are an Uber employee, answer **Yes**.
 </Note>
 
 <Steps>
@@ -394,7 +204,7 @@ uSpec renders documentation using Figma component templates. You need to add the
 
 <Steps>
   <Step title="Confirm your Figma MCP is connected">
-    If using **Figma Console MCP**: Open the **Desktop Bridge** plugin in Figma Desktop for your template library file. If using **Figma MCP (Native)**: Ensure the MCP server is running and your access token is configured.
+    Open your Figma template library file and make sure your agent can access it through Figma MCP.
   </Step>
   <Step title="Run firstrun">
     <Tabs>
@@ -422,11 +232,12 @@ uSpec renders documentation using Figma component templates. You need to add the
     </Tabs>
   </Step>
   <Step title="Answer the library prompt">
-    The agent asks one question:
+    When the agent asks whether you are an Uber employee:
 
-    **Library link** — Paste the link to your Figma template library (Uber designers can type "skip").
+    - Answer **Yes** to use the built-in Uber template library.
+    - Answer **No**, then paste the link to your Figma template library.
 
-    Your Figma MCP and platform were already configured by `npx uspec-skills init`, so the agent reads them from `uspecs.config.json` instead of asking again.
+    `npx uspec-skills init` recorded your Figma MCP choice and platform in `uspecs.config.json`, so the agent does not ask for them again.
   </Step>
   <Step title="Wait for confirmation">
     The agent extracts component keys from your templates and merges them into `uspecs.config.json` automatically.
@@ -452,7 +263,7 @@ The pipeline has two stages. Stage 1 produces the `.md` spec; stage 2 renders an
 **Before stage 2 (render into Figma):**
 
 1. You have a component `.md` from stage 1
-2. Your Figma MCP is connected (Desktop Bridge plugin for Console MCP, or native MCP server running)
+2. Your Figma MCP connection is active
 3. You've run `firstrun`. The template library is configured (`uspecs.config.json` has your template keys and MCP provider)
 
 ### Stage 1: generate the Component Markdown
@@ -619,8 +430,8 @@ Each stage runs a different pipeline.
 ### Do (stage 2 render skills)
 
 - **Generate the `.md` first.** Every `create-*` render skill takes a component `.md` as its required input. Run `create-component-md` before reaching for any of them.
-- **Confirm the MCP connection before running a skill.** For Console MCP, run the Desktop Bridge plugin in Figma. For native MCP, ensure the server is running. Verify the connection in your agent before starting. If the agent can't reach Figma, the render will fail.
-- **Run one agent per Figma file at a time.** The MCP supports multiple connections, but all agents share one active page and file context. Finish one render before starting the next.
+- **Confirm the MCP connection before running a skill.** Ask your agent to verify that it can access your Figma file. If the agent can't reach Figma, the render will fail.
+- **Run one agent per Figma file at a time.** Concurrent writes can conflict and corrupt the output. Finish one render before starting the next.
 
 ### Don't (stage 2 render skills)
 
@@ -660,16 +471,10 @@ Each stage runs a different pipeline.
     </Tabs>
   </Accordion>
   <Accordion title="Figma MCP not connecting">
-    **Figma Console MCP:**
-    - Confirm Figma Desktop is running (not the web version)
-    - Close and reopen the Desktop Bridge plugin in Figma
-    - Make sure only one instance of Figma Desktop is running
-    - Check that your Figma access token is configured correctly in your agent's MCP settings
-
-    **Figma MCP (Native):**
-    - Confirm the MCP server is running (check your terminal or agent MCP panel)
-    - Verify your `FIGMA_API_KEY` is set correctly in your MCP configuration
-    - Test with a simple command like *"List pages in my file"* with a Figma link
+    - Confirm Figma and your Figma MCP are running
+    - Check the MCP connection and credentials in your agent host
+    - Ask your agent to verify that it can access your Figma file
+    - Follow the current troubleshooting instructions provided with your Figma MCP
   </Accordion>
 </AccordionGroup>
 

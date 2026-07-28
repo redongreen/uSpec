@@ -3,9 +3,10 @@ import { runInstall } from './commands/install.js';
 import { runUpdate } from './commands/update.js';
 import { runDoctor } from './commands/doctor.js';
 import { runRender } from './commands/render.js';
+import { runComponentMd } from './commands/component-md.js';
 import { printHelp, printVersion } from './help.js';
 
-const COMMANDS = ['init', 'install', 'update', 'doctor', 'render'] as const;
+const COMMANDS = ['init', 'install', 'update', 'doctor', 'render', 'component-md'] as const;
 type Command = (typeof COMMANDS)[number];
 
 function isCommand(value: string): value is Command {
@@ -41,6 +42,8 @@ async function main(argv: string[]): Promise<number> {
       return runDoctor(rest);
     case 'render':
       return runRender(rest);
+    case 'component-md':
+      return runComponentMd(rest);
   }
 }
 

@@ -227,12 +227,18 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
       </Accordion>
 
       <Accordion title="`create-component-md` rejects the `_base.json` with a schema error">
-        **Symptom**: The agent runs `node figma-plugin/scripts/validate-base.mjs` and aborts with an Ajv FAIL.
+        **Symptom**: The agent runs `uspec-skills component-md prepare` and aborts with a validation FAIL.
 
         **Solutions**:
         - Re-run the plugin and re-export. A stale file from a previous plugin version may not match the current schema.
         - Confirm the plugin and the skill are on the same uSpec version. If you updated one without the other, the schema can drift. Re-install the plugin from [Community](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) to pick up the latest version (or `git pull` + `npm run build` if you run from source), and run `npx uspec-skills update` to refresh the skills.
-        - Run the validator directly to see the full diagnostic:
+        - Run the prepare command directly to see the full diagnostic:
+
+          ```bash
+          npx uspec-skills component-md prepare --base ~/Downloads/your-component-_base.json --json
+          ```
+
+          Contributors running from source can also use:
 
           ```bash
           node figma-plugin/scripts/validate-base.mjs ~/Downloads/your-component-_base.json
