@@ -21,6 +21,7 @@ The orchestrator calls this skill with these inputs (already resolved — do NOT
 - `mcpProvider` — `figma-console` or `figma-mcp` (only needed if a Step 3-delta escape hatch fires AND a live Figma link was provided to the orchestrator)
 - `deltaAvailable` — boolean. When the orchestrator received only a `baseJsonPath` (no `figmaLink`), this is `false` and the Step 3-delta escape hatch must not fire; log the gap in `data._deltaExtractions[]` with `unavailable: "no-figma-link"` and continue with best-effort output.
 - `apiDictionaryPath` — absolute or workspace-relative path to `{cachePath}/{componentSlug}-api-dictionary.json`. Optional. When present, the file is the canonical vocabulary for axis/value/sub-component/state naming (see Step 2.5). When absent, the skill continues with `_dictionaryUnavailable: true` in its output envelope.
+- `evidencePath` — optional. Path to `{cachePath}/{componentSlug}-evidence-color.json` from CLI prepare. When present and hash-valid, use `data` as the Step 3 working evidence set.
 
 `fileKey` and `nodeId` are **not** pass-through parameters anymore. Read them from `{cachePath}/{componentSlug}-_base.json._meta.fileKey` and `_meta.nodeId` at the start of Step 1.
 
@@ -138,7 +139,9 @@ When `optionalContext` begins with the literal prefix `create-component-md retry
 
 ### Step 3: Build Working Evidence Set
 
-For each variant in `_base.json.variants`, resolve its `colorWalk` entries into the shape the old `variantColorData[*].colorEntries` had:
+**Evidence fast path (preferred).** When `evidencePath` is provided, read it first. If the file exists, parses as JSON, has `_meta.domain === "color"`, and `_meta.baseSourceHash` matches `{cachePath}/{componentSlug}-prepare-manifest.json`, treat `data` as the Step 3 evidence set (variantColorData, booleanDelta, modeDetection, uniqueTokens, etc.) and proceed to Step 4 without re-resolving tokens from raw `colorWalk[]`. Still read `_base.json` when a fact is absent from the slice.
+
+For each variant in `_base.json.variants`, resolve its `colorWalk` entries into the shape the old `variantColorData[*].colorEntries` had when the fast path is unavailable:
 
 ```
 colorEntry = {
