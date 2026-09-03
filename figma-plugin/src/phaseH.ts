@@ -1,5 +1,7 @@
 // Phase H — ownership hints.
 
+import { collectOwnedInstancePlacements } from './safe';
+
 export type PhaseHResult = {
   ownershipHints: Array<{
     propertyName: string;
@@ -11,6 +13,8 @@ export type PhaseHResult = {
     textContent?: string;
     collectionId?: string;
     modeNames?: string[];
+    sourceVariantIds?: string[];
+    sourceVariantNames?: string[];
   }>;
 };
 
@@ -19,7 +23,7 @@ export async function runPhaseH(nodeId: string): Promise<PhaseHResult | null> {
   if (!node || (node.type !== 'COMPONENT_SET' && node.type !== 'COMPONENT')) return null;
 
   const isCS = node.type === 'COMPONENT_SET';
-  const defaultVariant: any = isCS ? node.defaultVariant || node.children[0] : node;
+  const variants: any[] = isCS ? [...node.children] : [node];
   const propDefs = node.componentPropertyDefinitions || {};
 
   const hints: PhaseHResult['ownershipHints'] = [];
@@ -36,23 +40,26 @@ export async function runPhaseH(nodeId: string): Promise<PhaseHResult | null> {
         rationale: 'Defined on the component set as a variant axis.',
       });
     } else if (def.type === 'BOOLEAN') {
-      let layer: string | null = null;
-      if (defaultVariant.componentProperties) {
-        for (const [k, vRaw] of Object.entries(defaultVariant.componentProperties)) {
-          const v: any = vRaw;
-          if (k.split('#')[0] === cleanKey && v.type === 'BOOLEAN') {
-            const nId = k.split('#')[1];
-            if (nId) {
-              try {
-                const ln = await figma.getNodeByIdAsync(
-                  defaultVariant.id.split(';')[0] + ';' + nId
-                );
-                if (ln) layer = (ln as any).name;
-              } catch {}
+      const layerNames = new Set<string>();
+      for (const variant of variants) {
+        if (variant.componentProperties) {
+          for (const [k, vRaw] of Object.entries(variant.componentProperties)) {
+            const v: any = vRaw;
+            if (k.split('#')[0] === cleanKey && v.type === 'BOOLEAN') {
+              const nId = k.split('#')[1];
+              if (nId) {
+                try {
+                  const ln = await figma.getNodeByIdAsync(
+                    variant.id.split(';')[0] + ';' + nId
+                  );
+                  if (ln) layerNames.add((ln as any).name);
+                } catch {}
+              }
             }
           }
         }
       }
+      const layer = [...layerNames].join(' | ') || null;
       hints.push({
         propertyName: cleanKey,
         evidenceType: 'rootBoolean',
@@ -84,8 +91,8 @@ export async function runPhaseH(nodeId: string): Promise<PhaseHResult | null> {
     }
   }
 
-  if (defaultVariant.children) {
-    for (const child of defaultVariant.children) {
+  for (const variant of variants) {
+    for (const { node: child } of collectOwnedInstancePlacements(variant)) {
       if (child.type === 'INSTANCE' && child.componentProperties) {
         let mc: any = null;
         try {
@@ -99,25 +106,31 @@ export async function runPhaseH(nodeId: string): Promise<PhaseHResult | null> {
             sourceLayerName: child.name,
             suggestedExposure: 'child_or_parent',
             rationale: 'Observed as a contextual override on a fixed child instance.',
+            sourceVariantIds: [variant.id],
+            sourceVariantNames: [variant.name],
           });
         }
       }
     }
   }
 
-  const allTextNodes = defaultVariant.findAll
-    ? defaultVariant.findAll((n: any) => n.type === 'TEXT')
-    : [];
-  for (const tn of allTextNodes) {
-    hints.push({
-      propertyName: tn.name,
-      evidenceType: 'textNode',
-      sourceNodeName: node.name,
-      sourceLayerName: tn.parent ? tn.parent.name : null,
-      suggestedExposure: 'child_or_parent',
-      rationale: 'Observed as visible text in the default variant.',
-      textContent: tn.characters,
-    });
+  for (const variant of variants) {
+    const allTextNodes = variant.findAll
+      ? variant.findAll((candidate: any) => candidate.type === 'TEXT')
+      : [];
+    for (const textNode of allTextNodes) {
+      hints.push({
+        propertyName: textNode.name,
+        evidenceType: 'textNode',
+        sourceNodeName: node.name,
+        sourceLayerName: textNode.parent ? textNode.parent.name : null,
+        suggestedExposure: 'child_or_parent',
+        rationale: 'Observed as visible text in one or more variants.',
+        textContent: textNode.characters,
+        sourceVariantIds: [variant.id],
+        sourceVariantNames: [variant.name],
+      });
+    }
   }
 
   const componentWords = node.name
@@ -145,5 +158,27 @@ export async function runPhaseH(nodeId: string): Promise<PhaseHResult | null> {
     });
   }
 
-  return { ownershipHints: hints };
+  const deduped = new Map<string, PhaseHResult['ownershipHints'][number]>();
+  for (const hint of hints) {
+    const key = JSON.stringify([
+      hint.propertyName,
+      hint.evidenceType,
+      hint.sourceNodeName,
+      hint.sourceLayerName,
+      hint.textContent,
+      hint.collectionId,
+    ]);
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, hint);
+      continue;
+    }
+    existing.sourceVariantIds = [
+      ...new Set([...(existing.sourceVariantIds || []), ...(hint.sourceVariantIds || [])]),
+    ];
+    existing.sourceVariantNames = [
+      ...new Set([...(existing.sourceVariantNames || []), ...(hint.sourceVariantNames || [])]),
+    ];
+  }
+  return { ownershipHints: [...deduped.values()] };
 }

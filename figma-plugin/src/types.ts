@@ -52,6 +52,14 @@ export type PreviewChild = {
   placementCount: number;
   placementIndices: number[];
   placementsVary: boolean;
+  // Cross-variant placement coverage. Top-level component identities are deduplicated
+  // across the whole component set; slot-origin entries may omit these fields.
+  presentInVariants?: string[];
+  defaultVariantPresent?: boolean;
+  placementsByVariant?: Record<
+    string,
+    { variantId: string; nodeIds: string[]; placementIndices: number[] }
+  >;
 };
 
 export type Preview = {

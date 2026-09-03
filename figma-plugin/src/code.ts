@@ -18,6 +18,7 @@ import { buildFirstGuess } from './childComposition';
 import {
   slugify,
   sg,
+  collectOwnedInstancePlacements,
   getEffectiveChildContainer,
   getEffectiveChildContainerOfWalked,
   getSlotPropName,
@@ -32,7 +33,7 @@ import { parseFigmaFileKey, buildFigmaUrl } from './figmaUrl';
 // remembered, so the required link field can be prefilled on later runs.
 const FILE_LINK_PLUGIN_DATA_KEY = 'uspecFileLink';
 
-const PLUGIN_VERSION = '2.5.0';
+const PLUGIN_VERSION = '2.7.0';
 
 figma.showUI(__html__, { width: 420, height: 620, themeColors: true });
 
@@ -81,6 +82,12 @@ async function sendPreview(): Promise<void> {
     const defaultVariant: any = isCS
       ? (target as ComponentSetNode).defaultVariant || (target as ComponentSetNode).children[0]
       : target;
+    const previewVariants: any[] = isCS
+      ? [
+          defaultVariant,
+          ...(target as ComponentSetNode).children.filter((variant) => variant.id !== defaultVariant.id),
+        ]
+      : [defaultVariant];
 
     const children: PreviewChild[] = [];
     // Descend through any single auto-layout FRAME wrappers (e.g. a clipping/scroll
@@ -215,10 +222,140 @@ async function sendPreview(): Promise<void> {
     );
     for (const g of groups) {
       const rep = g.representative;
+      if (rep.nodeType === 'INSTANCE') {
+        rep.topLevelInstanceId = `component:${
+          rep.subCompSetId || rep.mainComponentName || rep.name
+        }`;
+      }
       rep.placementCount = g.members.length;
       rep.placementIndices = g.indices;
       rep.placementsVary = g.varies;
+      rep.presentInVariants = [defaultVariant.name];
+      rep.defaultVariantPresent = true;
+      rep.placementsByVariant = {
+        [defaultVariant.name]: {
+          variantId: defaultVariant.id,
+          nodeIds: g.indices.map((index: number) => kids[index]?.id).filter(Boolean),
+          placementIndices: g.indices,
+        },
+      };
       children.push(rep);
+    }
+
+    // Add instances found through parent-owned structural containers in every variant,
+    // and aggregate placements for identities that recur. Traversal stops at INSTANCE
+    // and SLOT boundaries so nested internals and interchangeable slot contents do not
+    // leak into the parent's fixed composition. This keeps the designer checklist and
+    // `_childComposition` aligned with the full variant union.
+    const topLevelByIdentity = new Map(
+      children
+        .filter((entry) => entry.nodeType === 'INSTANCE' && entry.origin === 'top-level')
+        .map((entry) => [entry.topLevelInstanceId, entry] as const)
+    );
+    for (const variant of previewVariants) {
+      const { container } = getEffectiveChildContainer(variant);
+      const directChildren: any[] = Array.isArray(sg(container, 'children'))
+        ? sg(container, 'children')
+        : [];
+      const directIndexById = new Map(
+        directChildren.map((child: any, index: number) => [child.id, index] as const)
+      );
+      for (const { node: child } of collectOwnedInstancePlacements(variant)) {
+        const directIndex = directIndexById.get(child.id);
+        const placementIndices = directIndex == null ? [] : [directIndex];
+        const entry: PreviewChild = {
+          name: child.name,
+          nodeType: child.type,
+          mainComponentName: null,
+          parentSetName: null,
+          subCompSetId: null,
+          topLevelInstanceId: null,
+          booleanOverrides: {},
+          componentProperties: snapshotComponentProperties(child),
+          subCompVariantAxes: {},
+          classification: 'decorative',
+          classificationReason: '',
+          classificationEvidence: [],
+          origin: 'top-level',
+          slotName: null,
+          placementCount: 1,
+          placementIndices: [],
+          placementsVary: false,
+          presentInVariants: [variant.name],
+          defaultVariantPresent: variant.id === defaultVariant.id,
+          placementsByVariant: {
+            [variant.name]: {
+              variantId: variant.id,
+              nodeIds: child.id ? [child.id] : [],
+              placementIndices,
+            },
+          },
+        };
+        try {
+          const mc = await (child as InstanceNode).getMainComponentAsync();
+          if (mc) {
+            entry.mainComponentName = mc.name;
+            const parentSet = mc.parent && mc.parent.type === 'COMPONENT_SET' ? mc.parent : null;
+            entry.parentSetName = parentSet ? parentSet.name : mc.name;
+            entry.subCompSetId = parentSet ? parentSet.id : mc.id;
+            if (parentSet && (parentSet as ComponentSetNode).variantGroupProperties) {
+              for (const [key, value] of Object.entries(
+                (parentSet as ComponentSetNode).variantGroupProperties!
+              )) {
+                entry.subCompVariantAxes[key] = (value as any).values;
+              }
+            }
+          }
+          for (const [key, valueRaw] of Object.entries(
+            (child as InstanceNode).componentProperties || {}
+          )) {
+            const value: any = valueRaw;
+            if (value.type === 'BOOLEAN') entry.booleanOverrides[key] = value.value;
+          }
+        } catch {}
+        entry.topLevelInstanceId = `component:${
+          entry.subCompSetId || entry.mainComponentName || entry.name
+        }`;
+        classifyInstance(entry);
+
+        const existing = topLevelByIdentity.get(entry.topLevelInstanceId);
+        if (!existing) {
+          children.push(entry);
+          topLevelByIdentity.set(entry.topLevelInstanceId, entry);
+          continue;
+        }
+        const currentPlacement: {
+          variantId: string;
+          nodeIds: string[];
+          placementIndices: number[];
+        } = existing.placementsByVariant?.[variant.name] ?? {
+          variantId: String(variant.id),
+          nodeIds: [],
+          placementIndices: [],
+        };
+        if (child.id && currentPlacement.nodeIds.includes(child.id)) continue;
+        existing.placementCount += 1;
+        if (!(existing.presentInVariants || []).includes(variant.name)) {
+          existing.presentInVariants = [...(existing.presentInVariants || []), variant.name];
+        }
+        if (child.id) currentPlacement.nodeIds.push(child.id);
+        currentPlacement.placementIndices.push(...placementIndices);
+        existing.placementsByVariant = {
+          ...(existing.placementsByVariant || {}),
+          [variant.name]: currentPlacement,
+        };
+        const existingFingerprint = JSON.stringify({
+          mainComponentName: existing.mainComponentName,
+          booleanOverrides: existing.booleanOverrides,
+          componentProperties: existing.componentProperties,
+        });
+        const entryFingerprint = JSON.stringify({
+          mainComponentName: entry.mainComponentName,
+          booleanOverrides: entry.booleanOverrides,
+          componentProperties: entry.componentProperties,
+        });
+        existing.placementsVary ||= existingFingerprint !== entryFingerprint;
+      }
     }
 
     // Scan SLOT properties so the UI can surface every component the designer either
@@ -493,6 +630,7 @@ async function extract(
         treeFlat: result.treeFlat,
         colorWalk: result.colorWalk,
         layoutTree: result.layoutTree,
+        strokeSemantics: result.strokeSemantics,
       });
       if (result._selfCheck.missingChildren.length > 0) {
         warnings.push(
@@ -543,6 +681,8 @@ async function extract(
         if (rev) variant.revealedTree = rev;
         const revCW = phaseG.revealedColorWalkByVariantName[variant.name];
         if (revCW) variant.revealedColorWalk = revCW;
+        variant.revealedTreeRepresentative =
+          phaseG.structuralRepresentativeByVariantName[variant.name] || variant.name;
       }
     }
 
@@ -550,12 +690,10 @@ async function extract(
     const phaseH = await runPhaseH(target.id);
 
     figma.ui.postMessage({ type: 'progress', phase: 'Fp', detail: 'Child composition…' });
-    const defaultVariantResult = variants.find(
-      (v) => v.id === phaseA.defaultVariant.id
-    ) || variants[0];
     const firstGuess = buildFirstGuess(
       phaseA.component.componentName,
-      defaultVariantResult as any,
+      variants as any,
+      phaseA.defaultVariant.id,
       phaseA.propertyDefinitions
     );
 
@@ -645,6 +783,9 @@ async function extract(
         placementCount: 1,
         placementIndices: [],
         placementsVary: false,
+        presentInVariants: [],
+        defaultVariantPresent: false,
+        placementsByVariant: {},
       });
     }
 
@@ -708,30 +849,39 @@ async function extract(
       );
     }
 
-    // Post-walk validation: every constitutive top-level INSTANCE must have a non-empty
-    // `children` array in the default variant's treeHierarchical. Surface any miss as a
-    // warning. Slot-origin entries are skipped — their `topLevelInstanceId` uses a
-    // `slot:...` scheme and they don't appear as direct children of the variant tree.
-    //
-    // `idx:N` is indexed against the *effective* container — the same descent rule used
-    // by sendPreview / buildFirstGuess — so we apply the same descent here before the
-    // lookup, otherwise the validation would race ahead of any wrapper FRAME.
-    const { container: effectiveWalkedContainer } = getEffectiveChildContainerOfWalked(
-      defaultVariantResult.treeHierarchical
-    );
+    // Post-walk validation: every constitutive top-level INSTANCE placement must have a
+    // populated walked subtree in the exact variant where it appears.
+    const treeIndexes = new Map<string, Map<string, any>>();
+    const indexTree = (node: any, index: Map<string, any>): void => {
+      if (!node || typeof node !== 'object') return;
+      if (typeof node.id === 'string') index.set(node.id, node);
+      if (Array.isArray(node.children)) {
+        for (const child of node.children) indexTree(child, index);
+      }
+    };
+    for (const variant of variants) {
+      const index = new Map<string, any>();
+      indexTree(variant.treeHierarchical, index);
+      treeIndexes.set(variant.id, index);
+    }
     const missingConstitutiveChildren = childComposition.children
       .filter(
-        (c) =>
-          c.classification === 'constitutive' &&
-          c.nodeType === 'INSTANCE' &&
-          (c.origin === 'top-level' || !c.origin) &&
-          (c.topLevelInstanceId || '').startsWith('idx:')
+        (child) =>
+          child.classification === 'constitutive' &&
+          child.nodeType === 'INSTANCE' &&
+          (child.origin === 'top-level' || !child.origin)
       )
-      .filter((c) => {
-        const idx = Number((c.topLevelInstanceId || '').replace('idx:', ''));
-        const entry = effectiveWalkedContainer.children?.[idx];
-        return !entry || !Array.isArray(entry.children) || entry.children.length === 0;
-      });
+      .flatMap((child) =>
+        Object.entries(child.placementsByVariant || {}).flatMap(([, placement]: [string, any]) =>
+          placement.nodeIds
+            .map((nodeId: string) => treeIndexes.get(placement.variantId)?.get(nodeId))
+            .filter(
+              (entry: any) =>
+                !entry || !Array.isArray(entry.children) || entry.children.length === 0
+            )
+            .map(() => child)
+        )
+      );
     if (missingConstitutiveChildren.length > 0) {
       warnings.push(
         `Walked tree is missing children for constitutive instance(s): ${missingConstitutiveChildren

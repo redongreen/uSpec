@@ -7,10 +7,15 @@ export type PhaseGResult = {
   revealedColorWalkByVariantName: Record<string, any[]>;
   slotHostGeometry: {
     swapResults: Record<string, Record<string, { prefDims: any; slotDims: any }>>;
+    swapResultsByVariant: Record<
+      string,
+      Record<string, Record<string, { prefDims: any; slotDims: any }>>
+    >;
     boolGatedFillers: any[];
   };
   mutationsPerformed: Array<{ action: string; target?: string; slot?: string; pref?: string }>;
   variantsWalked: string[];
+  structuralRepresentativeByVariantName: Record<string, string>;
 };
 
 async function rb(n: any, p: string): Promise<string | null> {
@@ -97,10 +102,14 @@ async function hierWalk(node: any, depth: number): Promise<any> {
   const kids = sg(node, 'children');
   if (kids && kids.length > 0 && (node.type !== 'INSTANCE' || isTop)) {
     entry.children = [];
-    const childDepth = depth === -1 ? 0 : depth + 1;
+    const childDepth = depth + 1;
     for (const c of kids) entry.children.push(await hierWalk(c, childDepth));
   }
   return entry;
+}
+
+export async function walkRevealedTree(rootInstance: any): Promise<any> {
+  return hierWalk(rootInstance, 0);
 }
 
 async function detectBoolGatedFillers(root: any): Promise<any[]> {
@@ -296,29 +305,38 @@ export async function runPhaseG(
   const allVariants: any[] = isCS ? node.children : [node];
   const defaultVariant: any = isCS ? node.defaultVariant || node.children[0] : node;
 
-  // Representative variant set: default + one variant per dimensional-axis value.
-  const axes: Record<string, string[]> = {};
-  if (isCS && node.variantGroupProperties) {
-    for (const [k, v] of Object.entries(node.variantGroupProperties))
-      axes[k] = (v as any).values;
-  }
-  const defaultVProps: Record<string, string> = isCS ? defaultVariant.variantProperties || {} : {};
-  const defaultValues: Record<string, string> = {};
-  for (const [a, vals] of Object.entries(axes)) defaultValues[a] = defaultVProps[a] || vals[0];
-  const DIM_RE = /size|density|shape/i;
-  const dimAxes = Object.keys(axes).filter((a) => DIM_RE.test(a));
-  const selectedNames = new Set<string>([defaultVariant.name]);
-  for (const axis of dimAxes) {
-    for (const val of axes[axis]) {
-      const tp = { ...defaultValues, [axis]: val };
-      const v = allVariants.find((vv) => {
-        const vp = vv.variantProperties || {};
-        return Object.entries(tp).every(([k, x]) => vp[k] === x);
-      });
-      if (v) selectedNames.add(v.name);
+  // Sample every distinct structural topology. Variant-axis names are not semantic
+  // guarantees: anatomy can change on an axis called "type", "mode", or anything else.
+  // The signature therefore comes from the actual node tree (including hidden children),
+  // and the default variant is considered first so it remains the representative when
+  // another variant has identical structure.
+  const topologySignature = (root: any): string => {
+    const visit = (current: any, isRoot = false): any => {
+      const kids = sg(current, 'children');
+      return [
+        current.type,
+        isRoot ? '__root__' : current.name,
+        current.visible !== false,
+        Array.isArray(kids) ? kids.map((child: any) => visit(child)) : [],
+      ];
+    };
+    return JSON.stringify(visit(root, true));
+  };
+  const orderedVariants = [
+    defaultVariant,
+    ...allVariants.filter((variant) => variant.id !== defaultVariant.id),
+  ];
+  const representativeBySignature = new Map<string, any>();
+  const structuralRepresentativeByVariantName: Record<string, string> = {};
+  for (const variant of orderedVariants) {
+    const signature = topologySignature(variant);
+    const representative = representativeBySignature.get(signature) || variant;
+    if (!representativeBySignature.has(signature)) {
+      representativeBySignature.set(signature, variant);
     }
+    structuralRepresentativeByVariantName[variant.name] = representative.name;
   }
-  const variantsToReveal = allVariants.filter((v) => selectedNames.has(v.name));
+  const variantsToReveal = [...representativeBySignature.values()];
 
   const enable: Record<string, boolean> = {};
   for (const k of booleanDefsKeys) enable[k] = true;
@@ -327,7 +345,12 @@ export async function runPhaseG(
   const revealedByVariantName: Record<string, any> = {};
   const revealedColorWalkByVariantName: Record<string, any[]> = {};
   const slotSwapResults: Record<string, Record<string, { prefDims: any; slotDims: any }>> = {};
-  let boolGatedFillers: any[] = [];
+  const slotSwapResultsByVariant: Record<
+    string,
+    Record<string, Record<string, { prefDims: any; slotDims: any }>>
+  > = {};
+  const boolGatedFillers: any[] = [];
+  const boolFillerKeys = new Set<string>();
 
   for (const variant of variantsToReveal) {
     let testInst: InstanceNode | null = null;
@@ -341,13 +364,25 @@ export async function runPhaseG(
       } catch {}
       await loadAllFonts(testInst);
 
-      revealedByVariantName[variant.name] = await hierWalk(testInst, -1);
+      revealedByVariantName[variant.name] = await walkRevealedTree(testInst);
       revealedColorWalkByVariantName[variant.name] = await colorWalkRevealed(testInst, '', null);
 
-      if (variant.id === defaultVariant.id) {
-        boolGatedFillers = await detectBoolGatedFillers(testInst);
+      for (const filler of await detectBoolGatedFillers(testInst)) {
+        const key = JSON.stringify([
+          filler.slotRole,
+          filler.boolPropName,
+          filler.componentSetId,
+          filler.componentName,
+        ]);
+        if (boolFillerKeys.has(key)) continue;
+        boolFillerKeys.add(key);
+        boolGatedFillers.push({
+          ...filler,
+          presentInStructuralVariant: variant.name,
+        });
+      }
 
-        for (const pref of slotPrefList) {
+      for (const pref of slotPrefList) {
           const slotNode: any = (testInst as any).findOne(
             (n: any) => n.type === 'SLOT' && n.name === pref.slotName
           );
@@ -376,15 +411,24 @@ export async function runPhaseG(
               pref: pref.componentId,
             });
             await loadAllFonts(testInst);
-            if (!slotSwapResults[pref.slotName]) slotSwapResults[pref.slotName] = {};
-            slotSwapResults[pref.slotName][pref.componentId] = {
+            if (!slotSwapResultsByVariant[variant.name]) {
+              slotSwapResultsByVariant[variant.name] = {};
+            }
+            if (!slotSwapResultsByVariant[variant.name][pref.slotName]) {
+              slotSwapResultsByVariant[variant.name][pref.slotName] = {};
+            }
+            const result = {
               prefDims: await dim(prefInst),
               slotDims: await dim(slotNode),
             };
+            slotSwapResultsByVariant[variant.name][pref.slotName][pref.componentId] = result;
+            if (variant.id === defaultVariant.id) {
+              if (!slotSwapResults[pref.slotName]) slotSwapResults[pref.slotName] = {};
+              slotSwapResults[pref.slotName][pref.componentId] = result;
+            }
           } catch (err) {
             // Per-slot failure — log and continue.
           }
-        }
       }
     } finally {
       if (testInst) {
@@ -399,8 +443,13 @@ export async function runPhaseG(
   return {
     revealedByVariantName,
     revealedColorWalkByVariantName,
-    slotHostGeometry: { swapResults: slotSwapResults, boolGatedFillers },
+    slotHostGeometry: {
+      swapResults: slotSwapResults,
+      swapResultsByVariant: slotSwapResultsByVariant,
+      boolGatedFillers,
+    },
     mutationsPerformed,
     variantsWalked: variantsToReveal.map((v) => v.name),
+    structuralRepresentativeByVariantName,
   };
 }

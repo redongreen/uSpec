@@ -146,6 +146,32 @@ export function getEffectiveChildContainerOfWalked(walked: any): {
   return { container, wrappers };
 }
 
+// Component-placement discovery through parent-owned structural containers.
+// Recurse through ordinary FRAME/GROUP wrappers, but stop at every INSTANCE or SLOT
+// boundary so neither a referenced component's private internals nor interchangeable
+// slot contents leak into the parent's fixed composition. Paths are relative to the
+// supplied root.
+export function collectOwnedInstancePlacements(
+  root: any
+): Array<{ node: any; path: number[] }> {
+  const placements: Array<{ node: any; path: number[] }> = [];
+  const visit = (node: any, path: number[]): void => {
+    const children = sg(node, 'children');
+    if (!Array.isArray(children)) return;
+    children.forEach((child: any, index: number) => {
+      const childPath = [...path, index];
+      if (sg(child, 'type') === 'INSTANCE') {
+        placements.push({ node: child, path: childPath });
+        return;
+      }
+      if (sg(child, 'type') === 'SLOT') return;
+      visit(child, childPath);
+    });
+  };
+  visit(root, []);
+  return placements;
+}
+
 // Sub-component dedup. The classification UI asks one question per distinct
 // sub-component — "constitutive or referenced?" — so N placements of the same main
 // component (e.g. six "selection button" placements inside a button group) collapse
