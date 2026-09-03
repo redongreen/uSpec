@@ -3,6 +3,68 @@ title: "Changelog"
 description: "Product updates and release history"
 ---
 
+<Update label="V2.7 — September 2026" description="Canonical component contracts, deterministic concise and audit Markdown rendering, evidence-obligation validation, and variant-complete uSpec Extract 2.7.0 — shipping in uspec-skills 0.3.3">
+  ## uSpec V2.7
+
+  Component Markdown now compiles specialist evidence into a canonical JSON contract before it
+  renders the human implementation guide. The default `.md` is concise and deterministic, while an
+  exhaustive audit view remains available for diagnostics. The same release makes the public uSpec
+  Extract plugin variant-complete: child composition, revealed trees, ownership hints, and target
+  identity now preserve evidence from every variant instead of treating the default variant as the
+  complete component.
+
+  ### Canonical JSON contract and deterministic Markdown
+
+  - **`component-md validate`** normalizes and validates each specialist cache immediately after the
+    AI pass. Prepared evidence carries deterministic obligations, and every specialist must account
+    for each fact as emitted, merged, omitted, or unresolved with a valid output target.
+  - **`component-md contract`** compiles validated API, Structure, Color, Voice, reconciliation, and
+    source-identity records into `components/{componentSlug}.json`. This schema-valid JSON is the
+    machine-readable source of truth.
+  - **`component-md render`** produces the sibling implementation guide from that contract. The
+    concise view is the default; `--view audit` writes the exhaustive evidence and provenance view
+    on explicit request.
+  - Rendering includes deterministic acceptance gates for API examples, Anatomy, Structure groups,
+    Color contexts, accessibility states and platforms, target resolution, and obligation coverage.
+    Unsupported or untraceable semantic rows fail validation instead of silently entering the spec.
+  - The AI-authored render plan is intentionally small: it supplies the overview and confidence
+    summary, while tables, known gaps, target maps, render metadata, and document assembly remain
+    mechanical.
+
+  ### Variant-complete uSpec Extract 2.7.0
+
+  - Child composition now walks every parent variant and records `presentInVariants`,
+    `defaultVariantPresent`, and exact `placementsByVariant` metadata. Variant-only children no
+    longer disappear when they are absent from the default variant.
+  - Parent-owned instances nested below structural frames are discovered without crossing nested
+    component or slot boundaries. The same sub-component placed under different wrapper topologies
+    deduplicates by component identity.
+  - Revealed-tree extraction samples every distinct structural topology and preserves the
+    representative variant mapping. Revealed root instances now include their children instead of
+    emitting empty trees.
+  - Ownership hints, Structure evidence, accessibility focus candidates, Color obligations, and
+    renderer evidence all preserve source-variant identity.
+  - Stroke semantics distinguish a configured stroke weight from an actually painted stroke, so
+    Structure no longer documents phantom borders.
+  - Structure section and group targets validate against the exact variant tree that owns the node
+    id. Correct non-default-variant targets are no longer rejected against the default tree.
+
+  ### Public plugin and compatibility
+
+  - The Figma Community build is the open-source, link-required plugin. Public plugins cannot rely
+    on `figma.fileKey`, so paste the selected component's link on first use; the plugin remembers it
+    for later runs in the same document.
+  - The plugin footer and extraction metadata report version 2.7.0.
+  - `_base.json` remains schema version 1. The new cross-variant fields are additive, and
+    `uspec-skills` synthesizes compatible coverage metadata when it prepares older schema-v1
+    extractions.
+  - Accessibility guardrails preserve the explicit `Do not:` prefix in concise output.
+
+  Upgrade the skills with `npx uspec-skills@0.3.3 update`, then update **uSpec Extract** from the
+  [Figma Community](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract).
+  Re-extract components to receive the complete cross-variant evidence.
+</Update>
+
 <Update label="V2.6 — July 2026" description="Deterministic Component Markdown prepare stage in the CLI — validate, stage, and slice _base.json before the AI interpretation pass — shipping in uspec-skills 0.3.2">
   ## uSpec V2.6
 

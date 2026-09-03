@@ -1,25 +1,29 @@
 ---
 title: "Introduction"
-description: "Generate design system documentation for any Figma component. Produce a portable .md spec, then render it into Figma as annotation frames."
+description: "Generate a canonical component contract and portable implementation guide, then render the guide into Figma as annotation frames."
 ---
 
 <Note>
-**uSpec now runs on the uSpec Extract plugin.** Every spec starts from a Component Markdown file the plugin produces — it saves thousands of tokens per run and captures more component detail than live extraction. [See the Component Markdown guide →](/specs/component-md)
+**uSpec starts with the uSpec Extract plugin.** The plugin captures deterministic evidence;
+`create-component-md` compiles it into canonical `.json` and concise `.md` artifacts. This saves
+thousands of tokens per run and captures more component detail than live extraction.
+[See the Component Markdown guide →](/specs/component-md)
 </Note>
 
 <Frame>
   <img src="/images/cover.png" alt="uSpec: design system documentation for Figma components" />
 </Frame>
 
-uSpec turns your Figma components into structured documentation from your AI agent. The **uSpec Extract** plugin captures your component, `create-component-md` turns that capture into a single `.md` spec you can take anywhere, and the `create-*` skills render that spec into Figma as annotation frames.
+uSpec turns your Figma components into structured documentation from your AI agent. The **uSpec Extract** plugin captures your component, `create-component-md` compiles a canonical `.json` contract and portable `.md` implementation guide, and the `create-*` skills render that guide into Figma as annotation frames.
 
 Works with **Cursor**, **Claude Code**, and **Codex**.
 
 ## Start here: Component Markdown
 
 <CardGroup cols={1}>
-  <Card title="Your component. One .md file. Anywhere." icon="file-code" href="/specs/component-md">
-    **New in v2.0.** Your design system source of truth, in one markdown file per component. Covers API, structure, color, and screen-reader behavior. An artifact that LLM tools can build from and humans can query.
+  <Card title="One contract, one implementation guide" icon="file-code" href="/specs/component-md">
+    A schema-valid `.json` contract plus concise `.md` for every component. Both cover API,
+    structure, color, and screen-reader behavior.
   </Card>
 </CardGroup>
 
@@ -53,14 +57,19 @@ Once you have a component `.md`, the `create-*` skills render annotation frames 
 
 ## How it works
 
-Every spec flows through one pipeline, with the Component Markdown file at its center:
+Every spec flows through one pipeline, with the component contract and its Markdown view at the
+center:
 
 <Steps>
   <Step title="Extract">
-    Run the **uSpec Extract** Figma plugin on your component to produce a `_base.json` capture of every variant, token binding, and sub-component.
+    Run the **uSpec Extract** Figma plugin on your component to produce a `_base.json` capture of
+    every variant, token binding, and sub-component. The public plugin asks for the component link
+    on first use and remembers it for that document.
   </Step>
-  <Step title="Generate the .md">
-    Run `create-component-md` against the `_base.json`. It runs four parallel interpretation agents (API, structure, color, voice) and writes a single `.md` specification to disk — your source of truth.
+  <Step title="Compile the contract and guide">
+    Run `create-component-md` against the `_base.json`. It interprets API, Structure, Color, and
+    Voice evidence, validates their obligations, then writes canonical `.json` and concise `.md`
+    artifacts.
   </Step>
   <Step title="Render into Figma (optional)">
     Point any `create-*` skill at the `.md` to render that section as annotation frames next to the component. These skills read from the `.md`; they do not re-extract from Figma.
