@@ -5,6 +5,11 @@ feeds the `create-component-md` skill chain.
 
 One extraction, one JSON, delivered to your clipboard or `~/Downloads/`.
 
+This repository contains the **public Figma Community build**. It requires a Figma component
+link because public plugins cannot rely on `figma.fileKey`. The first valid link is remembered
+on that document and prefilled on later runs. Internal no-link publications are separate builds
+and are not produced from this repository.
+
 ## How it works
 
 The plugin runs locally inside Figma Desktop's plugin sandbox. It walks the selected
@@ -65,13 +70,15 @@ npm run build:watch
 1. In Figma, select a single `COMPONENT` or `COMPONENT_SET` (or a variant, which is auto-
    promoted to its component set).
 2. Run **Plugins → Development → uSpec Extract**.
-3. Review the sub-component checklist: the plugin pre-guesses whether each child instance is
+3. Paste the selected component's Figma link into the footer. Extraction remains disabled until
+   the link is valid.
+4. Review the sub-component checklist: the plugin pre-guesses whether each child instance is
    **constitutive** (owned by this component) or **referenced** (an instance of a widely-
    reused component). Flip any guess you disagree with. Non-instance children (vectors,
    frames, text) are locked to **decorative**.
-4. Optionally paste context about the component in the text area (design intent, open
+5. Optionally paste context about the component in the text area (design intent, open
    questions, constraints).
-5. Click **Extract & download** to save the JSON to `~/Downloads/`, or **Copy JSON** to
+6. Click **Extract & download** to save the JSON to `~/Downloads/`, or **Copy JSON** to
    put the full payload on your clipboard.
 
 ## The output

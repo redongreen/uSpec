@@ -18,8 +18,8 @@ The orchestrator calls this skill with these inputs (already resolved — do NOT
 - `componentSlug` — filename-safe slug
 - `cachePath` — cache directory, typically `.uspec-cache/{componentSlug}/`
 - `optionalContext` — free-form string from the user (may be `"none"`)
-- `mcpProvider` — `figma-console` or `figma-mcp` (only needed if a Step 3-delta escape hatch fires AND a live Figma link was provided to the orchestrator)
-- `deltaAvailable` — boolean. When the orchestrator received **only** a `baseJsonPath` (no `figmaLink`), this is `false` and the Step 3-delta escape hatch must not fire; log the gap in `data._deltaExtractions[]` with `unavailable: "no-figma-link"` and continue with best-effort output.
+- `mcpProvider` — `figma-console` or `figma-mcp` (only used if a Step 3-delta escape hatch fires)
+- `deltaAvailable` — boolean derived from `_base.json._meta.fileKey` + `nodeId`. Plugin exports normally make this `true`; a separately-passed `figmaLink` is not required.
 - `evidenceApiPath` — optional. Path to `{cachePath}/{componentSlug}-evidence-api.json` from `uspec-skills component-md prepare`. When present and `_meta.baseSourceHash` matches the staged `_base.json`, use `data` as the Step 3 working evidence set and skip rebuilding it from the full base file.
 
 `fileKey` and `nodeId` are **not** pass-through parameters. Read them from `{cachePath}/{componentSlug}-_base.json._meta.fileKey` and `_meta.nodeId` at the start of Step 1 — `_base.json` is the single source of truth for them.
@@ -133,6 +133,10 @@ If during Step 4 you discover a fact that is genuinely missing from `_base.json`
 ```
 
 An empty array (zero delta calls) is the expected default. Multiple entries across components signal pressure to widen the `_base.json` schema in the plugin; treat the escape hatch as a diagnostic channel, not a regular path.
+
+When a needed delta cannot run, emit the complete unavailable shape:
+`{ purpose, script: null, byteCount: 0, timestamp, unavailable: "mcp-unavailable" }`.
+Use `"no-figma-target"` only when `_meta.fileKey` or `_meta.nodeId` is genuinely absent.
 
 ### Step 4: Identify Properties
 
@@ -335,7 +339,7 @@ Write the finalized `ApiOverviewData` object as pretty-printed JSON to `{cachePa
 
 ### Step 7.5: Project `ApiDictionary` and write the dictionary cache
 
-After `{componentSlug}-api.json` is written, project the `ApiDictionary` artifact as specified in the **`ApiDictionary` artifact** section of [api/agent-api-instruction.md]({{ref:api/agent-api-instruction.md}}). This is a pure re-projection — no new reasoning, no new Figma calls, no inference. Every field has a documented 1:1 source already captured in the api.json payload.
+After `{componentSlug}-api.json` is written, project the `ApiDictionary` artifact as specified in the **`ApiDictionary` artifact** section of [api/agent-api-instruction.md]({{ref:api/agent-api-instruction.md}}). This is a mechanical projection — no new reasoning, no new Figma calls, no inference. Semantic API fields come from `api.json`; referenced-component identities come from the prepared API evidence's `referencedChildren[]`, which is the full cross-variant `_childComposition` union.
 
 Projection rules (no interpretation beyond what the instruction file already codified):
 
@@ -347,6 +351,7 @@ Projection rules (no interpretation beyond what the instruction file already cod
    - Otherwise set `classification` to `"variable-mode"` when `row.notes` mentions a variable collection mode (substring match on "variable mode"), otherwise `"variant"`.
 2b. **`booleanProps[]`** — walk `data.mainTable.properties[]`. For every row whose `values` is exactly `"true, false"`, emit `{ name: row.property, default: row.default }`. Emit a boolean here even when it was decomposed from a Figma state axis (its `name` appears as an `apiAssignments` key in `stateAxisMapping[]`, e.g. `isLoading`) — it belongs in BOTH `booleanProps[]` and `states[]`. This list is what lets the downstream specialists reconcile a Disabled/Loading section or state against the API surface instead of flagging it as `value-extra`. Empty array when the component has no top-level booleans.
 3. **`subComponents[]`** — walk `data.subComponentTables[]`. For each table, emit `{ name: table.name, parentSetName: null, mainComponentName: null, _identityResolved: table._identityResolved ?? true, role: null }`. If the source extraction preserved `parentSetName` / `mainComponentName` in the table name or a sibling field, carry those through; otherwise leave them `null`. Populate `role` from `_base.json.slotHostGeometry.boolGatedFillers[*].slotRole` when one matches the sub-component's role (by boolean prop name or slot name); otherwise `null`.
+3b. **`referencedComponents[]`** — copy every prepared API evidence `referencedChildren[]` entry, keeping `{ name, parentSetName, mainComponentName, subCompSetId, presentInVariants, defaultVariantPresent }`. Deduplicate by `subCompSetId`, falling back to `parentSetName || mainComponentName || name`. This field is vocabulary, not an API property table: it ensures variant-only icons and peer components can be named by downstream specialists without becoming false dictionary mismatches.
 4. **`booleanRelationships[]`** — copy `data._extractionArtifacts.booleanRelationshipAnalysis[]` verbatim but drop `evidence[]`. Keep `{ subComponentName, booleansConsidered, relationship, apiDecision, apiShape }`.
 5. **`states[]`** — copy `data._extractionArtifacts.stateAxisMapping[]` verbatim. Empty array when the field is absent.
 6. **`slots[]`** — copy `data._extractionArtifacts.slotResolverStrategy[]` verbatim but drop `rationale`. Keep `{ slotName, shape, enumProp, behavioralProps, priorityOrder }`. Empty array when the field is absent.

@@ -5,6 +5,10 @@
 > Written for someone seeing CLI publishing for the first time. If you've shipped npm packages before, the [Quick reference](#quick-reference) at the bottom is probably enough.
 >
 > **Architecture deep-dive.** This file is the release manual. For the system architecture — how skills, MCP, the Figma plugin, and the CLI fit together at a code level — see [`implementation.md`](implementation.md). The two files are deliberately separate: this one tells you *how to ship*, that one tells you *how the system works*.
+>
+> **Active release.** For the branch currently being prepared as uSpec V2.7, use the
+> checkboxes in [`release-checklist.md`](release-checklist.md). This manual explains each
+> procedure; the checklist records whether the release candidate has completed it.
 
 ## Mental model in one diagram
 
@@ -80,7 +84,7 @@ The `dist/` and `templates/` folders inside `packages/cli/` are **build outputs*
 
 When a user runs `npx uspec-skills@latest init` in some random folder, here's the chain:
 
-1. **`npx`** queries `registry.npmjs.org` for the package called `uspec-skills`, gets the version tagged `latest` (currently `0.3.2`), and downloads the tarball.
+1. **`npx`** queries `registry.npmjs.org` for the package called `uspec-skills`, gets the version tagged `latest` (0.3.3 for the V2.7 release), and downloads the tarball.
 2. The tarball contains `dist/index.js` (the bundled CLI) and `templates/` (the skills + references that ship with this version).
 3. `npx` runs the `bin` defined in `package.json` (`uspec-skills` → `./dist/index.js`).
 4. The CLI walks up from the user's current directory looking for a project marker (`.git/`, `package.json`, or `uspecs.config.json`). If none is found, it bootstraps into the current directory (this is the fix that shipped in `0.1.1`).
@@ -147,6 +151,13 @@ You changed something under `packages/cli/src/`. Same flow as above — bump the
 
 The Figma plugin **does not ship in the npm package**. It's distributed separately on the [Figma Community](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract), where users install it directly — no local build required. The source stays open in `figma-plugin/` for contributors who want to run a modified build locally.
 
+This repository contains the **public Community build**. It requires the user to paste a Figma
+component link because public plugins cannot rely on `figma.fileKey`; after the first valid entry,
+the link is remembered in that document and prefilled on later runs. An internal no-link build may
+exist as a separate publication, but it is not built by this repository. Before publishing from
+Figma Desktop, verify that you selected the link-required Community build and plugin id
+`1635184425006534227`.
+
 If you change the plugin:
 
 1. Edit files under `figma-plugin/src/`.
@@ -179,7 +190,7 @@ You're on `0.3.x`. The `0.x.y` range is npm's convention for "early, expect brea
 
 Bumps in `0.3.x` are cheap. Don't agonize. Once you ship `1.0.0`, every breaking change costs a major bump.
 
-**Versioning the product vs. the CLI.** "uSpec" the product is at V2.6 (per the changelog and docs). `uspec-skills` the npm package is at `0.3.2` and versions on its own track. They are not the same number — and shouldn't be. Compare React (v18, the framework) vs. `create-react-app` (v5, the CLI). The product version goes in the changelog and docs; the npm version goes in `package.json`.
+**Versioning the product vs. the CLI.** "uSpec" the product is at V2.7 (per the changelog and docs). `uspec-skills` 0.3.3 ships that release on npm and versions on its own track. The public Figma Community plugin has a third version, 2.7.0. These numbers are independent: the product version goes in the changelog and GitHub tag, the npm version goes in `packages/cli/package.json`, and the plugin version goes in `figma-plugin/package.json` plus its extraction metadata and footer.
 
 ## Publishing in detail
 
@@ -219,22 +230,22 @@ npm view uspec-skills version
 
 ### GitHub tag and release
 
-After merging to `main` and publishing to npm, tag the release commit and create a GitHub Release. Product version (`v2.6.0`) and npm version (`0.3.2`) are separate — the tag uses the product version; the npm tarball uses `package.json`.
+After merging to `main` and publishing to npm and the Figma Community, tag the release commit and create a GitHub Release. Product version (`v2.7.0`), npm version (`0.3.3`), and plugin version (`2.7.0`) are separate — the tag uses the product version, while each package uses its own metadata.
 
 ```bash
 # From repo root, on main after merge
 git pull origin main
-git tag -a v2.6.0 -m "uSpec V2.6 / uspec-skills 0.3.2"
-git push origin v2.6.0
+git tag -a v2.7.0 -m "uSpec V2.7 / uspec-extract 2.7.0 / uspec-skills 0.3.3"
+git push origin v2.7.0
 
 # Create the GitHub Release (notes from docs/help/changelog.mdx)
-gh release create v2.6.0 \
-  --title "uSpec V2.6" \
-  --notes-file /tmp/v2.6-release-notes.md \
+gh release create v2.7.0 \
+  --title "uSpec V2.7" \
+  --notes-file /tmp/v2.7-release-notes.md \
   --latest
 ```
 
-Write `/tmp/v2.6-release-notes.md` from the matching `<Update>` block in `docs/help/changelog.mdx` before running `gh release create`. Mintlify auto-deploys docs from `main` within 1–2 minutes — no separate docs publish step.
+Write `/tmp/v2.7-release-notes.md` from the matching `<Update>` block in `docs/help/changelog.mdx` before running `gh release create`. Mintlify auto-deploys docs from `main` within 1–2 minutes — no separate docs publish step.
 
 If a product release tag already exists on `main` but has no GitHub Release (e.g. `v2.5.0` was tagged without `gh release create`), backfill it:
 
@@ -379,9 +390,9 @@ npm publish --access public      # opens browser for web-based 2FA approval
 npm view uspec-skills version    # verify
 
 # After merge to main
-git tag -a v2.6.0 -m "uSpec V2.6 / uspec-skills 0.3.2"
-git push origin v2.6.0
-gh release create v2.6.0 --title "uSpec V2.6" --notes-file /tmp/v2.6-release-notes.md --latest
+git tag -a v2.7.0 -m "uSpec V2.7 / uspec-extract 2.7.0 / uspec-skills 0.3.3"
+git push origin v2.7.0
+gh release create v2.7.0 --title "uSpec V2.7" --notes-file /tmp/v2.7-release-notes.md --latest
 ```
 
 ```bash

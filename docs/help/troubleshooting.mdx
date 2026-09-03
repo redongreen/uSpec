@@ -163,7 +163,10 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
   </Tab>
 
   <Tab title="Figma Extract plugin" icon="puzzle-piece">
-    The **uSpec Extract** Figma plugin produces the Component Markdown source. It walks a selected component, captures every variant and token binding, and writes a single `_base.json` that `create-component-md` consumes. Use this tab when the plugin won't install, or runs but doesn't produce a usable file.
+    The **uSpec Extract** Figma plugin produces the evidence for the component contract. It walks
+    a selected component, captures every variant and token binding, and writes a single
+    `_base.json` that `create-component-md` consumes. Use this tab when the plugin will not install
+    or does not produce a usable file.
 
     <Note>
       The plugin runs entirely inside Figma Desktop's plugin sandbox. It makes no network calls and stores nothing externally. Once installed, it works offline thereafter.
@@ -181,7 +184,9 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
         Click **Open in…** (or **Try it out**) to add it to your Figma. It then appears under **Plugins → uSpec Extract** in any file.
       </Step>
       <Step title="Run it">
-        Select a `COMPONENT` or `COMPONENT_SET` on the canvas, then run **Plugins → uSpec Extract**.
+        Select a `COMPONENT` or `COMPONENT_SET`, run **Plugins → uSpec Extract**, then paste the
+        selected component's Figma link. The public plugin remembers the link for later runs in
+        the same document.
       </Step>
     </Steps>
 
@@ -215,6 +220,19 @@ Having trouble creating a spec? Find solutions below based on where the issue oc
         - The selection must be a `COMPONENT` or `COMPONENT_SET`. Frames, groups, and instances are not accepted. Selecting a single variant inside a component set is fine — the plugin auto-promotes it to the parent set.
         - If you're working in a library file, confirm the component hasn't been detached from its master. Detached instances do not register as `COMPONENT` nodes.
         - Click **Refresh** in the plugin footer if you changed the selection while the plugin window was open.
+      </Accordion>
+
+      <Accordion title="Extract buttons stay disabled">
+        **Symptom**: The component preview appears, but **Extract & download** and **Copy JSON**
+        remain unavailable.
+
+        **Solutions**:
+        - Copy the selected component's Figma URL and paste it into the plugin footer. The public
+          Community plugin requires a valid file link because it cannot rely on `figma.fileKey`.
+        - Include the `/design/{fileKey}/...` portion of the URL. A link to a Community listing,
+          prototype, or unrelated web page is not valid.
+        - After one successful entry, reopen the plugin in the same document. The saved link should
+          prefill automatically.
       </Accordion>
 
       <Accordion title="Extract & download produces no file">

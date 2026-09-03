@@ -73,8 +73,15 @@ export interface BaseJson {
     }>;
     colorWalk: ColorWalkEntry[];
     layoutTree: Record<string, unknown>;
+    strokeSemantics?: {
+      configured: boolean;
+      painted: boolean;
+      configuredWeight: unknown;
+      visiblePaintCount: number;
+    };
     revealedTree?: TreeNode | null;
     revealedColorWalk?: ColorWalkEntry[] | null;
+    revealedTreeRepresentative?: string;
     _selfCheck?: { missingChildren?: unknown[] };
   }>;
   crossVariant?: Record<string, unknown> | null;
@@ -90,6 +97,21 @@ export interface BaseJson {
       subCompSetId?: string | null;
       parentSetName?: string | null;
       mainComponentName?: string | null;
+      topLevelInstanceId?: string | null;
+      origin?: 'top-level' | 'slot-preferred' | 'slot-default-child';
+      slotName?: string | null;
+      componentProperties?: Record<string, unknown> | null;
+      booleanOverrides?: Record<string, boolean>;
+      subCompVariantAxes?: Record<string, string[]>;
+      placementCount?: number;
+      placementIndices?: number[];
+      placementsVary?: boolean;
+      presentInVariants?: string[];
+      defaultVariantPresent?: boolean;
+      placementsByVariant?: Record<
+        string,
+        { variantId: string; nodeIds: string[]; placementIndices: number[] }
+      >;
     }>;
     ambiguousChildren: unknown[];
     guessConfidence?: string;
@@ -135,12 +157,44 @@ export interface EvidenceEnvelope<T> {
     schemaVersion: '1';
     preparedAt: string;
     componentSlug: string;
-    domain: 'api' | 'structure' | 'color' | 'voice';
+    domain: 'api' | 'structure' | 'color' | 'voice' | 'renderer';
     baseSourceHash: string;
     defaultVariantId: string;
     defaultVariantName: string;
   };
   data: T;
+}
+
+export type EvidenceDomain = 'api' | 'structure' | 'color' | 'voice';
+
+export interface EvidenceRepresentation {
+  targetKind: 'api-property' | 'structure-row' | 'color-element' | 'voice-record';
+  pathPrefix?: string;
+  field?: string;
+  equals?: string;
+  oneOf?: string[];
+  pattern?: string;
+  arrayField?: string;
+  arrayEquals?: Array<string | number | boolean>;
+  allowMerge?: boolean;
+}
+
+export interface EvidenceObligation {
+  id: string;
+  domain: EvidenceDomain;
+  kind: string;
+  label: string;
+  policy: 'must-emit' | 'account';
+  sourcePaths: string[];
+  facts: Record<string, unknown>;
+  representation?: EvidenceRepresentation;
+}
+
+export interface EvidenceDisposition {
+  obligationId: string;
+  disposition: 'emitted' | 'merged' | 'omitted' | 'unresolved';
+  targets: string[];
+  reason: string;
 }
 
 export interface PrepareManifest {
@@ -159,8 +213,37 @@ export interface PrepareManifest {
     layoutTreeHasNodeIds: boolean;
     childCompositionUserSelected: boolean;
     revealedTreeHasChildren: boolean;
+    variantTreesComplete?: boolean;
     subComponentVariantWalksPresent: boolean;
     warnings: unknown[];
+  };
+  source: {
+    fileKey: string;
+    nodeId: string;
+    figmaUrl: string;
+    extractionSource: string | null;
+  };
+  metrics: {
+    prepare: {
+      baseBytes: number;
+      evidenceBytes: Record<'api' | 'structure' | 'color' | 'voice' | 'renderer', number>;
+      obligationCounts: Record<'api' | 'structure' | 'color' | 'voice', number>;
+      obligationKindCounts: Record<
+        'api' | 'structure' | 'color' | 'voice',
+        Record<string, number>
+      >;
+      totalEvidenceBytes: number;
+      estimatedInputTokens: number;
+    };
+    render?: {
+      renderedAt: string;
+      specialistCacheBytes: number;
+      contractBytes?: number;
+      renderPlanBytes: number;
+      outputBytes: number;
+      estimatedInputTokens: number;
+      durationMs: number;
+    };
   };
   summaries: {
     componentName: string;
@@ -182,11 +265,76 @@ export interface PrepareManifest {
     cachePath: string;
     stagedBasePath: string;
     outputPath: string;
+    contractPath?: string;
     evidence: {
       api: string;
       structure: string;
       color: string;
       voice: string;
+      renderer: string;
     };
+  };
+}
+
+export interface RenderPlan {
+  _meta: {
+    schemaVersion: '1';
+    componentSlug: string;
+    baseSourceHash: string;
+    generatedAt: string;
+  };
+  data: {
+    overviewParagraph: string;
+    confidence?: Partial<Record<'api' | 'structure' | 'color' | 'voice', string>>;
+  };
+}
+
+export interface CanonicalComponentContract {
+  $schema: 'https://uspec.design/schemas/component-contract-1.0.json';
+  schemaVersion: '1.0';
+  generatedAt: string;
+  component: {
+    slug: string;
+    name: string;
+  };
+  source: {
+    fileKey: string;
+    nodeId: string;
+    figmaUrl: string;
+    extractionSource: string | null;
+    baseSourceHash: string;
+  };
+  summary: {
+    overview: string;
+    confidence: Record<'api' | 'structure' | 'color' | 'voice', string>;
+  };
+  variants: {
+    axes: unknown[];
+    default: unknown;
+  };
+  anatomy: {
+    defaultTree: unknown;
+    composition: unknown;
+    subcomponents: unknown;
+  };
+  api: Record<string, any>;
+  structure: Record<string, any>;
+  color: Record<string, any>;
+  accessibility: Record<string, any>;
+  dictionary: Record<string, any>;
+  reconciliations: Record<string, any>;
+  sourceModel: Record<string, any>;
+  provenance: {
+    preparedAt: string;
+    obligationCoverage: Record<
+      EvidenceDomain,
+      {
+        total: number;
+        emitted: number;
+        merged: number;
+        omitted: number;
+        unresolved: number;
+      }
+    >;
   };
 }

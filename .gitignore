@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 
+# A global gitignore may exclude all .npmrc files because they often hold
+# registry tokens. The CLI copy is a public registry pin, not a secret.
+!packages/cli/.npmrc
+
 # OS files
 .DS_Store
 

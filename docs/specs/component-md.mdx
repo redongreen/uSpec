@@ -1,21 +1,34 @@
 ---
 title: "Component.MD"
-description: "Turn a Figma component into a single .md specification you can hand to any LLM"
+description: "Turn a Figma component into a canonical JSON contract and concise Markdown implementation guide"
 ---
 
 <Frame>
   <img src="/images/specs/comp-md.png" alt="A picker.md spec open in an editor while Claude Code reads it inline to answer a question about button stacking order in a checkout flow" />
 </Frame>
 
-`create-component-md` produces one markdown file per component, covering API, structure, color, and screen-reader behavior. The file is the artifact: LLM tools can build from it, and humans can query it. The other uSpec skills render documentation back into Figma; this one writes a portable spec to disk.
+`create-component-md` produces a canonical JSON contract and a sibling Markdown implementation
+guide for each component, covering API, structure, color, and screen-reader behavior. LLM tools and
+automation can consume the JSON; humans can query the concise `.md`. The other uSpec skills render
+sections of that specification back into Figma.
 
 <Info>
-The `.md` output works with any LLM workflow: Claude in Cursor, Claude Design, GPT agents, Gemini, local models, and anything else that reads Markdown.
+The `.md` output works with any LLM workflow: Claude in Cursor, Claude Design, GPT agents, Gemini,
+local models, and anything else that reads Markdown. Use the canonical `.json` when you need a
+validated machine contract.
 </Info>
 
 ## What it generates
 
-A single `components/{componentSlug}.md` file with five sections:
+Each run writes two tracked artifacts:
+
+- `components/{componentSlug}.json` — the canonical, schema-valid machine contract
+- `components/{componentSlug}.md` — the concise implementation guide rendered from that contract
+
+Pass `--view audit` to the renderer when you need an exhaustive
+`components/{componentSlug}.audit.md` diagnostic companion.
+
+The concise Markdown contains five sections:
 
 | Section | Content |
 |---------|---------|
@@ -25,7 +38,8 @@ A single `components/{componentSlug}.md` file with five sections:
 | Color | Per-element token mapping for fills, strokes, and effects across every variant |
 | Voice / Screen reader | Focus order, merge analysis, and platform tables for VoiceOver, TalkBack, and ARIA |
 
-A Provenance block at the bottom records the Figma file key, node id, cache location, and generation timestamp so every claim in the spec is traceable back to the source.
+A Provenance block records the source identity and evidence coverage so every claim is traceable
+back to the extraction without exposing pipeline internals in the human-readable body.
 
 ## What you need
 
@@ -49,6 +63,12 @@ This skill runs in two steps: extract, then generate. You need both pieces set u
     </Tip>
 
     <Note>
+      The public Community plugin requires the selected component's Figma link because public
+      plugins cannot rely on the file key API. Paste it on the first run; the plugin remembers it
+      for later runs in the same document.
+    </Note>
+
+    <Note>
       The plugin is open source. If you want to read or modify the source, it lives in [`figma-plugin/`](https://github.com/redongreen/uSpec/tree/main/figma-plugin); the [troubleshooting guide](/help/troubleshooting) covers building from source and common failure modes.
     </Note>
   </Step>
@@ -69,9 +89,10 @@ This skill uses parallel agents and runs the equivalent of four specs in one pas
 
     1. Select a single `COMPONENT` or `COMPONENT_SET`. Selecting a variant auto-promotes to its component set.
     2. Run **Plugins → uSpec Extract** (or **Plugins → Development → uSpec Extract** if you dev-installed).
-    3. Review the sub-component checklist. The plugin pre-guesses whether each child is **constitutive** (owned by this component) or **referenced** (an instance of a widely-reused component). Flip any guess you disagree with.
-    4. Optionally paste design intent, open questions, or constraints into the text area.
-    5. Click **Extract & download** to save `{componentSlug}-_base.json` to `~/Downloads/`, or **Copy JSON** to put the full payload on your clipboard.
+    3. Paste the selected component's Figma link into the footer.
+    4. Review the sub-component checklist. The plugin pre-guesses whether each child is **constitutive** (owned by this component) or **referenced** (an instance of a widely-reused component). Flip any guess you disagree with.
+    5. Optionally paste design intent, open questions, or constraints into the text area.
+    6. Click **Extract & download** to save `{componentSlug}-_base.json` to `~/Downloads/`, or **Copy JSON** to put the full payload on your clipboard.
   </Step>
   <Step title="Run the skill">
     In your agent host, point the skill at the downloaded file:
@@ -94,12 +115,16 @@ This skill uses parallel agents and runs the equivalent of four specs in one pas
       </Tab>
     </Tabs>
 
-    The agent validates the JSON, runs four interpretation sub-skills, reconciles their outputs, and writes `./components/{componentSlug}.md` under your current working directory.
+    The agent validates the extraction, runs four interpretation passes, reconciles their outputs,
+    compiles the canonical contract, and writes `./components/{componentSlug}.json` plus
+    `./components/{componentSlug}.md`.
   </Step>
 </Steps>
 
 <Check>
-When the run finishes, a new `.md` appears under `./components/` in the working directory (e.g., `components/text-field.md`). Open it to verify the five sections are populated and the Provenance block at the bottom references your Figma file.
+When the run finishes, sibling `.json` and `.md` files appear under `./components/` (for example,
+`components/text-field.json` and `components/text-field.md`). Open the Markdown to verify the five
+sections, then keep both files together in version control.
 </Check>
 
 ### Optional: pair with a Figma link
@@ -114,56 +139,61 @@ This is rarely needed. The plugin captures everything required for a complete sp
 
 ## How it works
 
-The skill runs a four-way interpretation pipeline against the `_base.json` produced by the extractor. The deterministic reconciliation loop catches cross-section disagreements before the `.md` is written.
+The pipeline separates measured evidence, AI interpretation, and deterministic compilation. This
+keeps semantic judgment where it is useful while making validation and final rendering repeatable.
 
-<Badge color="green" size="sm" shape="pill">Deterministic extraction</Badge> <Badge color="blue" size="sm" shape="pill">Parallel AI interpretation</Badge> <Badge color="purple" size="sm" shape="pill">Reconciliation gate</Badge>
+<Badge color="green" size="sm" shape="pill">Deterministic evidence</Badge> <Badge color="blue" size="sm" shape="pill">Parallel interpretation</Badge> <Badge color="purple" size="sm" shape="pill">Validated contract</Badge>
 
 ```mermaid
 flowchart TB
-    Pre["Steps 1-4.5 (preflight)"] --> API["Step 5: extract-api (parent, solo)"]
-    API --> Dict[(api-dictionary.json)]
-    Dict --> FanOut["Parallel fan-out (1 batch of 3 Task calls)"]
-    FanOut -->|subagent| Struct[extract-structure]
-    FanOut -->|subagent| Color[extract-color]
-    FanOut -->|subagent| Voice[extract-voice]
-    Struct --> Join
-    Color --> Join
-    Voice --> Join
-    Join --> Recon["Step 8.5: Reconciliation (typed, deterministic)"]
-    Recon -->|"typed gap + retries available"| SerialRetry["Re-dispatch ONE specialist<br/>via Task (serial, not parallel)"]
-    SerialRetry --> Recon
-    Recon -->|"no gaps or budget exhausted"| Integ["Step 9.5: integrity"]
-    Integ --> Render["Step 9: render .md"]
+    Prepare["Prepare: validate, stage, slice evidence"] --> API["Interpret API + shared dictionary"]
+    API --> FanOut["Interpret Structure, Color, and Voice in parallel"]
+    FanOut --> Validate["Validate caches + evidence obligations"]
+    Validate --> Recon["Reconcile typed disagreements"]
+    Recon --> Plan["Write small semantic render plan"]
+    Plan --> Contract["Compile canonical component JSON"]
+    Contract --> Concise["Render concise Markdown"]
+    Contract --> Audit["Render audit Markdown on request"]
 ```
 
 <Steps>
-  <Step title="Preflight + prepare">
-    The orchestrator shells out to `uspec-skills component-md prepare`, which validates `_base.json` against the bundled plugin schema, stages it into `.uspec-cache/{componentSlug}/`, and writes a prepare manifest plus four compact evidence slices. The agent parses the JSON manifest and uses those slices to steer the downstream specialists.
+  <Step title="Prepare deterministic evidence">
+    `component-md prepare` validates `_base.json`, stages it under
+    `.uspec-cache/{componentSlug}/`, and writes a manifest plus API, Structure, Color, Voice, and
+    renderer evidence slices. Each slice includes obligations that identify facts the specialist
+    must account for.
   </Step>
-  <Step title="API dictionary (solo)">
-    `extract-api` runs first, inline in the parent context. It produces the component's property dictionary and writes `api-dictionary.json`. The dictionary keeps the three downstream specialists aligned on property names and state vocabularies.
+  <Step title="Interpret the component">
+    `extract-api` builds the shared property dictionary first. Structure, Color, and Voice then run
+    in parallel against their compact evidence slices and the same vocabulary.
   </Step>
-  <Step title="Parallel fan-out">
-    The orchestrator dispatches `extract-structure`, `extract-color`, and `extract-voice` as three parallel subagents in a single batch. Each specialist holds its own `_base.json` and dictionary context; the parent only keeps the returned summaries.
+  <Step title="Validate and reconcile">
+    `component-md validate` checks each specialist cache, its obligation ledger, source identity,
+    semantic row support, and output targets. The orchestrator then compares the domains for typed
+    disagreements and can retry only the specialist that owns a mismatch.
   </Step>
-  <Step title="Reconciliation">
-    The orchestrator compares the three specialist artifacts for typed disagreements (conflicting child classifications, mismatched axes, missing states). When the `reconciliation.autoRetry` flag is on, the offending specialist is re-dispatched with the mismatch attached, up to a bounded retry count.
+  <Step title="Compile the canonical contract">
+    The parent writes a small semantic render plan containing the overview and confidence summary.
+    `component-md contract` combines that plan with validated caches into
+    `components/{componentSlug}.json`.
   </Step>
-  <Step title="Integrity check">
-    Before rendering, the orchestrator validates every cache file's shape, cross-checks axis consistency, and confirms the structure coverage matrix is complete.
-  </Step>
-  <Step title="Render">
-    The renderer fills a single Markdown template with the reconciled data and writes `components/{componentSlug}.md` to disk.
+  <Step title="Render the human view">
+    `component-md render` mechanically produces the concise implementation guide from the contract
+    and runs acceptance gates over every domain. Use `--view audit` when you need exhaustive
+    evidence, provenance, and target diagnostics.
   </Step>
 </Steps>
 
 <Tip>
-The pipeline is deterministic given the same `_base.json`. If you re-extract without changes and re-run the skill, the generated `.md` is identical to the last run. Diffs between runs reflect real design changes.
+Given the same extraction, validated specialist caches, and render plan, contract compilation and
+Markdown rendering are deterministic. Diffs in those artifacts reflect source or interpretation
+changes rather than formatting drift.
 </Tip>
 
 ## Using the output with LLMs
 
-The generated `.md` is self-contained. Hand it to any LLM as context and ask it to:
+The generated `.md` is self-contained for human and LLM implementation work. Hand it to any LLM
+as context and ask it to:
 
 - Implement the component in React, SwiftUI, Jetpack Compose, or your platform of choice.
 - Generate unit tests that cover every documented state and variant.
@@ -174,7 +204,8 @@ The generated `.md` is self-contained. Hand it to any LLM as context and ask it 
 The spec names every property, every token, and every dimension directly, so the downstream LLM does not need to read Figma or guess at intent.
 
 <Tip>
-Commit the generated `.md` to your design system repository alongside the component code. When the component changes in Figma, re-run the extractor and the skill to produce a new `.md`, then diff against the committed one to see what changed.
+Commit the generated `.json` and `.md` together alongside the component code. When the component
+changes in Figma, re-run the extractor and the skill, then diff both artifacts to see what changed.
 </Tip>
 
 ## What the plugin captures
@@ -182,6 +213,10 @@ Commit the generated `.md` to your design system repository alongside the compon
 The extractor walks every variant and resolves every binding, which is what makes the `.md` pixel-perfect:
 
 - **Every variant.** No default-variant sampling. Cross-variant diffs and axis classification are computed inside the plugin sandbox.
+- **Variant-complete composition.** Child instances carry exact per-variant presence and placement
+  metadata, including children that only exist outside the default variant.
+- **Distinct revealed topologies.** Every structural topology gets a populated revealed-tree
+  representative, so state- or variant-specific anatomy remains available downstream.
 - **Library-linked variables** with name, `codeSyntax`, alias chains, and remote collection metadata.
 - **Inline font properties** alongside text style IDs, so typography survives when a library style cannot be resolved.
 - **Sub-components walked across their own variant axes.** A Button inside a Text Field is measured across its own size and density variants, not only the configuration the parent embeds.

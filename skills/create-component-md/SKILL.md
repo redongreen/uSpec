@@ -1,11 +1,11 @@
 ---
 name: create-component-md
-description: Generate a single self-contained markdown specification for a Figma component covering API, structure, color, and screen-reader behavior. Reads a `_base.json` produced by the uSpec Extract plugin, runs four read-only interpretation skills in parallel, reconciles their outputs, and writes one `.md` to disk. Use when the user mentions "component md", "component markdown", "spec md", "source of truth", "create-component-md", or wants a portable Markdown spec that any LLM can build from.
+description: Generate a canonical JSON contract and a self-contained implementation Markdown specification for a Figma component covering API, structure, color, and screen-reader behavior. Reads a `_base.json` produced by the uSpec Extract plugin, runs four read-only interpretation skills in parallel, reconciles their outputs, and writes sibling `.json` and `.md` artifacts. Use when the user mentions "component md", "component markdown", "spec md", "source of truth", "create-component-md", or wants a portable component specification.
 ---
 
 # Create Component Markdown (Orchestrator)
 
-This skill consumes a `_base.json` produced by the uSpec Extract Figma plugin (`figma-plugin/`), runs four **read-only interpretation** skills (`extract-api`, `extract-structure`, `extract-color`, `extract-voice`), and renders their combined output into one self-contained Markdown file. The `.md` is the artifact; Figma is only the source of extraction.
+This skill consumes a `_base.json` produced by the uSpec Extract Figma plugin (`figma-plugin/`), runs four **read-only interpretation** skills (`extract-api`, `extract-structure`, `extract-color`, `extract-voice`), and writes two sibling artifacts: a canonical `.json` contract and a polished implementation `.md`. Figma is only the source of extraction. Exhaustive `.audit.md` is an opt-in diagnostic view, not a default artifact.
 
 **Do not call the `create-*` skills from here.** They render Figma frames that overlap and do not compose into a single file.
 
@@ -30,7 +30,7 @@ The four `create-*` skills each cost ~100k tokens per run because the majority o
 - **`figmaLink`** (optional): URL to the component set or standalone component. Accept `figma.com/design/:fileKey/...` and branch URLs (`/branch/:branchKey/`). Only consulted if an interpretation skill needs a Step 3-delta MCP call.
 - **`optionalContext`** (optional): free-form guidance (e.g., "this is a compact variant only", "skip error states"). If the plugin already captured it in `_meta.optionalContext`, that wins; otherwise the value passed here is used. Forwarded verbatim to every sub-skill.
 
-No output path is required — the default is `./components/{componentSlug}.md` in the current working directory.
+No output path is required — the defaults are `./components/{componentSlug}.md` and `./components/{componentSlug}.json` in the current working directory.
 
 ## Workflow
 
@@ -47,7 +47,7 @@ Task Progress:
 - [ ] Step 5: Run extract-api (reads _base.json, no Figma), flush, verify cache + api-dictionary.json
 - [ ] Step 6: Parallel fan-out — dispatch extract-structure, extract-color, extract-voice as three subagents in a single batch; join on all three summaries
 - [ ] Step 8.5: Reconciliation — typed disagreement handling with bounded serial retries
-- [ ] Step 9: Render the .md (follow {{ref:component-md/agent-component-md-instruction.md}})
+- [ ] Step 9: Build the canonical JSON contract, then render the implementation Markdown
 - [ ] Step 9.5: Integrity check — validate all cache files and reconciliation artifact before rendering
 - [ ] Step 10: Audit output and return a one-line summary
 - [ ] Step 10.5: Emit recursion manifest (constitutive children only)
@@ -78,22 +78,24 @@ Read `uspecs.config.json` at the project root. Extract:
    ```
    When this fails with `unknown command: component-md`, retry once with an explicit version pin:
    ```bash
-   npx uspec-skills@0.3.2 component-md prepare --base "<baseJsonPath>" --json
+   npx uspec-skills@0.3.3 component-md prepare --base "<baseJsonPath>" --json
    ```
 
 3. **Abort** — when both paths fail, stop with:
-   > `component-md prepare` is unavailable. In the uSpec repo run `npm run build:cli`, then rerun create-component-md. Else run `npx uspec-skills update` after upgrading to uspec-skills ≥ 0.3.2.
+   > `component-md prepare` is unavailable. In the uSpec repo run `npm run build:cli`, then rerun create-component-md. Else run `npx uspec-skills update` after upgrading to uspec-skills ≥ 0.3.3.
 
 Append `--context "<optionalContext>"` when the orchestrator received non-empty `optionalContext`. Append `--output "<outputPath>"` when the user passed an explicit output path.
 
 - Any non-zero exit from a working CLI → abort with stderr (validation/staging failure). Do **not** fall back to manual validation or staging once a CLI with `component-md prepare` is available.
-- Parse the JSON manifest from stdout. Keep: `componentSlug`, `cachePath`, `stagedBasePath`, `outputPath`, `baseSourceHash`, `readiness`, `summaries`, `paths.evidence`, and the one-line `summaryLine`.
+- Parse the JSON manifest from stdout. Keep: `componentSlug`, `cachePath`, `stagedBasePath`, `outputPath`, `baseSourceHash`, `readiness`, `summaries`, `paths.contractPath`, `paths.evidence`, and the one-line `summaryLine`.
 
-From the manifest, also read `_meta.fileKey`, `_meta.nodeId`, `_meta.componentSlug`, `_meta.optionalContext`, `_meta.extractionSource` via the staged base at `stagedBasePath` only when a field is missing from the manifest (prefer manifest summaries).
+Read the effective Figma target from manifest `source.{fileKey,nodeId,figmaUrl}`. The prepare command derives these fields from `_base.json._meta`; `figmaUrl` falls back to a URL constructed from the required `fileKey` + `nodeId`. Read the staged base only when an older manifest lacks `source`.
 
 The MCP connection check is deferred — it is not needed unless a sub-skill triggers a delta.
 
-If `figmaLink` is also passed alongside `baseJsonPath`, parse it and stash `{fileKey, nodeId}` for potential delta use — but trust manifest / `_meta` as the source of truth when they disagree and log a `META_DISAGREES_WITH_LINK` warning for the final summary.
+If `figmaLink` is also passed alongside `baseJsonPath`, parse it for comparison — but trust manifest / `_meta` as the source of truth when they disagree and log a `META_DISAGREES_WITH_LINK` warning for the final summary.
+
+Set `deltaAvailable = true` whenever manifest `source.fileKey` and `source.nodeId` are non-empty. A separately-passed `figmaLink` is **not required**. If a targeted delta later fails because the configured MCP cannot connect, record `unavailable: "mcp-unavailable"`; never mislabel an embedded target as `no-figma-link`.
 
 **Skills directory for downstream dispatch** (from `environment`):
 
@@ -113,6 +115,8 @@ Use the manifest from Step 1 — do **not** re-derive paths:
 4. `stagedBasePath` = manifest `stagedBasePath`
 5. `baseSourceHash` = manifest `baseSourceHash`
 6. `evidencePaths` = manifest `paths.evidence`
+7. `contractPath` = manifest `paths.contractPath` (or replace the final `.md` suffix
+   of `outputPath` with `.json` for an older manifest)
 
 **Do not proceed until all of the above are resolved.** Every subsequent step reads from them.
 
@@ -134,7 +138,7 @@ If the user wants to correct the target node or the extraction context, they mus
 
 Before you interpret any of the extracted data, you must internalize how to classify every top-level child instance of the component being spec'd. This classification decides how each child appears in the final `.md` and whether a follow-up `create-component-md` run is needed. The mechanics of reading `_childComposition` happen at Step 4.5 (after `_base.json` lands). This step is the *reasoning model* you carry into that review.
 
-Ask this question, in order, for each top-level child instance you will see in `variants[<default>].treeHierarchical`:
+Ask this question, in order, for each identity in the full cross-variant `_childComposition.children[]` union. Use `presentInVariants`, `defaultVariantPresent`, and `placementsByVariant`; never limit classification to the default tree.
 
 **Q1. If I removed this child, would the component still be the thing the user is asking me to spec?**
 
@@ -210,6 +214,7 @@ The CLI prepare step already validated, staged, and wrote evidence slices. **Do 
 5. Verify the staged file has `_meta`, `component`, `variantAxes`, `propertyDefinitions`, `variants[]`, `ownershipHints[]`, `_childComposition`. `crossVariant` is allowed to be `null`. If any required top-level key is missing, abort — re-run the uSpec Extract plugin.
 6. If manifest `readiness.warnings` is non-empty, surface those warnings before continuing.
 7. If `readiness.layoutTreeHasNodeIds === false`, surface the render-meta freshness warning (pre-render-meta plugin build) before continuing.
+8. Require `readiness.variantTreesComplete === true`. If false or absent on a newly prepared extraction, abort: target validation cannot be variant-scoped.
 
 ### Step 4.5: Post-extract review (composition classification)
 
@@ -222,6 +227,7 @@ If `_childComposition.children[]` contains any entry where `nodeType === "INSTAN
 1. For each child in `children[]`, read `classification` and run Q1/Q2 from Step 3.5. If the classification is wrong, override it and append `"agent-override"` to `classificationEvidence[]`.
 2. Walk `ambiguousChildren[]`. For each entry, make a decision via Q1/Q2 and the P1–P8 patterns, then **move** the entry into `children[]` with the resolved `classification`. On uncertainty, default to `referenced` and note the reasoning in `classificationReason`.
 3. Persist the revised `_childComposition` back to `{cachePath}/{componentSlug}-_base.json`. This is the one explicit exception to the "`_base.json` is immutable" invariant.
+4. If Step 4.5 changed `_childComposition`, immediately rerun the Step 1-resolved `component-md prepare` command with the staged base as `--base` and the same `--output`. Replace the in-memory manifest with the new stdout manifest. This refreshes all evidence hashes and, critically, `{componentSlug}-evidence-renderer.json`; specialists must never consume pre-review composition evidence.
 
 Flush the review's working context. Keep only: the final classification counts (`constitutive=N, referenced=M, decorative=K, ambiguous=0`) as a one-line summary. Downstream interpretation skills will read the updated `_childComposition` from disk.
 
@@ -229,7 +235,7 @@ If `constitutive > 0` **and** every constitutive child has a non-null `subCompSe
 
 ### Step 5: Run extract-api (inline, in the parent)
 
-Follow `{skillsRoot}extract-api/SKILL.md` inline (not as a subagent — the parent needs the resulting dictionary directly). Pass `cachePath`, `componentSlug`, `optionalContext`, `deltaAvailable` (true only when the user provided a `figmaLink`), `evidenceApiPath` (from manifest `paths.evidence.api`), and — when `deltaAvailable` is true — `fileKey`, `nodeId`, and `mcpProvider` (from `uspecs.config.json`). When the input is plugin-only (no `figmaLink`), explicitly instruct the skill that delta calls are **not available** — any gap surfaces as `_deltaExtractions[]` with `unavailable: "no-figma-link"`.
+Follow `{skillsRoot}extract-api/SKILL.md` inline (not as a subagent — the parent needs the resulting dictionary directly). Pass `cachePath`, `componentSlug`, `optionalContext`, `deltaAvailable` (derived from manifest source identity), `evidenceApiPath` (from manifest `paths.evidence.api`), and — when `deltaAvailable` is true — `fileKey`, `nodeId`, `figmaUrl`, and `mcpProvider` (from `uspecs.config.json`).
 
 The skill:
 
@@ -239,7 +245,16 @@ The skill:
 - **Writes `{cachePath}/{componentSlug}-api-dictionary.json`** (Step 7.5 of `extract-api`) — the canonical vocabulary projected from api.json.
 - Returns a single-line summary ending with `(+ dictionary at <path>)`.
 
-**Flush phase context.** Keep only: the two paths + one-line summary. Verify both files exist and have `_meta` + `data`. Abort with a diagnostic if the dictionary file is missing — the parallel fan-out requires it.
+Immediately run the Step 1-resolved CLI executable twice:
+
+```bash
+<CLI> component-md validate --cache "<cachePath>" --slug "<componentSlug>" --domain api --normalize --json
+<CLI> component-md validate --cache "<cachePath>" --slug "<componentSlug>" --domain api-dictionary --json
+```
+
+A non-zero exit means `extract-api` must repair its own cache before fan-out.
+
+**Flush phase context.** Keep only: the two paths + one-line summary. Abort with a diagnostic if the dictionary file is missing or invalid — the parallel fan-out requires it.
 
 Set `apiDictionaryPath = {cachePath}/{componentSlug}-api-dictionary.json` for use in Step 6.
 
@@ -261,7 +276,7 @@ For each specialist in `[extract-structure, extract-color, extract-voice]`:
   4. `apiDictionaryPath` — the path produced by Step 5.
   5. `optionalContext` — the orchestrator's `optionalContext` string (or `"none"` when absent).
   6. `mcpProvider` — the value from `uspecs.config.json`.
-  7. `deltaAvailable` — boolean. `false` when the user provided only a `baseJsonPath`.
+  7. `deltaAvailable` — boolean derived from manifest `source.fileKey` + `source.nodeId`; plugin-produced base files normally make this `true` even when the user did not pass a separate `figmaLink`.
   8. `evidencePath` — the matching manifest evidence file for this specialist (`paths.evidence.structure` | `.color` | `.voice`).
   - Instruct the subagent to return a single-line summary matching the skill's declared return format, followed by the written cache path. Nothing else — not the full payload, not checklists, not screenshots.
 
@@ -272,6 +287,16 @@ For each specialist in `[extract-structure, extract-color, extract-voice]`:
 - Voice: `Voice extracted: N focus stops, M states, platforms=[VoiceOver, TalkBack, ARIA] → <path>`
 
 **Join before proceeding.** Wait for all three subagent returns. Do NOT advance to Step 8.5 until every return has landed. If any subagent fails (returns an error or no path), abort with a diagnostic naming the failing specialist — partial completion is never silently tolerated.
+
+Validate the three returned caches in parallel with the Step 1-resolved CLI:
+
+```bash
+<CLI> component-md validate --cache "<cachePath>" --slug "<componentSlug>" --domain structure --normalize --json
+<CLI> component-md validate --cache "<cachePath>" --slug "<componentSlug>" --domain color --normalize --json
+<CLI> component-md validate --cache "<cachePath>" --slug "<componentSlug>" --domain voice --normalize --json
+```
+
+Re-dispatch only a specialist whose validator exits non-zero.
 
 **Container hint collection.** After all three subagents return, open `{cachePath}/{componentSlug}-color.json` with a targeted read and check `data._containerRerunHint`. If non-null, surface it to the user using the neutral, authoritative framing below. **Do not** describe the parent's color spec as informational, provisional, placeholder, or pending — the parent's tokens are flattened from `colorWalk[]` and the parent .md is shippable as-is.
 
@@ -295,12 +320,12 @@ After the three specialist caches land and before the Step 9.5 integrity gate, r
 
 | Class | Detection rule | Response |
 |---|---|---|
-| **Vocabulary drift** | Dictionary has `{axis.name, value.figmaValue, value.runtimeCondition}`; specialist emitted a column / label that matches `figmaValue` but the dictionary canonical is `runtimeCondition` (or vice versa — a simple rename). Or the specialist's sub-component name matches a dictionary `subComponents[].name` modulo casing / whitespace / suffix. | **Auto-rewrite in place.** Open the specialist's cache file, rewrite the drifted labels/columns/section names to the dictionary canonical, add a reconciliation log entry. No retry. |
+| **Vocabulary drift** | Dictionary has `{axis.name, value.figmaValue, value.runtimeCondition}`; specialist emitted a column / label that matches `figmaValue` but the dictionary canonical is `runtimeCondition` (or vice versa). Or a component name matches `subComponents[]` / `referencedComponents[]` modulo casing, whitespace, or suffix. | **Auto-rewrite in place.** Open the specialist's cache file, rewrite the drifted labels/columns/section names to the dictionary canonical, add a reconciliation log entry. No retry. |
 | **Coverage gap (scope miss)** | Dictionary lists a value/sub-component/state that has no corresponding row/column/section in the specialist's cache AND the value exists somewhere in `_base.json` as real evidence (variant option, revealed sub-component, etc.). | **Re-dispatch the specialist as a single subagent** with `optionalContext = "create-component-md retry: <comma-list of missing items>"` prepended to the original `optionalContext`. Max 1 retry per specialist per invocation. After the retry returns, re-run this entire Step 8.5 from the top — a successful retry may resolve gaps that would otherwise trigger further retries. |
-| **Benign value-extra** | A `kind: "value-extra"` mismatch (specialist documented something the dictionary's `axes[]` does not list) where the observed item **resolves to a real part of the API surface**: it matches a `dictionary.booleanProps[]` entry by camelCase name (a top-level boolean like `isDisabled`/`isLoading`), or a `dictionary.states[]` entry by `figmaValue` / `apiAssignments` key, or a `_base.json` variant axis option. The specialist was correct to document it; the only "gap" is that booleans/decomposed states are intentionally absent from `axes[]`. | **Log to `reviewedBenign[]` and move on.** No rewrite, no retry, NO Known-gaps entry. This is the disposition for the systemic false-positive that the specialist-side `value-extra` guard (extract-* Step 2.5) now prevents at the source; this bucket catches any that still arrive from older or standalone caches. |
+| **Benign value-extra** | The observed item resolves to `booleanProps[]`, `states[]`, `subComponents[]`, `referencedComponents[]`, a real variant option, or a runtime substate explicitly linked to a canonical parent API assignment. | **Log to `reviewedBenign[]` and move on.** No rewrite, retry, or Known-gaps entry. |
 | **Semantic conflict** | Dictionary and specialist disagree on a fact that cannot be auto-rewritten AND the observed item resolves to nothing in the dictionary or `_base.json` (e.g., API declares `size: small \| medium \| large`; Structure measured `compact` + `regular` which have no `figmaValue` in the dictionary and no backing axis option). | **Surface as `high` Known gap immediately.** NEVER auto-resolve. NEVER retry (a retry will not fix a semantic disagreement — it needs human judgment). |
 
-A `value-extra` that does NOT resolve to `booleanProps[]` / `states[]` / a variant axis is a **semantic conflict**, not benign — it goes to `high`. Benign classification requires the observed item to trace to a real API-surface element; never use `reviewedBenign[]` as a dumping ground for unexplained extras.
+A `value-extra` that does not resolve through any vocabulary list, a real variant option, or a parent-linked runtime substate is a semantic conflict. Measurements, layer names, tokens, announcements, and topology are not vocabulary-controlled and must be rejected as malformed mismatch records rather than promoted to semantic conflicts.
 
 **Retry loop (bounded, serial, no declared specialist priority):**
 
@@ -391,13 +416,130 @@ When `data.retries[].outcome === "resolved"`, the corresponding mismatch disappe
 
 **Flush the reconciliation working context.** Keep only: the path `{cachePath}/{componentSlug}-reconciliations.json` + counts `(auto-rewrites=<A>, retries=<R>, unresolved=<U>, benign=<B>)`.
 
-**Render-meta handoff note.** Step 9's render-meta builder consumes `data.autoReconciled[]` to do drift-aware name lookups when resolving `sectionTargets[*].nodeId` / `groupTargets[*][*].nodeId` against `_base.json.variants[<default>].layoutTree`. When a section/group label was rewritten here (e.g., `"Clear button"` → `"clear (X) button"`), render-meta retries the layer lookup with both `entry.before` and `entry.after` so a successful auto-rewrite never silently breaks ID resolution. This is a downstream-consumer relationship only — render-meta does NOT itself trigger further reconciliation, and Step 8.5 owns every rewrite that lives in the cache files.
+**Render-meta handoff note.** Step 9 validates each section/group node ID against its declared parent or sub-component variant tree. Identity comes from the specialist's stamped variant fields, not fuzzy matching against the default layout tree.
 
-### Step 9: Render the Markdown
+### Step 9: AI synthesis handoff + deterministic validation/render
+
+The AI's final semantic responsibility is deliberately small: read the four
+specialist caches and write `{cachePath}/{componentSlug}-render-plan.json`:
+
+```json
+{
+  "_meta": {
+    "schemaVersion": "1",
+    "componentSlug": "<slug>",
+    "baseSourceHash": "<manifest._meta.baseSourceHash>",
+    "generatedAt": "<ISO 8601>"
+  },
+  "data": {
+    "overviewParagraph": "<2–4 sentence cross-section synthesis>",
+    "confidence": {
+      "api": "high",
+      "structure": "high",
+      "color": "high",
+      "voice": "high"
+    }
+  }
+}
+```
+
+`overviewParagraph` is where AI reasoning remains a superpower: explain what the
+component is, how its important axes interact, its composition, and its
+accessibility contract. Do not put tables, render-meta, Known gaps, or mechanical
+summaries in the plan.
+
+After **each** specialist writes its cache, validate immediately:
+
+```bash
+<CLI> component-md validate \
+  --cache "<cachePath>" --slug "<componentSlug>" \
+  --domain "<api|structure|color|voice>" --normalize --json
+```
+
+A prepared evidence slice carries `data.obligations[]`. Each specialist must
+account for every obligation in
+`data._extractionArtifacts.obligationLedger[]`, using JSON Pointer targets into
+its final output. The validator enforces both directions:
+
+1. every extracted fact is emitted, intentionally merged, or explicitly
+   dispositioned under its policy; `must-emit` facts cannot be omitted; and
+2. every rendered semantic record (API property, Structure row, Color element,
+   Voice table/property) is targeted by evidence.
+
+Obligations may also carry a `representation` contract. This preserves semantic
+quality across the AI/deterministic boundary: named instance swaps remain
+engineer-facing types, typography metrics remain structured rows, and
+sub-component geometry remains attached to its own source tree. A valid pointer
+to the wrong kind of record does not satisfy the obligation.
+
+An `unaccounted`, `unresolved`, `must-emit ... omitted`, `unresolved output
+target`, or `semantic output ... has no evidence obligation` diagnostic belongs
+to the specialist that wrote that cache. Re-dispatch only that specialist and
+include the validator errors verbatim. Do not weaken, delete, or hand-edit the
+obligation inventory to make validation pass.
+
+The renderer independently validates Figma target identity. For a Structure
+section carrying `subCompSetId`, group target IDs must exist in that set's
+`subComponentVariantWalks` tree; a parent placement ID is not a substitute. An
+invalid target is nulled and surfaced as a Known gap instead of being counted
+as resolved.
+
+After reconciliation, validate `api-dictionary` and `reconciliations`, then run
+all-domain validation once. A non-zero exit re-dispatches only the owning
+specialist; never wait until rendering to discover a malformed cache.
+
+Build the canonical, schema-validated component contract first:
+
+```bash
+<CLI> component-md contract \
+  --manifest "<cachePath>/<componentSlug>-prepare-manifest.json" \
+  --plan "<cachePath>/<componentSlug>-render-plan.json" \
+  --output "<contractPath>" --json
+```
+
+This contract is the durable machine-readable source of truth. It unifies API,
+anatomy, variants, Structure, Color, accessibility, source identity, dictionary
+vocabulary, reconciliations, and evidence-coverage totals. Specialist
+`obligationLedger` internals are summarized under provenance rather than copied
+into semantic domains.
+
+Render the deterministic human view from the written contract:
+
+```bash
+<CLI> component-md render \
+  --manifest "<cachePath>/<componentSlug>-prepare-manifest.json" \
+  --plan "<cachePath>/<componentSlug>-render-plan.json" \
+  --contract "<contractPath>" \
+  --view concise --output "<outputPath>" --json
+```
+
+The `.json` is the complete machine-readable contract. The `.md` is its
+evidence-linked implementation view: composition, anatomy, API examples,
+high-signal Structure, contextual Color mappings, and platform accessibility
+guidance. The renderer runs structural and semantic acceptance checks before
+writing it. Any non-zero exit aborts without hand-patching either artifact.
+
+Generate an exhaustive diagnostic view only when the user explicitly asks for
+it or when investigating renderer evidence:
+
+```bash
+<CLI> component-md render \
+  --manifest "<cachePath>/<componentSlug>-prepare-manifest.json" \
+  --plan "<cachePath>/<componentSlug>-render-plan.json" \
+  --contract "<contractPath>" \
+  --view audit --output "<outputPath-with-.audit.md>" --json
+```
+
+### Legacy Step 9 reference (do not execute)
+
+The block below documents the pre-deterministic renderer contract for maintainers.
+Do not generate temporary JavaScript or render Markdown in the agent. The CLI
+command above is authoritative.
 
 Now the parent's context should contain:
 
-- 4 domain cache-file paths (api, structure, color, voice). `_base.json` remains on disk at `{cachePath}/{componentSlug}-_base.json` for **targeted reads only** during rendering — see the expanded narrow-read list below. Everything else renderable was already lifted into the four domain JSONs.
+- `contractPath` and `outputPath`. Rendering reads the canonical contract; it
+  does not reinterpret specialist caches.
 - `fileKey`, `nodeId`, `componentSlug`, `outputPath`, `cachePath`, `optionalContext`.
 - Any container-rerun hints or delta-extraction records collected during Steps 5–8.
 - Not much else.
@@ -437,7 +579,11 @@ Write the result to `outputPath` using UTF-8.
 
 **Do not skip the audit checklist** at the end of `agent-component-md-instruction.md`. If an audit check fails, fix the renderer — do not hand-patch the `.md`.
 
-### Step 9.5: Integrity check (read-only, before writing the `.md`)
+### Legacy Step 9.5 integrity checklist (CLI-owned; do not execute manually)
+
+The checklist below is retained as the behavioral specification for the CLI
+validator. The agent must not reimplement it, reread the full `_base.json`, or
+run a second render/audit pass.
 
 After the four interpretation caches land on disk and **before** the renderer touches `outputPath`, run a read-only JSON validation pass. No Figma calls. No mutations. Purely: load each cache, check the invariants below, aggregate results.
 
@@ -539,14 +685,12 @@ This step is the last chance to catch fabricated output before it ships to `outp
 Return exactly one line to the user:
 
 ```
-Component Markdown written: sections={api,structure,color,voice}, render-meta={sectionTargets=<R>/<T>, groupTargets=<R>/<T>}, bytes=<B> → <outputPath>
+Component spec written: contract=<contractPath>, markdown=<outputPath>, sections={api,structure,color,voice}, bytes=<B>
 ```
-
-Where `<R>/<T>` is the count of entries with a non-null `nodeId` over the total count. A trailing `0/N` on either pair signals that the underlying `_base.json` was produced by a pre-render-meta plugin build — re-extract with the current uSpec Extract plugin to recover. (If render-meta gates passed in Step 9.5, both pairs will read `T/T`; the per-entry breakdown is in the rendered Known gaps block when any entry was unresolved.)
 
 Then a short paragraph:
 
-> The `.md` is now the source of truth. Cache files at `{cachePath}` can be deleted once you're satisfied with the output (they're gitignored and will be re-generated on the next run).
+> The `.json` contract is the machine source of truth; the `.md` is its implementation guide. Cache files at `{cachePath}` can be deleted once you're satisfied with the outputs (they're gitignored and will be re-generated on the next run).
 
 If any phase reported warnings or delta extractions, append a short bullet list summarizing them so the user can file follow-ups. A container re-run hint (if present) is **not** a defect — describe it as an *optional* per-child canonical-spec follow-up, and reuse the neutral framing from Step 6: the parent's color tokens are authoritative and the parent .md is shippable as-is.
 
@@ -595,7 +739,7 @@ Do NOT auto-chain runs. The manifest is terminal output for this invocation only
 - **Typed reconciliation only.** Step 8.5 recognizes exactly four disagreement classes: (1) **vocabulary drift** — auto-rewrite and log, no retry; (2) **coverage gap** — re-dispatch the specialist once as a subagent with an expanded `optionalContext`, then re-run Step 8.5; (3) **benign value-extra** — a `value-extra` whose observed item resolves to a real API-surface element (`dictionary.booleanProps[]`, `dictionary.states[]`, or a `_base.json` variant axis), logged to `reviewedBenign[]` with no gap and no retry; (4) **semantic conflict** — surface as `high` Known gap, never auto-resolve. Any disagreement that does not fit cleanly into one of these four classes is a `high` Known gap by default. Do NOT introduce a fifth class, do NOT run a free-form "reasoning pass" over the four JSONs, do NOT silently reconcile classes (1) or (2), and do NOT use class (3) for any extra that cannot be traced to a real API-surface element (that is a semantic conflict → `high`).
 - **Retries are bounded and serial.** Each specialist can be re-dispatched at most once per `create-component-md` invocation. When multiple specialists need retries, dispatch them one at a time in the original run order (Structure → Color → Voice — this is iteration order, not a priority relationship), and re-run Step 8.5 after each retry returns. A successful retry may resolve gaps that would otherwise trigger further retries, shortening the chain.
 - **Never silently continue past a missing cache file.** If any interpretation skill fails, abort, report which phase failed, and let the user decide whether to retry.
-- **Never commit the `.uspec-cache/` directory.** It is gitignored. The `.md` file is the only artifact that should live in version control.
+- **Never commit the `.uspec-cache/` directory.** It is gitignored. The sibling `.json` contract and `.md` implementation guide are the default artifacts that should live in version control. An `.audit.md` is generated only on explicit request and is normally transient.
 - **Never call `AskQuestion` or pause for user input anywhere in this chain.** This skill runs in strict batch mode from Step 1 to Step 10. No confirmations, no clarifications, no "should I...?" prompts, and no mid-chain reviews. If data is missing, log a `_deltaExtractions[]` entry (for interpretation skills) or emit a row with `provenance: "not-measured"` (for structure), then continue. The only legal halts are (a) hard aborts with a one-line diagnostic when a cache file is missing or the MCP connection is dead, and (b) the Step 9.5 integrity gate when a blocking validation fails.
 - **Sub-skills inherit the same rule.** `extract-api`, `extract-structure`, `extract-color`, and `extract-voice` are batch-mode contracts. They MUST NOT call `AskQuestion` under any circumstance. On ambiguity they abort with a diagnostic or emit structured output; they never pause for clarification.
 

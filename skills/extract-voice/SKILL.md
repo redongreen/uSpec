@@ -18,8 +18,8 @@ The orchestrator calls this skill with these inputs (already resolved — do NOT
 - `componentSlug` — filename-safe slug
 - `cachePath` — cache directory, typically `.uspec-cache/{componentSlug}/`
 - `optionalContext` — free-form user context. **Especially important for voice specs** — behavioral states ("single-select vs multi-select", "collapsed vs expanded", "validation error") are typically only discoverable from user context.
-- `mcpProvider` — `figma-console` or `figma-mcp` (only needed if a Step 3-delta escape hatch fires AND a live Figma link was provided to the orchestrator)
-- `deltaAvailable` — boolean. When the orchestrator received only a `baseJsonPath` (no `figmaLink`), this is `false` and the Step 3-delta escape hatch must not fire; log the gap in `data._deltaExtractions[]` with `unavailable: "no-figma-link"` and continue with best-effort output.
+- `mcpProvider` — `figma-console` or `figma-mcp` (only used if a Step 3-delta escape hatch fires)
+- `deltaAvailable` — boolean derived from `_base.json._meta.fileKey` + `nodeId`. Plugin exports normally make this `true`; a separately-passed `figmaLink` is not required.
 - `apiDictionaryPath` — absolute or workspace-relative path to `{cachePath}/{componentSlug}-api-dictionary.json`. Optional. When present, the file is the canonical vocabulary for axis/value/sub-component/state naming (see Step 2.5). When absent, the skill continues with `_dictionaryUnavailable: true` in its output envelope.
 - `evidencePath` — optional. Path to `{cachePath}/{componentSlug}-evidence-voice.json` from CLI prepare. When present and hash-valid, use `data` as the Step 3 working evidence set.
 
@@ -93,8 +93,8 @@ Top-level keys this skill consumes:
 - `defaultVariant` — for default variant properties
 - `propertyDefinitions.booleans` — for boolean defaults
 - `propertyDefinitions.slots` — for `slotDefs` including `defaultChildren`, `preferredInstances`
-- `variants[<default>].treeFlat` — **primary evidence source** for voice. Ordered focus-order candidates with `bbox`, `slotIndex`, `nodeType`, `visible`.
-- `variants[<default>].treeHierarchical` — optional supporting evidence when `treeFlat` needs disambiguation.
+- `variants[*].treeFlat` — primary evidence source for voice. Preserve variant identity while comparing ordered focus candidates.
+- `variants[*].treeHierarchical` — supporting evidence for each corresponding variant.
 - `ownershipHints[]` where `evidenceType === "textNode"` — text-node hints useful for announcement authoring.
 - `_extractionNotes.warnings`
 
@@ -113,7 +113,7 @@ The `create-component-md` orchestrator writes `{cachePath}/{componentSlug}-api-d
 **How this skill uses the dictionary** (keep it in scope through Steps 3–5):
 
 - **State names.** When emitting `states[].state`, prefer the dictionary's canonical axis value names. When the dictionary is decomposed (a `states[]` entry exists with `runtimeCondition`), use the **runtime condition** as the state name — e.g., `"focused"` rather than `"active"`, `"validationState='error'"` rather than `"error"`. This keeps the voice spec aligned with the engineer-facing condition an implementer can check at runtime.
-- **Behavioral state cross-check.** Every behavioral state you extract from `optionalContext` should map to a dictionary-listed value when one exists. If it does not, that is not necessarily a bug (voice often surfaces runtime states the API doesn't model), but emit a `_dictionaryMismatch` entry so the orchestrator's Step 8.5 can confirm.
+- **Behavioral state cross-check.** Link each runtime substate to its parent API assignment when one exists. For example, `disclosure (expanded)` and `disclosure (collapsed)` both reference the canonical `type=disclosure` value plus runtime `expanded=true|false`; they are not dictionary extras merely because `expanded` is behavioral.
 - **Slot / sub-component names** inside focus stops — prefer `dictionary.subComponents[].name` over raw Figma layer names.
 
 **Mismatch protocol — do NOT silently rename, do NOT silently keep.**
@@ -129,7 +129,7 @@ When your evidence (the focus walk, state grouping, or user-described behavioral
 }
 ```
 
-**`value-extra` guard — top-level booleans and decomposed states are NOT mismatches.** Before emitting a `value-extra`, resolve the observed item against the **full** dictionary, not just `axes[]`: check `axes[]`, `booleanProps[]`, `states[]` (by `figmaValue` or `apiAssignments` key), `subComponents[]`, and `slots[]`. A Disabled / Loading (etc.) state that resolves to a `booleanProps[]` or `states[]` entry is part of the API surface — it is a **match**, so do NOT emit a `_dictionaryMismatch` for it. Only emit `value-extra` when the observed item resolves to NOTHING anywhere in the dictionary. (Booleans are deliberately excluded from `axes[]`; `booleanProps[]` is their canonical home — flagging an API boolean as `value-extra` was the systemic false-positive this guard removes.)
+**`value-extra` guard — only vocabulary-controlled fields can mismatch.** Resolve API-facing states and component identities against `axes[]`, `booleanProps[]`, `states[]`, `subComponents[]`, `referencedComponents[]`, and `slots[]`. Announcements, roles, focus grouping, and runtime substates linked to a canonical parent API assignment are specialist semantics, not dictionary extras. Emit `value-extra` only for an API-facing name/value that resolves nowhere.
 
 Aggregate every mismatch into `data._extractionArtifacts.dictionaryMismatches[]`. The orchestrator's Step 8.5 reconciliation pass consumes this list.
 
@@ -147,7 +147,7 @@ Populate the voice evidence structure by reading **only** from `_base.json` when
 | -------------- | ------------------- |
 | `componentName` | `component.componentName` |
 | `compSetNodeId` | `component.compSetNodeId` |
-| `elements[]` | `variants[<default>].treeFlat` — array already contains `{ index, name, nodeType, visible, bbox, slotIndex? }`. Use as-is. |
+| `variantElements[]` | Every `variants[*].treeFlat` entry grouped with `variantId`, `variantName`, and `variantProperties`. Use the default `elements[]` alias only for the baseline, never as the complete visual-parts set. |
 | `variantAxes[]` | `variantAxes` — already shaped `{name, options, defaultValue}` |
 | `booleanDefs` | `propertyDefinitions.booleans` → reshape as `{ rawKey: defaultValue }` |
 | `slotDefs[]` | `propertyDefinitions.slots[*]` — each has `name` (`propName`), `description`, `preferredInstances` (resolved `componentKey`/`componentName`, and when available `defaultVariantProperties` + `booleanDefaults`), `defaultChildren` (with `mainComponentId`, `componentSetName`, `contextualOverrides`), and when the SLOT node has a `componentPropertyReferences.visible` binding, the precomputed `visibleRawKey` + `visiblePropName`. If `visibleRawKey` is absent, fall back to walking `rawDefs` for any BOOLEAN property whose `associatedLayerName` matches the slot name. |
@@ -174,6 +174,10 @@ Rules:
   ```
 
   An empty array (zero delta calls) is the expected default. Multiple entries signal pressure to widen the `_base.json` schema in the plugin.
+
+  When a needed delta cannot run, emit the complete unavailable shape:
+  `{ purpose, script: null, byteCount: 0, timestamp, unavailable: "mcp-unavailable" }`.
+  Use `"no-figma-target"` only when `_meta.fileKey` or `_meta.nodeId` is genuinely absent.
 
 ### Step 4: Visual Parts, Merge Analysis, Focus Stops, States
 

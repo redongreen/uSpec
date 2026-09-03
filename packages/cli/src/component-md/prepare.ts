@@ -16,6 +16,7 @@ import { buildApiEvidence } from './evidence-api.js';
 import { buildStructureEvidence } from './evidence-structure.js';
 import { buildColorEvidence } from './evidence-color.js';
 import { buildVoiceEvidence } from './evidence-voice.js';
+import { buildRendererEvidence } from './evidence-renderer.js';
 import type { BaseJson, PrepareManifest } from './types.js';
 
 export interface PrepareOptions {
@@ -71,10 +72,53 @@ export async function runPrepare(opts: PrepareOptions): Promise<PrepareOutput> {
     optionalContext: opts.optionalContext,
   });
 
-  const stagedRaw = await readFile(paths.stagedBasePath, 'utf8');
-  const baseSourceHash = computeSourceHash(stagedRaw);
+  const baseSourceHash = computeSourceHash(JSON.stringify(stagedBase));
   const preparedAt = new Date().toISOString();
   const cross = (stagedBase.crossVariant ?? {}) as Record<string, unknown>;
+  const evidenceFiles = [
+    buildApiEvidence(stagedBase, baseSourceHash, preparedAt),
+    buildStructureEvidence(stagedBase, baseSourceHash, preparedAt),
+    buildColorEvidence(stagedBase, baseSourceHash, preparedAt),
+    buildVoiceEvidence(stagedBase, baseSourceHash, preparedAt),
+    buildRendererEvidence(stagedBase, baseSourceHash, preparedAt),
+  ];
+  const rendererVariantTrees = (
+    evidenceFiles[4].data as { variantTrees?: unknown[] }
+  ).variantTrees;
+  if (
+    !Array.isArray(rendererVariantTrees) ||
+    rendererVariantTrees.length !== stagedBase.variants.length
+  ) {
+    throw new Error(
+      `Renderer evidence variant-tree coverage mismatch: expected ${stagedBase.variants.length}, received ${
+        Array.isArray(rendererVariantTrees) ? rendererVariantTrees.length : 0
+      }.`,
+    );
+  }
+  const evidenceNames = ['api', 'structure', 'color', 'voice', 'renderer'] as const;
+  const serializedEvidence = evidenceFiles.map((evidence) => JSON.stringify(evidence, null, 2) + '\n');
+  const evidenceBytes = Object.fromEntries(
+    evidenceNames.map((name, index) => [name, Buffer.byteLength(serializedEvidence[index])]),
+  ) as Record<(typeof evidenceNames)[number], number>;
+  const obligationCounts = Object.fromEntries(
+    evidenceNames.slice(0, 4).map((name, index) => [
+      name,
+      ((evidenceFiles[index].data as { obligations?: unknown[] }).obligations ?? []).length,
+    ]),
+  ) as Record<'api' | 'structure' | 'color' | 'voice', number>;
+  const obligationKindCounts = Object.fromEntries(
+    evidenceNames.slice(0, 4).map((name, index) => {
+      const obligations =
+        (evidenceFiles[index].data as { obligations?: Array<{ kind?: string }> }).obligations ?? [];
+      const counts: Record<string, number> = {};
+      for (const entry of obligations) {
+        const kind = entry.kind ?? 'unknown';
+        counts[kind] = (counts[kind] ?? 0) + 1;
+      }
+      return [name, counts];
+    }),
+  ) as Record<'api' | 'structure' | 'color' | 'voice', Record<string, number>>;
+  const totalEvidenceBytes = Object.values(evidenceBytes).reduce((sum, bytes) => sum + bytes, 0);
 
   const manifest: PrepareManifest = {
     _meta: {
@@ -92,8 +136,27 @@ export async function runPrepare(opts: PrepareOptions): Promise<PrepareOutput> {
       layoutTreeHasNodeIds: checkRenderMetaFreshness(stagedBase),
       childCompositionUserSelected: childCompositionUserSelected(stagedBase),
       revealedTreeHasChildren: revealedTreeHasChildren(stagedBase),
+      variantTreesComplete: true,
       subComponentVariantWalksPresent: Boolean(stagedBase.subComponentVariantWalks),
       warnings: stagedBase._extractionNotes.warnings ?? [],
+    },
+    source: {
+      fileKey: stagedBase._meta.fileKey,
+      nodeId: stagedBase._meta.nodeId,
+      figmaUrl:
+        stagedBase._meta.figmaUrl ??
+        `https://www.figma.com/design/${stagedBase._meta.fileKey}/?node-id=${stagedBase._meta.nodeId.replaceAll(':', '-')}`,
+      extractionSource: stagedBase._meta.extractionSource ?? null,
+    },
+    metrics: {
+      prepare: {
+        baseBytes: stageResult.baseBytes,
+        evidenceBytes,
+        obligationCounts,
+        obligationKindCounts,
+        totalEvidenceBytes,
+        estimatedInputTokens: Math.ceil(stageResult.baseBytes / 4),
+      },
     },
     summaries: {
       componentName: stagedBase.component.componentName,
@@ -110,32 +173,31 @@ export async function runPrepare(opts: PrepareOptions): Promise<PrepareOutput> {
       cachePath: paths.cachePath,
       stagedBasePath: paths.stagedBasePath,
       outputPath: paths.outputPath,
+      contractPath: paths.contractPath,
       evidence: paths.evidencePaths,
     },
   };
 
-  const evidenceFiles = [
-    buildApiEvidence(stagedBase, baseSourceHash, preparedAt),
-    buildStructureEvidence(stagedBase, baseSourceHash, preparedAt),
-    buildColorEvidence(stagedBase, baseSourceHash, preparedAt),
-    buildVoiceEvidence(stagedBase, baseSourceHash, preparedAt),
-  ];
-
   await writeFile(paths.manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-  await writeFile(paths.evidencePaths.api, JSON.stringify(evidenceFiles[0], null, 2) + '\n', 'utf8');
+  await writeFile(paths.evidencePaths.api, serializedEvidence[0], 'utf8');
   await writeFile(
     paths.evidencePaths.structure,
-    JSON.stringify(evidenceFiles[1], null, 2) + '\n',
+    serializedEvidence[1],
     'utf8',
   );
   await writeFile(
     paths.evidencePaths.color,
-    JSON.stringify(evidenceFiles[2], null, 2) + '\n',
+    serializedEvidence[2],
     'utf8',
   );
   await writeFile(
     paths.evidencePaths.voice,
-    JSON.stringify(evidenceFiles[3], null, 2) + '\n',
+    serializedEvidence[3],
+    'utf8',
+  );
+  await writeFile(
+    paths.evidencePaths.renderer,
+    serializedEvidence[4],
     'utf8',
   );
 

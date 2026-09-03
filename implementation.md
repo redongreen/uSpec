@@ -4,7 +4,7 @@
 >
 > **Two rendering paths:**
 > - **Figma-native path** (`create-*` skills + Figma MCP): each spec type writes its own annotation frame into Figma next to the component. Figma is the source of truth.
-> - **Component markdown path** (`figma-plugin/` + `create-component-md` + `extract-*` skills): the plugin emits a single `_base.json`; interpreter skills turn it into a standalone `.md` spec. The `.md` — not Figma — becomes the implementation source of truth.
+> - **Component spec path** (`figma-plugin/` + `create-component-md` + `extract-*` skills): the plugin emits a single `_base.json`; interpreter skills turn it into a canonical `.json` contract and sibling implementation `.md`. The JSON is the machine source of truth and the Markdown is its human implementation view.
 >
 > **What belongs here:**
 > - System architecture and data flow for both paths
@@ -22,6 +22,8 @@
 > **Adding a new spec type:** Author the new skill in the platform-neutral `skills/<name>/SKILL.md` source (use `{{skill:name}}` and `{{ref:path}}` tokens for cross-references — see the [Skill Source and CLI](#skill-source-and-cli-packagescli) section). Add any shared docs to `references/<area>/`. Update the skills table, template type table, and reference files table below. Document the spec's schema, examples, and template structure in its own instruction file. If the new spec should participate in the component markdown path, pair it with a read-only `extract-<type>` sibling skill and wire it into `create-component-md`'s Step 6 fan-out. Bump `packages/cli/package.json` and rebuild so existing installs can pick up the new skill via `npx uspec-skills update`.
 >
 > **Operator's manual.** This file is the architecture reference. For the human-facing release process — when to bump versions, how to publish to npm, troubleshooting failed publishes, and the smoke-test workflow — see [`maintaining.md`](maintaining.md).
+> The active V2.7 release gates are tracked in
+> [`release-checklist.md`](release-checklist.md).
 
 ## Contents
 
@@ -38,7 +40,7 @@
   - [Template Key Config](#template-key-config) — `uspecs.config.json` shape and fields
 - [Cloning Logic](#cloning-logic) — shared template clone-fill-remove pattern
 - [Stability](#stability) — multi-call splitting to avoid Figma timeouts
-- [Component Markdown Pipeline](#component-markdown-pipeline) — `_base.json` → `.md` spec flow
+- [Component Markdown Pipeline](#component-markdown-pipeline) — `_base.json` → canonical `.json` + implementation `.md`
   - [Figma plugin (`figma-plugin/`)](#figma-plugin-figma-plugin) — phase map A–I
   - [`create-component-md` orchestrator](#create-component-md-orchestrator) — workflow steps 1–10.5
   - [`.uspec-cache/` layout](#uspec-cache-layout) — per-component cache files
@@ -55,7 +57,7 @@
 uSpec generates documentation specifications for UI components. The system ships two rendering paths that share the same interpretation patterns but produce different artifacts:
 
 - **Figma-native path.** `create-*` skills render annotation frames directly into Figma using Plugin API JavaScript. Each spec type has its own template frame. **These skills now consume the `.md` source of truth** (`components/<slug>.md`, produced by the component-markdown path) rather than re-extracting from Figma: each `create-*` skill requires the `.md`, fails fast when it is missing, and renders from the `.md` body + its `render-meta` block — with at most a small, explicitly-whitelisted minimal live read per skill for the few facts neither the `.md` nor `render-meta` carries (e.g. `create-color`'s `getLocalVariableCollectionsAsync()` for mode IDs, `create-api`'s `<=30-line` TEXT-node listing for preview text, `create-property`'s variable-collection + variant-gated-boolean scans, `create-anatomy`'s bounded direct-child/richest-variant walk). They no longer run the old full extraction tree-walk. The motion skill is the one exception that never participated in this contract — see below.
-- **Component markdown path.** The `figma-plugin/` Figma Desktop plugin walks a component locally and emits a single `_base.json`. The `create-component-md` orchestrator runs four read-only `extract-*` interpreter skills against that file, reconciles their outputs, and renders one self-contained `.md` spec. The `.md` becomes the implementation source of truth; Figma is only the source of extraction. The render-meta appendix and (for voice) a hidden `voice-render-meta` focus-stop layer-name carry let the Figma-native `create-*` skills resolve sections/groups/focus markers back to live layers without re-extracting.
+- **Component markdown path.** The `figma-plugin/` Figma Desktop plugin walks a component locally and emits a single `_base.json`. The `create-component-md` orchestrator runs four read-only `extract-*` interpreter skills against that file, reconciles their outputs, compiles a schema-valid canonical `.json` contract, and renders its sibling implementation `.md`. The JSON preserves complete normalized evidence; the Markdown is the evidence-linked engineering guide. Figma is only the source of extraction. An exhaustive `.audit.md` is available on explicit request for diagnostics.
 - **Motion is out of scope of the `.md`-consumer contract.** `create-motion` reads a pre-computed After Effects timeline export (`references/motion/export-timeline.jsx` JSON) and never walks a Figma component, so there is no `_base.json`/`extract-motion`/`.md` Motion section to consume. It remains a standalone Figma-native renderer driven by the AE JSON input; it is intentionally excluded from the require-`.md`/fail-fast/whitelisted-reads refactor.
 
 Spec types currently supported (either path unless noted):
@@ -67,7 +69,7 @@ Spec types currently supported (either path unless noted):
 5. **API Overview** - Component property documentation with configuration examples
 6. **Structure Specification** - Dimensional properties documentation (spacing, padding, density variants)
 7. **Motion Specification** - Animation timeline documentation from After Effects export data (pre-computed segments, no raw keyframes) _(Figma-native only)_
-8. **Component Markdown** - Single standalone `.md` that bundles API, Structure, Color, and Voice into one implementation source of truth _(component markdown path only)_
+8. **Component contract + Markdown** - Canonical `.json` plus a standalone `.md` implementation guide covering API, Structure, Color, and Voice _(component markdown path only)_
 
 ## Skills
 
@@ -95,11 +97,11 @@ Agent workflows are defined as skills. Each skill has a `SKILL.md` with frontmat
 | `create-structure` | structure, structure spec, dimensions, spacing, density, sizing | Structure spec generation |
 | `create-motion` | motion, motion spec, animation spec, timeline | Motion specification from AE export (JSON paste, file ref, or Figma destination link) |
 
-**Component markdown path (consume `_base.json`, render `.md`):**
+**Component markdown path (consume `_base.json`, render `.json` + `.md`):**
 
 | Skill | Trigger Keywords | Purpose |
 |-------|------------------|---------|
-| `create-component-md` | component md, component markdown, spec md, source of truth, migrate to md | Orchestrator: validates a plugin-produced `_base.json`, runs the four `extract-*` interpreter skills, reconciles their outputs, and renders a standalone `components/{componentSlug}.md`. See the [Component Markdown Pipeline](#component-markdown-pipeline) section below. |
+| `create-component-md` | component md, component markdown, spec md, source of truth, migrate to md | Orchestrator: validates a plugin-produced `_base.json`, runs the four `extract-*` interpreter skills, reconciles their outputs, and writes `components/{componentSlug}.json` plus `components/{componentSlug}.md`. See the [Component Markdown Pipeline](#component-markdown-pipeline) section below. |
 | `extract-api` | _(sub-skill, invoked by `create-component-md`)_ | Read-only: interpret properties, sub-components, and configuration examples from `_base.json`. Produces the shared **API dictionary** that steers the three downstream specialists. Runs inline in the orchestrator's parent context. |
 | `extract-structure` | _(sub-skill, invoked by `create-component-md`)_ | Read-only: interpret variant axes, dimensions, sub-component variant walks (Phase I output), slot contents, and cross-variant diffs from `_base.json`. |
 | `extract-color` | _(sub-skill, invoked by `create-component-md`)_ | Read-only: interpret per-element fills/strokes/effects, axis classification, boolean delta, variable-mode detection, and rendering strategy from `_base.json`. |
@@ -572,11 +574,16 @@ The component markdown path produces a single standalone `.md` spec per componen
 
 ### Why this path exists
 
-Each `create-*` Figma-native skill costs roughly 100k tokens per run because the majority of the weight is the Figma render pass: `setProperties`, `createInstance`, `loadFontAsync`, layout math, cloning templates, placing markers. The `extract-*` skills strip all of that. Because the plugin produces a single shared `_base.json`, the interpreters also stop calling the MCP for measurements — they read that file from disk. Per-spec token cost drops into the low tens of thousands and the parent orchestrator only holds one-line summaries from each specialist. The `.md` artifact is also easier to diff, review, and hand to downstream code-generation tools than seven separate Figma frames.
+Each `create-*` Figma-native skill costs roughly 100k tokens per run because the majority of the weight is the Figma render pass: `setProperties`, `createInstance`, `loadFontAsync`, layout math, cloning templates, placing markers. The `extract-*` skills strip all of that. Because the plugin produces a single shared `_base.json`, the interpreters also stop calling the MCP for measurements — they read that file from disk. Per-spec token cost drops into the low tens of thousands and the parent orchestrator only holds one-line summaries from each specialist. The canonical `.json` contract is stable input for automation, while its concise `.md` view is easier to review and hand to implementation-focused LLMs than seven separate Figma frames.
 
 ### Figma plugin (`figma-plugin/`)
 
 A Figma Desktop plugin published on the [Figma Community](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) (no local build required to use it). The source is open in-repo under `figma-plugin/` and is built with esbuild; it is not part of the npm package — the `npx uspec-skills` package delivers only the skills.
+
+The in-repo source is the public, link-required Community build. Its UI requires a valid Figma
+component link before extraction because a public plugin cannot rely on `figma.fileKey`; the link
+is stored as document plugin data and prefilled on subsequent runs. Internal no-link publications
+are separate builds and are not produced by this repository.
 
 The plugin walks the selected `COMPONENT` or `COMPONENT_SET` (a selected variant is auto-promoted to its component set) through a fixed sequence of phases and emits `{componentSlug}-_base.json`. Every variant is walked — no default-variant sampling — so cross-variant diffs are computed in the sandbox rather than reconstructed by the agent.
 
@@ -586,16 +593,16 @@ The plugin walks the selected `COMPONENT` or `COMPONENT_SET` (a selected variant
 | B | `phaseB.ts` | Local variable collections + resolved values per mode |
 | C | `phaseC.ts` | Style resolution with inline-sample fallback when library styles are unresolvable |
 | D | `phaseD.ts` | Library-linked variable resolution (`name`, `codeSyntax`, alias chains, remote collection metadata) via `figma.variables.getVariableByIdAsync` |
-| E | `phaseE.ts` | Per-variant walker: dimensions, hierarchical tree, color walk, post-walk validation. `extractDims` is exported for reuse by Phase I. |
+| E | `phaseE.ts` | Per-variant walker: dimensions, hierarchical tree, color walk, parent-owned instance identity at any structural depth, and post-walk validation. `extractDims` is exported for reuse by Phase I. |
 | F | `phaseF.ts` | Cross-variant diffs + axis classification |
-| F′ | `childComposition.ts` | First-guess classification for each top-level child instance (constitutive / referenced / decorative). Designer confirms or flips each guess in the plugin UI before extraction completes. Forwards Phase E's typed `componentProperties` snapshot into every `_childComposition.children[*]` entry for the renderer's referenced-component override table. |
-| G | `phaseG.ts` | Revealed trees + slot host geometry |
-| H | `phaseH.ts` | Ownership hints (which element "owns" a given color / dimension) |
+| F′ | `childComposition.ts` | Cross-variant first-guess classification for each parent-owned child instance (constitutive / referenced / decorative), including placements below structural wrappers. Aggregates presence and node ids by variant and forwards Phase E's typed `componentProperties` snapshot. |
+| G | `phaseG.ts` | Revealed trees for every distinct structural topology + slot host geometry |
+| H | `phaseH.ts` | Cross-variant ownership hints (which element "owns" a given color / dimension) |
 | I | `phaseI.ts` | Constitutive sub-component variant walks: enumerates each constitutive child's own variant axes (cross-product capped at 20 combos per sub), measures `dimensions` + `treeHierarchical` per combo, emits `subComponentVariantWalks` keyed by `subCompSetId`. Fixes the case where a parent-variant walk captures a child only in its embedded configuration and misses the child's own size/density/etc. axes. |
 
-**Designer-in-the-loop composition.** Phase F′ pre-classifies children using node metadata (name, main component set, variant axes), but the plugin UI surfaces each top-level child for designer review. Confirmed or flipped guesses land in `_childComposition.children[*]` with `classificationEvidence: ["user-selected"]`. The orchestrator's Step 4.5 review short-circuits to a confirmation-only pass when every child carries that evidence. Each entry also carries a typed `componentProperties` snapshot (mirroring Figma's `InstanceNode.componentProperties` shape with the `#…` clean-key suffix stripped) for INSTANCE entries — `null` for FRAMEs, vectors, layout wrappers, and slot-preferred entries. The create-component-md renderer reads this snapshot exclusively for its referenced-component override table; the legacy `booleanOverrides` field is now a backward-compat projection over the typed snapshot.
+**Designer-in-the-loop composition.** Phase F′ pre-classifies the union of parent-owned children from every variant using node metadata (name, main component set, variant axes). The plugin UI surfaces each distinct child identity once, while `presentInVariants` and `placementsByVariant` preserve where it appears. Confirmed or flipped guesses land in `_childComposition.children[*]` with `classificationEvidence: ["user-selected"]`. The orchestrator's Step 4.5 review short-circuits to a confirmation-only pass when every child carries that evidence. Each entry also carries a typed `componentProperties` snapshot (mirroring Figma's `InstanceNode.componentProperties` shape with the `#…` clean-key suffix stripped) for INSTANCE entries — `null` for FRAMEs, vectors, layout wrappers, and slot-preferred entries. The create-component-md renderer reads this snapshot exclusively for its referenced-component override table; the legacy `booleanOverrides` field is now a backward-compat projection over the typed snapshot.
 
-**Defensive accessors.** `src/safe.ts` provides `safeLen`, `sg`, and `sidStr` wrappers that let the walker tolerate `GROUP` and `SLOT` nodes whose property reads would otherwise throw under the plugin sandbox's strict mode. `src/safe.ts` also exports `snapshotComponentProperties` (typed `InstanceNode.componentProperties` snapshot consumed by Phase E and the slot-default-child branch in `code.ts`) and `getSlotPropName` (authoritative SLOT → slot-property binding via `componentPropertyReferences.mainComponent` with a name-based fallback; replaces an earlier `Object.values(cpRefs)[0]` lookup that was picking up the `visible` binding instead of the slot binding).
+**Defensive accessors.** `src/safe.ts` provides `safeLen`, `sg`, and `sidStr` wrappers that let the walker tolerate `GROUP` and `SLOT` nodes whose property reads would otherwise throw under the plugin sandbox's strict mode. It also exports `collectOwnedInstancePlacements`, which descends parent-owned structural wrappers but stops at INSTANCE and SLOT boundaries; `snapshotComponentProperties`, consumed by Phase E and slot-default-child handling; and `getSlotPropName`, the authoritative SLOT-property resolver.
 
 **Inline font capture.** Text style IDs are recorded, but inline font family + style + size + weight are also captured on every text node so typography data survives even when a library-linked text style cannot be resolved.
 
@@ -611,16 +618,17 @@ Inputs:
 
 Workflow (abridged — the canonical checklist lives in `.cursor/skills/create-component-md/SKILL.md`):
 
-1. **Preflight + prepare.** Read `uspecs.config.json`, then shell out to `uspec-skills component-md prepare --base "<baseJsonPath>" --json` (local `packages/cli/dist/index.js` in the monorepo, or `npx uspec-skills@<version>` for consumers). The CLI validates against the bundled Ajv schema, stages `{componentSlug}-_base.json` into `.uspec-cache/{componentSlug}/`, and writes a prepare manifest plus four domain-specific evidence slices (`evidence-api`, `evidence-structure`, `evidence-color`, `evidence-voice`). Parse the JSON manifest from stdout; any non-zero exit aborts the run. Do **not** fall back to manual validation or staging once a working CLI is available.
-2. **Resolve `componentSlug`** and the output path (default `./components/{componentSlug}.md`) from the manifest. Create `./components/` (tracked) if missing; `.uspec-cache/{componentSlug}/` is created by prepare.
+1. **Preflight + prepare.** Read `uspecs.config.json`, then shell out to `uspec-skills component-md prepare --base "<baseJsonPath>" --json` (local `packages/cli/dist/index.js` in the monorepo, or `npx uspec-skills@<version>` for consumers). The CLI validates against the bundled Ajv schema, stages `{componentSlug}-_base.json` into `.uspec-cache/{componentSlug}/`, and writes a prepare manifest plus five evidence slices (`evidence-api`, `evidence-structure`, `evidence-color`, `evidence-voice`, `evidence-renderer`). Each specialist slice includes deterministic `obligations[]`: the minimum facts that must survive interpretation (raw API properties, engineer-facing instance-swap types, dimensional and typography families, complete Phase I sub-component geometry, paint-conditioned border dimensions, constitutive axes, the paint-presence matrix, and accessibility parts). Obligations may carry a `representation` contract that constrains the target record kind, semantic field/value, exact axis values, and whether merging is allowed. The manifest exposes source identity and obligation counts. Parse the JSON manifest from stdout; any non-zero exit aborts the run.
+2. **Resolve `componentSlug`** and sibling output paths (defaults `./components/{componentSlug}.md` and `./components/{componentSlug}.json`) from the manifest. Create `./components/` (tracked) if missing; `.uspec-cache/{componentSlug}/` is created by prepare.
 3. **Announce the plan.** One-line summary of what will be generated.
-4. **Run `extract-api` inline in the parent.** Pass `evidenceApiPath` from the manifest when the hash matches. Produces `{componentSlug}-api.json` and `api-dictionary.json`. The dictionary lands in the parent so downstream specialists can read it.
-5. **Parallel fan-out.** Dispatch `extract-structure`, `extract-color`, `extract-voice` as three `generalPurpose` subagents in a single batch. Each subagent receives its domain's evidence path from the manifest when the hash matches (evidence fast path); otherwise it reads the staged base. The parent keeps only the returned one-line summary + cache-file path from each.
+4. **Run `extract-api` inline in the parent.** Pass `evidenceApiPath` from the manifest when the hash matches. Produces `{componentSlug}-api.json` and `api-dictionary.json`; immediately normalize/validate both with `component-md validate`.
+5. **Parallel fan-out.** Dispatch `extract-structure`, `extract-color`, `extract-voice` as three `generalPurpose` subagents in a single batch. Each subagent receives its domain's evidence path from the manifest when the hash matches. As soon as the three return, normalize/validate each cache; re-dispatch only the owning specialist on failure.
 6. **Reconciliation (Step 8.5).** Compare the three specialist artifacts for typed disagreements (e.g., same element classified as `constitutive` in structure but `referenced` in voice; variant axis present in one artifact and absent in another). When `reconciliation.autoRetry === true`, re-run the offending specialist with the mismatch payload attached, up to a bounded retry count. Write the final verdict to `reconciliation.json`.
-7. **Render the `.md`** per `component-md/agent-component-md-instruction.md` using all four cache files + `api-dictionary.json`.
-8. **Integrity check (Step 9.5).** Validate every cache file's shape, assert axis-name consistency across artifacts, assert voice state platform coverage, assert the `coverageMatrix` artifact from `extract-structure` is `complete === true`, and recount `framesWalked` independently. Abort on failure.
-9. **Audit + summary.** Emit a one-line run summary.
-10. **Recursion manifest (Step 10.5).** Emit a manifest of constitutive children so the caller can fan out to generate per-child `.md` specs without re-walking `_base.json`.
+7. **AI synthesis handoff.** The parent writes a small `{slug}-render-plan.json` containing the 2–4 sentence overview and per-domain confidence. This is the intentional semantic boundary: AI still explains what the component is and how its contracts interact.
+8. **Canonical contract.** `component-md contract` validates all caches, applies source-identity checks, strips pipeline-only ledgers from semantic domains, and writes `{componentSlug}.json`. This schema-valid JSON unifies API, anatomy, variants, Structure, Color, accessibility, vocabulary, reconciliation, source identity, and summarized evidence coverage.
+9. **Deterministic implementation render.** `component-md render --contract ...` writes the human-facing Markdown and runs semantic acceptance gates over API examples, anatomy, Structure groups, Color contexts, and accessibility states/platforms. `--view audit` writes an exhaustive diagnostic companion only when explicitly requested.
+10. **Audit + summary.** Emit a one-line run summary.
+11. **Recursion manifest (Step 10.5).** Emit a manifest of constitutive children so the caller can fan out to generate per-child `.md` specs without re-walking `_base.json`.
 
 ### `.uspec-cache/` layout
 
@@ -634,12 +642,22 @@ Produced per component by the orchestrator. `.uspec-cache/` is gitignored.
 ├── {componentSlug}-evidence-structure.json deterministic structure evidence slice (prepare)
 ├── {componentSlug}-evidence-color.json     deterministic color evidence slice (prepare)
 ├── {componentSlug}-evidence-voice.json     deterministic voice evidence slice (prepare)
+├── {componentSlug}-evidence-renderer.json  narrow base facts needed for mechanical rendering
 ├── {componentSlug}-api.json                from extract-api
 ├── {componentSlug}-structure.json          from extract-structure
 ├── {componentSlug}-color.json              from extract-color
 ├── {componentSlug}-voice.json              from extract-voice
+├── {componentSlug}-render-plan.json        small AI-authored cross-section synthesis
 ├── api-dictionary.json                     shared dictionary that steers structure/color/voice
 └── reconciliation.json                     Step 8.5 verdicts + retry log
+```
+
+Tracked outputs sit together at the manifest output location:
+
+```text
+{componentSlug}.json       canonical schema-valid machine contract
+{componentSlug}.md         evidence-linked implementation guide
+{componentSlug}.audit.md   optional exhaustive provenance and render-meta diagnostics
 ```
 
 ### `extract-*` interpreter skills
@@ -648,6 +666,7 @@ Shared shape across all four:
 
 - **Read-only.** No MCP calls except an optional Step 3-delta ping if a measurement is missing from `_base.json` and `figmaLink` was passed. The delta path writes tiny `_deltaExtractions` entries into the cache artifact so the orchestrator can surface them in the audit.
 - **Evidence fast path.** When `uspec-skills component-md prepare` has already written a domain evidence file and its `_meta.baseSourceHash` matches the staged base, the specialist uses that compact slice for Step 3 instead of re-deriving from the full `_base.json`.
+- **Bidirectional evidence accountability.** Every specialist writes `_extractionArtifacts.obligationLedger[]`, assigning each prepared obligation one disposition (`emitted`, `merged`, `omitted`, or `unresolved`) and RFC 6901 output targets. Validation blocks unaccounted facts, omission of `must-emit` facts, unresolved targets, unresolved evidence, semantic rows with no backing obligation, and targets that violate an obligation's semantic `representation` contract. The Markdown renderer separately verifies Structure target IDs against the correct source tree; a child-owned group under `subCompSetId` cannot claim a parent placement ID and is rendered as an explicit unresolved gap when no source-accurate node exists.
 - **Paired instruction file.** Each `extract-<type>` references the canonical `agent-<type>-instruction.md` for domain rules (same instruction file the Figma-native `create-<type>` skill uses). The skill teaches the read-path over `_base.json` fields; the instruction file teaches the interpretation rules.
 - **Deterministic output paths.** `{componentSlug}-<type>.json` under the component's cache directory, plus any `_deltaExtractions` requests.
 - **Provenance flags.** Every row / cell carries a `provenance` tag (`measured`, `inferred`, `delta`, or `"—"` with a reason) so the orchestrator and downstream readers can trust or challenge values without re-running the pipeline.
@@ -656,7 +675,7 @@ Shared shape across all four:
 
 ### Source-of-truth semantics
 
-The Figma-native skills treat the Figma file as the source of truth for the component spec and write annotation frames beside the component. `create-component-md` inverts that relationship: the `.md` file is the source of truth for implementation, and Figma is only the source of extraction. Downstream code generators, documentation sites, and review tools should consume the `.md`; regenerating it is cheap because the plugin + interpreter chain is deterministic given the same `_base.json`.
+The Figma-native skills treat the Figma file as the source of truth for extraction and write annotation frames beside the component. `create-component-md` compiles that evidence into `{componentSlug}.json`, the durable machine-readable source of truth for implementation. The sibling `.md` is its deterministic implementation view. Downstream code generators should consume the JSON contract; humans and documentation sites should consume the Markdown, with an opt-in audit view available when provenance or target resolution needs inspection.
 
 ## Skill Source and CLI (`packages/cli/`)
 
@@ -716,7 +735,10 @@ packages/cli/
 | `npx uspec-skills install [--platform p]` | Non-interactive (re-)install. Reads `environment` from `uspecs.config.json` if `--platform` is omitted. Idempotent. When called with `--platform` for a secondary host, preserves the primary `environment` field already in the config. |
 | `npx uspec-skills update` | Re-renders skills against the currently installed CLI version. Run after upgrading the package. |
 | `npx uspec-skills doctor` | Verifies install: checks `uspecs.config.json` exists and has `environment`, the platform's skills directory is populated, all `.md`-relative links resolve, and reports CLI version drift. |
-| `npx uspec-skills component-md prepare --base <path> [--output <path>] [--context <text>] [--json]` | Validates a plugin-produced `_base.json`, stages it into `.uspec-cache/{slug}/`, and writes the prepare manifest plus four evidence slices. Used by `create-component-md` Step 1. `--json` prints the manifest to stdout for agent consumption. |
+| `npx uspec-skills component-md prepare --base <path> [--output <path>] [--context <text>] [--json]` | Validates and stages `_base.json`; writes source identity, manifest, four specialist evidence slices, and one renderer evidence slice. |
+| `npx uspec-skills component-md validate --cache <dir> --slug <slug> [--domain <name>] [--normalize] [--json]` | Normalizes delta records, validates specialist cache contracts, and enforces bidirectional evidence-obligation coverage after each AI pass. |
+| `npx uspec-skills component-md contract --manifest <path> --plan <path> [--output <path>] [--json]` | Compiles validated specialist semantics into one schema-valid canonical component contract. |
+| `npx uspec-skills component-md render --manifest <path> --plan <path> --contract <path> [--view concise\|audit] [--output <path>] [--json]` | Deterministically renders a concise human view or exhaustive audit view from the canonical contract. |
 
 ### Source-dir resolution
 

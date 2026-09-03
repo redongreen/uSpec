@@ -8,7 +8,10 @@
 import type { PhaseAResult } from './phaseA';
 import type { PhaseEVariantResult } from './phaseE';
 import type { ChildOrigin, ComponentPropertySnapshot } from './types';
-import { getEffectiveChildContainerOfWalked, groupBySubComp } from './safe';
+import {
+  collectOwnedInstancePlacements,
+  getEffectiveChildContainerOfWalked,
+} from './safe';
 
 export type ChildCompositionEntry = {
   name: string;
@@ -34,6 +37,12 @@ export type ChildCompositionEntry = {
   placementCount: number;
   placementIndices: number[];
   placementsVary: boolean;
+  presentInVariants: string[];
+  defaultVariantPresent: boolean;
+  placementsByVariant: Record<
+    string,
+    { variantId: string; nodeIds: string[]; placementIndices: number[] }
+  >;
 };
 
 export type ChildComposition = {
@@ -44,16 +53,10 @@ export type ChildComposition = {
 
 export function buildFirstGuess(
   parentName: string,
-  defaultVariantEntry: PhaseEVariantResult,
+  variantEntries: PhaseEVariantResult[],
+  defaultVariantId: string,
   propertyDefinitions: PhaseAResult['propertyDefinitions']
 ): ChildComposition {
-  // Descend through any single auto-layout FRAME wrappers — same rule as sendPreview /
-  // flatWalk — so the first guess is computed against the real top-level children.
-  const { container: effectiveTree, wrappers } = getEffectiveChildContainerOfWalked(
-    defaultVariantEntry.treeHierarchical
-  );
-  const topLevelChildren = Array.isArray(effectiveTree.children) ? effectiveTree.children : [];
-
   // Build an INSTANCE_SWAP reference set so we can tag children that are the concrete fill of
   // an instance-swap property.
   const instanceSwapTargets = new Set(
@@ -68,61 +71,128 @@ export function buildFirstGuess(
 
   const children: ChildCompositionEntry[] = [];
   const ambiguous: ChildCompositionEntry[] = [];
+  const byIdentity = new Map<
+    string,
+    { representative: any; fingerprints: Set<string>; placements: ChildCompositionEntry['placementsByVariant'] }
+  >();
+  const wrapperByIdentity = new Map<string, ChildCompositionEntry>();
+  const orderedVariants = [
+    ...variantEntries.filter((variant) => variant.id === defaultVariantId),
+    ...variantEntries.filter((variant) => variant.id !== defaultVariantId),
+  ];
 
-  // Surface every descended-through wrapper as an explicit decorative entry so consumers
-  // of `_childComposition` can see the layout chrome that was bypassed.
-  wrappers.forEach((w: any, depth: number) => {
-    children.push({
-      name: w.name,
-      mainComponentName: null,
-      parentSetName: null,
-      subCompSetId: null,
-      topLevelInstanceId: `wrapper:${depth}`,
-      nodeType: w.type,
-      booleanOverrides: {},
-      componentProperties: null,
-      subCompVariantAxes: {},
-      classification: 'decorative',
-      classificationReason:
-        'Layout wrapper FRAME — descended for sub-component classification.',
-      classificationEvidence: ['layout-wrapper'],
-      origin: 'top-level',
-      slotName: null,
-      placementCount: 1,
-      placementIndices: [],
-      placementsVary: false,
+  for (const variant of orderedVariants) {
+    const { container: effectiveTree, wrappers } = getEffectiveChildContainerOfWalked(
+      variant.treeHierarchical
+    );
+    const topLevelChildren = Array.isArray(effectiveTree.children) ? effectiveTree.children : [];
+
+    wrappers.forEach((w: any, depth: number) => {
+      const identity = `wrapper:${depth}:${w.name}`;
+      const existing = wrapperByIdentity.get(identity);
+      if (existing) {
+        existing.presentInVariants.push(variant.name);
+        existing.defaultVariantPresent ||= variant.id === defaultVariantId;
+        existing.placementsByVariant[variant.name] = {
+          variantId: variant.id,
+          nodeIds: w.id ? [w.id] : [],
+          placementIndices: [],
+        };
+        return;
+      }
+      wrapperByIdentity.set(identity, {
+        name: w.name,
+        mainComponentName: null,
+        parentSetName: null,
+        subCompSetId: null,
+        topLevelInstanceId: identity,
+        nodeType: w.type,
+        booleanOverrides: {},
+        componentProperties: null,
+        subCompVariantAxes: {},
+        classification: 'decorative',
+        classificationReason:
+          'Layout wrapper FRAME — descended for sub-component classification.',
+        classificationEvidence: ['layout-wrapper'],
+        origin: 'top-level',
+        slotName: null,
+        placementCount: 1,
+        placementIndices: [],
+        placementsVary: false,
+        presentInVariants: [variant.name],
+        defaultVariantPresent: variant.id === defaultVariantId,
+        placementsByVariant: {
+          [variant.name]: {
+            variantId: variant.id,
+            nodeIds: w.id ? [w.id] : [],
+            placementIndices: [],
+          },
+        },
+      });
     });
-  });
 
-  // Dedup top-level INSTANCE children by sub-component identity. Preserves the original
-  // order of first occurrence so `idx:N` keys and the `topLevelInstanceId` round-trip
-  // from `sendPreview` line up. Non-INSTANCE children pass through as solo groups.
-  const groups = groupBySubComp(
-    topLevelChildren as any[],
-    (child: any) => {
-      if (child.type !== 'INSTANCE') return null;
-      // Prefer subCompSetId (stable across COMPONENT_SET membership); fall back to
-      // mainComponentName for plain components without a parent set.
-      return child.subCompSetId || child.mainComponentName || null;
-    },
-    // Two placements are "the same" when their main-component variant choice and their
-    // boolean overrides match. mainComponentName encodes the variant for COMPONENT_SET
-    // members (e.g. "state=default, size=medium"). Instance-swap and text overrides are
-    // intentionally not in v1 — see groupBySubComp's docstring.
-    (child: any) => {
-      const overrides = JSON.stringify(child.booleanOverrides || {});
-      return `${child.mainComponentName || ''}|${overrides}`;
+    const directIndexById = new Map<string, number>();
+    topLevelChildren.forEach((child: any, index: number) => {
+      if (child.id) directIndexById.set(String(child.id), index);
+    });
+    const recordPlacement = (child: any, index: number | null): void => {
+      const identity =
+        child.type === 'INSTANCE'
+          ? `component:${child.subCompSetId || child.mainComponentName || child.name}`
+          : `decorative:${child.type}:${child.name}`;
+      const fingerprint = `${child.mainComponentName || ''}|${JSON.stringify(
+        child.booleanOverrides || {}
+      )}|${JSON.stringify(child.componentProperties || {})}`;
+      const existing = byIdentity.get(identity);
+      if (existing) {
+        existing.fingerprints.add(fingerprint);
+        const placement = existing.placements[variant.name] ?? {
+          variantId: variant.id,
+          nodeIds: [],
+          placementIndices: [],
+        };
+        if (child.id && placement.nodeIds.includes(child.id)) return;
+        if (child.id) placement.nodeIds.push(child.id);
+        if (index != null) placement.placementIndices.push(index);
+        existing.placements[variant.name] = placement;
+        return;
+      }
+      byIdentity.set(identity, {
+        representative: child,
+        fingerprints: new Set([fingerprint]),
+        placements: {
+          [variant.name]: {
+            variantId: variant.id,
+            nodeIds: child.id ? [child.id] : [],
+            placementIndices: index == null ? [] : [index],
+          },
+        },
+      });
+    };
+    topLevelChildren.forEach((child: any, index: number) => recordPlacement(child, index));
+    for (const { node } of collectOwnedInstancePlacements(variant.treeHierarchical)) {
+      recordPlacement(node, directIndexById.get(String(node.id)) ?? null);
     }
-  );
+  }
 
-  groups.forEach((group) => {
+  children.push(...wrapperByIdentity.values());
+
+  for (const [identity, group] of byIdentity) {
     const child: any = group.representative;
+    const presentInVariants = Object.keys(group.placements);
+    const defaultPlacement = Object.values(group.placements).find(
+      (placement) => placement.variantId === defaultVariantId
+    );
+    const placementCount = Object.values(group.placements).reduce(
+      (total, placement) => total + placement.nodeIds.length,
+      0
+    );
     const entry: ChildCompositionEntry = {
       name: child.name,
       mainComponentName: child.mainComponentName || null,
       parentSetName: child.parentSetName || null,
       subCompSetId: child.subCompSetId || null,
-      topLevelInstanceId: `idx:${group.index}`,
+      topLevelInstanceId: identity,
       nodeType: child.type,
       booleanOverrides: child.booleanOverrides || {},
       // Forward the typed snapshot Phase E captured at depth 0. `null` for non-INSTANCE
@@ -135,9 +205,12 @@ export function buildFirstGuess(
       classificationEvidence: [],
       origin: 'top-level',
       slotName: null,
-      placementCount: group.members.length,
-      placementIndices: group.indices,
-      placementsVary: group.varies,
+      placementCount,
+      placementIndices: defaultPlacement?.placementIndices ?? [],
+      placementsVary: group.fingerprints.size > 1,
+      presentInVariants,
+      defaultVariantPresent: Boolean(defaultPlacement),
+      placementsByVariant: group.placements,
     };
 
     if (child.type !== 'INSTANCE') {
@@ -146,7 +219,7 @@ export function buildFirstGuess(
         'Child is not an INSTANCE (raw vector, frame, or text with no main component).';
       entry.classificationEvidence.push('not-instance');
       children.push(entry);
-      return;
+      continue;
     }
 
     const haystack = `${child.mainComponentName || ''}|${child.parentSetName || ''}`;
@@ -178,10 +251,10 @@ export function buildFirstGuess(
     } else {
       children.push(entry);
     }
-  });
+  }
 
   const confidence: ChildComposition['guessConfidence'] =
-    ambiguous.length === 0 ? 'high' : ambiguous.length * 2 > topLevelChildren.length ? 'low' : 'medium';
+    ambiguous.length === 0 ? 'high' : ambiguous.length * 2 > byIdentity.size ? 'low' : 'medium';
 
   return {
     children,

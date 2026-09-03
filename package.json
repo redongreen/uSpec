@@ -8,6 +8,9 @@
     "build:cli": "cd packages/cli && npm install --no-audit --no-fund && npm run build",
     "typecheck:cli": "cd packages/cli && npm run typecheck",
     "prepare:component-md": "node packages/cli/dist/index.js component-md prepare",
+    "validate:component-md": "node packages/cli/dist/index.js component-md validate",
+    "contract:component-md": "node packages/cli/dist/index.js component-md contract",
+    "render:component-md": "node packages/cli/dist/index.js component-md render",
     "dev:render": "cd packages/cli && node dist/index.js render --target cursor --out ../.. && node dist/index.js render --target claude-code --out ../.. && node dist/index.js render --target codex --out ../.."
   }
 }

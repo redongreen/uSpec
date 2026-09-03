@@ -29,7 +29,12 @@ This page covers everything you need to go from zero to your first generated spe
 uSpec runs one pipeline end to end: extract a component, generate its `.md` spec, then render that spec into Figma. To run the full pipeline you need four pieces, all set up once:
 
 1. **AI agent host**: the coding environment that runs uSpec skills (Cursor, Claude Code, or Codex)
-2. **uSpec Extract plugin**: the Figma Community plugin that captures a component to `_base.json`, which `create-component-md` turns into the `.md` spec. Install it from the [Figma Community](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) — no local build required. The [Component Markdown install guide](/specs/component-md#what-you-need) covers it in detail.
+2. **uSpec Extract plugin**: the Figma Community plugin that captures a component to `_base.json`,
+   which `create-component-md` turns into canonical `.json` and `.md` artifacts. Install it from the
+   [Figma Community](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) — no
+   local build required. The public plugin asks for the selected component's Figma link on first
+   use, then remembers it for that document. The
+   [Component Markdown install guide](/specs/component-md#what-you-need) covers it in detail.
 3. **Figma MCP**: an active connection that lets the `create-*` skills render annotation frames back into your Figma file
 4. **Template library**: the Figma file containing the documentation templates those render skills clone from
 
@@ -252,7 +257,8 @@ uSpec renders documentation using Figma component templates. You need to add the
 
 ## Create your first spec
 
-The pipeline has two stages. Stage 1 produces the `.md` spec; stage 2 renders any section of it into Figma. Run them in order.
+The pipeline has two stages. Stage 1 produces the canonical `.json` contract and its concise `.md`
+view; stage 2 renders any section of the Markdown into Figma. Run them in order.
 
 **Before stage 1 (generate the `.md`):**
 
@@ -337,11 +343,11 @@ Reference a `create-*` skill, pass the component `.md`, and add anything the age
 
 The skills split into two groups based on their place in the pipeline.
 
-**Stage 1 — produces the `.md` (your source of truth):**
+**Stage 1 — produces the canonical contract and its Markdown view:**
 
 | Skill | What it generates |
 |-------|-------------------|
-| `create-component-md` | Single self-contained `.md` covering API, structure, color tokens, and screen-reader behavior. Takes a `_base.json` from the uSpec Extract Figma plugin. [Full guide →](/specs/component-md) |
+| `create-component-md` | Schema-valid `.json` contract plus concise `.md` covering API, structure, color tokens, and screen-reader behavior. Takes a `_base.json` from the uSpec Extract Figma plugin. [Full guide →](/specs/component-md) |
 
 **Stage 2 — render a section of the `.md` into Figma:**
 
@@ -368,7 +374,8 @@ Each stage runs a different pipeline.
   <Tab title="Stage 1: create-component-md">
     <Steps>
       <Step title="Preflight">
-        The orchestrator validates `_base.json` against the plugin schema and stages it into `.uspec-cache/{componentSlug}/`.
+        The orchestrator validates `_base.json`, stages it into `.uspec-cache/{componentSlug}/`,
+        and prepares compact evidence slices with deterministic obligations.
       </Step>
       <Step title="API dictionary">
         `extract-api` runs first and writes `api-dictionary.json`. The dictionary keeps the three downstream specialists aligned on property names and states.
@@ -377,15 +384,18 @@ Each stage runs a different pipeline.
         `extract-structure`, `extract-color`, and `extract-voice` run as three parallel subagents in a single batch.
       </Step>
       <Step title="Reconciliation">
-        The orchestrator compares specialist outputs for typed disagreements and re-dispatches the owning specialist when needed.
+        The CLI validates specialist caches and evidence obligations. The orchestrator compares
+        typed disagreements and re-dispatches the owning specialist when needed.
       </Step>
-      <Step title="Render">
-        The renderer fills a single Markdown template with the reconciled data and writes `components/{componentSlug}.md` under your working directory.
+      <Step title="Compile and render">
+        The CLI compiles validated semantics into `components/{componentSlug}.json`, then renders
+        `components/{componentSlug}.md` deterministically from that contract.
       </Step>
     </Steps>
 
     <Check>
-      If a new `.md` appears under `./components/` in your working directory, your setup is working correctly.
+      If sibling `.json` and `.md` files appear under `./components/`, your setup is working
+      correctly.
     </Check>
   </Tab>
   <Tab title="Stage 2: create-* render skill">

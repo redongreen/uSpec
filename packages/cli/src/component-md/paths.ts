@@ -8,11 +8,13 @@ export interface PreparePaths {
   stagedBasePath: string;
   outputPath: string;
   manifestPath: string;
+  contractPath: string;
   evidencePaths: {
     api: string;
     structure: string;
     color: string;
     voice: string;
+    renderer: string;
   };
 }
 
@@ -28,6 +30,9 @@ export function resolvePreparePaths(opts: {
   const outputPath = opts.output
     ? resolve(opts.projectRoot, opts.output)
     : join(opts.projectRoot, 'components', `${componentSlug}.md`);
+  const contractPath = outputPath.toLowerCase().endsWith('.md')
+    ? `${outputPath.slice(0, -3)}.json`
+    : `${outputPath}.json`;
 
   return {
     projectRoot: opts.projectRoot,
@@ -36,11 +41,13 @@ export function resolvePreparePaths(opts: {
     stagedBasePath,
     outputPath,
     manifestPath: join(cachePath, `${componentSlug}-prepare-manifest.json`),
+    contractPath,
     evidencePaths: {
       api: join(cachePath, `${componentSlug}-evidence-api.json`),
       structure: join(cachePath, `${componentSlug}-evidence-structure.json`),
       color: join(cachePath, `${componentSlug}-evidence-color.json`),
       voice: join(cachePath, `${componentSlug}-evidence-voice.json`),
+      renderer: join(cachePath, `${componentSlug}-evidence-renderer.json`),
     },
   };
 }

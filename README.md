@@ -2,15 +2,15 @@
 
 Generate design system documentation for your UI components, directly from your AI agent.
 
-Describe a component to your agent. uSpec captures it with the [uSpec Extract](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) Figma plugin, generates a portable Component Markdown (`.md`) spec, then renders sections of that spec back into Figma as annotation frames. Works with [Figma Console MCP](https://github.com/southleft/figma-console-mcp) or the [native Figma MCP](https://github.com/figma/figma-mcp), inside **Cursor**, **Claude Code**, or **Codex**.
+Describe a component to your agent. uSpec captures it with the [uSpec Extract](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) Figma plugin, compiles a canonical component contract (`.json`) plus a portable implementation guide (`.md`), then renders sections of that specification back into Figma as annotation frames. Works with [Figma Console MCP](https://github.com/southleft/figma-console-mcp) or the [native Figma MCP](https://github.com/figma/figma-mcp), inside **Cursor**, **Claude Code**, or **Codex**.
 
-> **Component Markdown is the source of truth.** `create-component-md` produces one self-contained `.md` per component covering API, structure, color, and screen-reader behavior — an artifact LLM tools can build from and humans can query. It is generated from a `_base.json` capture produced by the [uSpec Extract Figma plugin](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) (free on the Figma Community; source is open in [`figma-plugin/`](figma-plugin/)). Every `create-*` render skill then takes that `.md` as its required input and renders a section into Figma via your MCP.
+> **The component contract is the machine source of truth.** `create-component-md` produces sibling `.json` and `.md` files covering API, structure, color, and screen-reader behavior. Automation consumes the schema-valid JSON; humans and LLM workflows use the concise Markdown. Both come from a `_base.json` capture produced by the [uSpec Extract Figma plugin](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) (free on the Figma Community; source is open in [`figma-plugin/`](figma-plugin/)). The public plugin asks for the selected component's Figma link on first use and remembers it for that document. Every `create-*` render skill then takes the `.md` as its required input and renders a section into Figma via your MCP.
 
 ## What you can generate
 
 | Spec type | What you get |
 |-----------|--------------|
-| Component Markdown | One `.md` per component covering API, structure, color, and screen-reader behavior |
+| Component contract + Markdown | Canonical `.json` plus a concise `.md` covering API, structure, color, and screen-reader behavior |
 | API Spec | Properties, values, defaults, and configuration examples |
 | Color Annotation | Design token mapping for every element and state |
 | Structure Spec | Dimensions, spacing, and padding across density and size variants |

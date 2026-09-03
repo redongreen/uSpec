@@ -28,6 +28,9 @@ After `init`, ask your agent to run the `firstrun` skill to extract template key
 | `npx uspec-skills update` | Re-render skills from the installed CLI version. Run after upgrading the package. |
 | `npx uspec-skills doctor` | Verify your install. Reports missing skills, missing references, or broken links. |
 | `npx uspec-skills component-md prepare --base <path> [--json]` | Validate and stage a plugin `_base.json`; writes prepare manifest + evidence slices to `.uspec-cache/`. Used by `create-component-md`. |
+| `npx uspec-skills component-md validate --cache <dir> --slug <slug> [--domain <name>] [--normalize]` | Normalize unavailable deltas and validate each specialist cache as soon as it is written. |
+| `npx uspec-skills component-md contract --manifest <path> --plan <path> [--json]` | Compile validated specialist semantics into one schema-valid canonical JSON contract. |
+| `npx uspec-skills component-md render --manifest <path> --plan <path> --contract <path> [--view concise\|audit] [--json]` | Render the implementation Markdown deterministically from the canonical contract. `concise` is the default; `audit` is opt-in diagnostics. |
 
 ## What gets installed
 
@@ -55,7 +58,7 @@ your-project/
 {
   "mcpProvider": "figma-mcp",
   "environment": "cursor",
-  "cliVersion": "0.3.2"
+  "cliVersion": "0.3.3"
 }
 ```
 
@@ -69,13 +72,15 @@ The `firstrun` skill adds `fontFamily` and `templateKeys` to that file once you 
 
 ## Required: uSpec Extract Figma plugin
 
-uSpec runs one pipeline. The **uSpec Extract** Figma plugin captures a component to a `_base.json` file, `create-component-md` turns that into a Component Markdown (`.md`) spec, and the render skills (`create-anatomy`, `create-api`, `create-color`, `create-structure`, `create-property`, `create-voice`) each take that `.md` as their **required** input and draw a section into Figma. (`create-motion` is the one exception — it renders from an After Effects export and does not use the `.md`.)
+uSpec runs one pipeline. The **uSpec Extract** Figma plugin captures a component to a `_base.json` file, and `create-component-md` turns that into sibling canonical contract (`.json`) and implementation guide (`.md`) artifacts. The render skills (`create-anatomy`, `create-api`, `create-color`, `create-structure`, `create-property`, `create-voice`) take the `.md` as their **required** input and draw a section into Figma. (`create-motion` is the one exception — it renders from an After Effects export and does not use the `.md`.) An exhaustive `.audit.md` can be rendered explicitly for diagnostics, but is not produced by default.
 
 The plugin is *not* installed by `npx uspec-skills` because Figma plugins live in Figma Desktop, not in your project's `node_modules`. Install it from the Figma Community:
 
 1. Open [uSpec Extract](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) on the Figma Community
 2. Click **Open in…** to add it to your Figma
 3. Select a `COMPONENT` or `COMPONENT_SET` and run **Plugins → uSpec Extract**
+4. Paste the selected component's Figma link when prompted; the public Community plugin remembers
+   it for later runs in the same document
 
 The plugin is open source — the source lives in `figma-plugin/` in the [uSpec repo](https://github.com/redongreen/uSpec) if you want to build a modified version locally. See the [component-md walkthrough](https://uspec.design/specs/component-md) for the full workflow.
 

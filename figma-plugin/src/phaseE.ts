@@ -35,6 +35,12 @@ export type PhaseEVariantResult = {
   treeFlat: any[];
   colorWalk: any[];
   layoutTree: any;
+  strokeSemantics: {
+    configured: boolean;
+    painted: boolean;
+    configuredWeight: any;
+    visiblePaintCount: number;
+  };
   styleIdInlineSamples: Record<string, any>;
   referencedVariableIds: string[];
   _selfCheck: {
@@ -349,33 +355,35 @@ async function hierWalk(
         entry.mainComponentName = mc.name;
         const parentSet = mc.parent && mc.parent.type === 'COMPONENT_SET' ? mc.parent : null;
         entry.parentSetName = parentSet ? parentSet.name : mc.name;
-        if (depth === 0) {
-          const subCompSet: any = parentSet || mc;
-          entry.subCompSetId = subCompSet.id;
-          if (parentSet && (parentSet as ComponentSetNode).variantGroupProperties) {
-            entry.subCompVariantAxes = {};
-            for (const [k, v] of Object.entries(
-              (parentSet as ComponentSetNode).variantGroupProperties!
-            )) {
-              entry.subCompVariantAxes[k] = (v as any).values;
-            }
+        // Every INSTANCE reached before an INSTANCE boundary is owned by this parent,
+        // even when a multi-zone variant places it below an extra FRAME/GROUP. Capture
+        // identity and overrides at any structural depth so cross-variant composition
+        // can deduplicate the same component across different wrapper topologies.
+        const subCompSet: any = parentSet || mc;
+        entry.subCompSetId = subCompSet.id;
+        if (parentSet && (parentSet as ComponentSetNode).variantGroupProperties) {
+          entry.subCompVariantAxes = {};
+          for (const [k, v] of Object.entries(
+            (parentSet as ComponentSetNode).variantGroupProperties!
+          )) {
+            entry.subCompVariantAxes[k] = (v as any).values;
           }
-          const ip = sg(node, 'componentProperties');
-          if (ip) {
-            entry.booleanOverrides = {};
-            for (const [k, vRaw] of Object.entries(ip)) {
-              const v: any = vRaw;
-              if (v.type === 'BOOLEAN') entry.booleanOverrides[k] = v.value;
-            }
-          }
-          // Typed snapshot of every property the placed instance exposes — booleans,
-          // instance-swaps, text, variant choices. Forwarded by buildFirstGuess into
-          // `_childComposition.children[].componentProperties` and consumed by the
-          // create-component-md renderer's referenced-component override table.
-          // `null` when the read fails (defensive — `componentProperties` is rarely
-          // unreadable on INSTANCE nodes but the snapshot helper short-circuits safely).
-          entry.componentProperties = snapshotComponentProperties(node);
         }
+        const ip = sg(node, 'componentProperties');
+        if (ip) {
+          entry.booleanOverrides = {};
+          for (const [k, vRaw] of Object.entries(ip)) {
+            const v: any = vRaw;
+            if (v.type === 'BOOLEAN') entry.booleanOverrides[k] = v.value;
+          }
+        }
+        // Typed snapshot of every property the placed instance exposes — booleans,
+        // instance-swaps, text, variant choices. Forwarded by buildFirstGuess into
+        // `_childComposition.children[].componentProperties` and consumed by the
+        // create-component-md renderer's referenced-component override table.
+        // `null` when the read fails (defensive — `componentProperties` is rarely
+        // unreadable on INSTANCE nodes but the snapshot helper short-circuits safely).
+        entry.componentProperties = snapshotComponentProperties(node);
       }
     } catch {}
   }
@@ -606,6 +614,18 @@ export async function runPhaseE(variantId: string): Promise<PhaseEVariantResult>
   payload.layoutTree = buildLayoutTree(variant, 0);
   payload.treeFlat = await flatWalk(variant);
   payload.colorWalk = await colorWalk(variant, '', null, ctx);
+  const rootVisibleStrokes = payload.colorWalk.filter(
+    (entry: any) =>
+      !entry.path &&
+      entry.property === 'stroke' &&
+      (entry.opacity ?? 1) > 0
+  );
+  payload.strokeSemantics = {
+    configured: payload.dimensions.strokeWeight != null,
+    painted: rootVisibleStrokes.length > 0,
+    configuredWeight: payload.dimensions.strokeWeight ?? null,
+    visiblePaintCount: rootVisibleStrokes.length,
+  };
 
   // Post-walk validation: every top-level INSTANCE child should have its `children`
   // array populated after the walk. "Top-level" is measured against the effective

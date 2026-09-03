@@ -124,12 +124,14 @@ Downstream interpretation skills (`extract-api`, `extract-structure`, `extract-c
       "name": "<variant name>",
       "variantProperties": { "<axis>": "<value>" },
       "dimensions": { /* collapsed {value, token, display} per extractDims. `strokeAlign` is also captured here as `{ value, token: null, display }` where `value` is the raw Figma enum ("INSIDE" | "OUTSIDE" | "CENTER") and `display` is the lower-cased prose form ("inside" | "outside" | "center"); the field is omitted on nodes that don't expose strokeAlign. */ },
+      "strokeSemantics": { "configured": true, "painted": false, "configuredWeight": { /* measured weight */ }, "visiblePaintCount": 0 },
       "layoutTree": { /* structure-style layout tree; see Traversal policy. Each layout node carries `id` (Figma node id) so downstream consumers can resolve auto-layout containers back to live layers without a name-based search. */ },
       "treeHierarchical": [ /* recursive tree, stops at nested INSTANCE (except top-level); each node: id (Figma node id), name, type, visible, dimensions, typography?, mainComponentName?, parentSetName?, subCompSetId?, subCompVariantAxes?, booleanOverrides?, children? */ ],
       "treeFlat": [ /* flat list for voice: index, id (Figma node id), name, nodeType, visible, bbox, slotIndex? */ ],
       "colorWalk": [ /* path-qualified color entries; see Traversal policy. Each entry carries `nodeId` (Figma node id of the source layer) so render-meta and downstream consumers can resolve color tokens back to live layers without a path-based search. */ ],
-      "revealedTree": { /* optional; hierarchical walk with all booleans enabled, populated by Phase G. Same `id` shape as treeHierarchical. */ },
-      "revealedColorWalk": [ /* optional; colorWalk performed on the all-booleans-enabled temp instance, populated by Phase G. Same entry shape as colorWalk (including `nodeId`). Enables booleanDelta derivation without re-walking Figma. */ ]
+      "revealedTree": { /* optional; all-booleans-enabled walk for one representative of each distinct structural topology. */ },
+      "revealedColorWalk": [ /* optional; matching revealed color walk. */ ],
+      "revealedTreeRepresentative": "<variant name selected for this variant's structural topology>"
     }
   ],
 
@@ -153,7 +155,8 @@ Downstream interpretation skills (`extract-api`, `extract-structure`, `extract-c
           "slotDims": { /* collapsed dims of the slot node hosting it */ }
         }
       }
-    }
+    },
+    "swapResultsByVariant": { "<structuralVariantName>": { "<slotName>": { "<preferredComponentId>": { "prefDims": {}, "slotDims": {} } } } }
   },
 
   "ownershipHints": [
@@ -166,7 +169,9 @@ Downstream interpretation skills (`extract-api`, `extract-structure`, `extract-c
       "rationale": "<string>",
       "textContent": "<string, only for textNode>",
       "collectionId": "<id, only for variableMode>",
-      "modeNames": ["<name>", "..."]
+      "modeNames": ["<name>", "..."],
+      "sourceVariantIds": ["<variant id>", "..."],
+      "sourceVariantNames": ["<variant name>", "..."]
     }
   ],
 
@@ -215,7 +220,7 @@ Downstream interpretation skills (`extract-api`, `extract-structure`, `extract-c
         "mainComponentName": "<string or null>",
         "parentSetName": "<string or null>",
         "subCompSetId": "<id or null>",
-        "topLevelInstanceId": "<idx:N for top-level children of the *effective* container (see Layout-Wrapper Descent below) | wrapper:<depth> for layout wrapper FRAMEs that were descended through (depth 0 = outermost) | slot:<slotName>:pref:<componentKey> for slot-preferred | slot:<slotName>:child:<idx>:<nodeId> for slot-default-child>",
+        "topLevelInstanceId": "<component:<subCompSetId-or-name> for cross-variant top-level INSTANCE identities | wrapper:<depth>:<name> | slot:<slotName>:pref:<componentKey> | slot:<slotName>:child:<idx>:<nodeId>>",
         "nodeType": "INSTANCE|FRAME|TEXT|VECTOR|...",
         "booleanOverrides": { "<propName>": "<bool>" } /* legacy field kept for backward compatibility with first-guess fingerprinting (groupBySubComp). Booleans-only projection of componentProperties below; read componentProperties for the full typed surface. Slot-preferred entries leave this empty — read preferredInstances[].booleanDefaults for the referenced component's defaults. */,
         "componentProperties": { "<propName>": { "type": "BOOLEAN|INSTANCE_SWAP|TEXT|VARIANT|SLOT", "value": "<typed value>" } } /* typed snapshot of every component property on the placed instance, mirroring Figma's InstanceNode.componentProperties API exactly (with `#…` clean-key suffix stripped). Single source of truth for the create-component-md renderer's referenced-component override table. `null` for non-INSTANCE entries (FRAMEs, vectors, wrapper:N) and for slot-preferred entries (which describe a referenced component, not a placed instance — read preferredInstances[].booleanDefaults / instanceSwapDefaults / textDefaults / variantAxes for the referenced component's interface). */,
@@ -225,9 +230,12 @@ Downstream interpretation skills (`extract-api`, `extract-structure`, `extract-c
         "classificationEvidence": ["<signal>", "..."],
         "origin": "top-level|slot-preferred|slot-default-child",
         "slotName": "<slot property name when origin !== 'top-level'; null otherwise>",
-        "placementCount": "<integer; how many sibling placements share this entry's sub-component identity. 1 for solo placements; N for the homogeneous-array pattern (e.g. 6 for 'button group contains 6 selection-button instances'). Always 1 for wrapper:N entries and slot-origin entries.>",
-        "placementIndices": "<array of integers; original positions of all placements in the effective container's children, in order. [<self-index>] for solo top-level placements; [i, j, ...] for dedup'd top-level placements; [] for wrapper:N entries and slot-origin entries (which have no idx:N counterpart).>",
-        "placementsVary": "<bool; true when ≥2 placements differ on (mainComponentName, booleanOverrides) — i.e. the array is heterogeneous and the spec author may want to surface state demonstration. false for solo placements and homogeneous arrays. Read variants[*].treeHierarchical[<index>].instanceConfig for per-placement detail when this is true.>"
+        "placementCount": "<integer; total placements across all parent variants>",
+        "placementIndices": "<legacy default-variant placement indexes; [] when absent from default>",
+        "placementsVary": "<bool; true when placements differ in main component or typed component properties>",
+        "presentInVariants": ["<parent variant name>", "..."],
+        "defaultVariantPresent": "<bool>",
+        "placementsByVariant": { "<variant name>": { "variantId": "<id>", "nodeIds": ["<placement id>"], "placementIndices": [0] } }
       }
     ],
     "ambiguousChildren": [
@@ -250,12 +258,16 @@ Downstream interpretation skills (`extract-api`, `extract-structure`, `extract-c
 
 The plugin walks the component tree **once** per variant and emits three distinct views of that single walk, so the four interpretation skills can share one traversal.
 
+### Legacy v1 preparation
+
+The CLI keeps additive compatibility with older schema-v1 exports. During `component-md prepare`, it synthesizes `presentInVariants`, `defaultVariantPresent`, and `placementsByVariant` from all available variant trees. A child found only outside the old default-only composition is appended to `ambiguousChildren` with `classificationEvidence: ["legacy-variant-union"]`; the orchestrator must classify it and rerun prepare before specialists execute.
+
 | View | Used by | Semantics |
 | ---- | ------- | --------- |
 | `treeHierarchical` | `extract-api`, `extract-structure` | Recurse into containers. **Do NOT descend into nested INSTANCE children** except for the **top-level INSTANCEs of the variant** (depth 0). Preserves `layoutTree` semantics for structure and lets api inspect direct sub-component properties. |
 | `treeFlat` | `extract-voice` | Flat list with absolute-to-variant-relative `bbox`. SLOT children are hoisted into the flat list. Identically-named sibling INSTANCEs carry `slotIndex` for index-based matching. |
 | `colorWalk` | `extract-color` | Full recursion — does **not** stop at INSTANCE boundaries. Each entry carries `path` (`Parent > Child > Leaf`) and, when inside an INSTANCE, a `subComponentName` stamp. |
-| `revealedColorWalk` | `extract-color` (booleanDelta) | Phase G emits this **once per temp instance** (default variant only) after `setProperties({ ...allBooleansEnabled })`. Same entry shape as `colorWalk`. Lets interpretation skills diff revealed vs baseline entries without re-walking Figma. |
+| `revealedColorWalk` | `extract-color` (booleanDelta) | Phase G emits this for one representative of every distinct structural topology after enabling all booleans. Compare it with the same variant's baseline. |
 
 All three views are produced from the same Figma walk inside Phase E per variant; the script emits into three separate arrays rather than walking three times. `revealedColorWalk` is produced in Phase G alongside `revealedTree`.
 
@@ -277,13 +289,13 @@ The rule is applied uniformly in:
 
 **`treeHierarchical` itself is unchanged in shape** — it still walks the real tree from the variant root, so wrapper FRAMEs remain visible there with all their dimensions, padding, and clipsContent data intact. The only change is the *depth metadata* attached to inner nodes: an INSTANCE sitting inside a wrapper chain now carries the same `subCompSetId`, `subCompVariantAxes`, and `booleanOverrides` it would carry if it were a direct child of the variant root, and its own children are walked one level (matching the existing top-level-INSTANCE descent rule).
 
-Each descended-through wrapper is emitted as an explicit `{ classification: "decorative", origin: "top-level", topLevelInstanceId: "wrapper:<depth>", classificationEvidence: ["layout-wrapper"] }` entry in `_childComposition.children[]` so the layout chrome is never silently dropped.
+Each descended-through wrapper is emitted as a decorative entry and aggregated across the variants where it exists.
 
-`idx:N` in `topLevelInstanceId` indexes into the **effective container's** children, not the variant root's. Phase I is unaffected (it dispatches on `subCompSetId`, not on `idx`).
+Top-level instances use a stable `component:<identity>` key so the preview classification round-trip remains valid when the same component occupies different indexes in different variants.
 
 ### Sub-Component Placement Dedup
 
-The classification UI asks one question per distinct sub-component — "constitutive or referenced?" — so N placements of the same main component (e.g. six "selection button" placements inside a button group) collapse to **one** `_childComposition.children[]` entry instead of N. This matches the structural intent: an array sub-component is one classification with a count, not N independent decisions. Same principle as the slot-preferred dedup that's been in `sendPreview` since v1 (`seenMainIds`), now extended to top-level direct children via the shared `groupBySubComp` helper.
+The classification UI asks one question per distinct sub-component across the entire component set. Placements are deduplicated before classification and retain exact per-variant placement IDs.
 
 **Dedup key:** `subCompSetId || mainComponentName` (set id when the sub-component is a `COMPONENT_SET` member, name fallback for plain components without a parent set).
 
@@ -375,16 +387,17 @@ Run after changing the schema or updating any of the plugin phases:
 - [ ] `styles.resolvedStyles` (lazy; only referenced style IDs)
 - [ ] `variants[].dimensions` (collapsed `{value, token, display}`)
 - [ ] `variants[].dimensions.strokeAlign` (when the node exposes a stroke alignment) — `{ value, token: null, display }` where `value` is `"INSIDE" | "OUTSIDE" | "CENTER"` and `display` is the lower-cased prose form. Same shape on every `extractDims()`-sourced `dimensions` blob: `variants[].dimensions` (root), `variants[].treeHierarchical[*].dimensions`, `subComponentVariantWalks.*.variants[*].dimensions` (root + nested). **Not** present on `variants[].revealedTree[*].dimensions` — Phase G uses its own minimal `dim()` extractor (width/height/min/max + padding + layoutMode only) by design; the revealed tree is consumed for *topology* of boolean-gated children, while dimensional ground truth comes from the baseline `treeHierarchical` (which includes `visible: false` children with their geometry intact).
+- [ ] `variants[].strokeSemantics` distinguishes configured stroke weight from a visible painted stroke; render `borderWidth: none` whenever `painted === false`
 - [ ] `variants[].treeHierarchical` (structure + api evidence)
 - [ ] `variants[].treeFlat` (voice focus order)
 - [ ] `variants[].colorWalk` (color entries with `path`, `subComponentName`, `compositeDetail` when 2+ layers share a style)
 - [ ] `variants[].layoutTree`
 - [ ] `variants[].revealedTree` (from Phase G)
-- [ ] `variants[].revealedColorWalk` (from Phase G, default variant only; enables `booleanDelta` in `extract-color`)
+- [ ] `variants[].revealedColorWalk` (from Phase G, one representative per structural topology)
 - [ ] `crossVariant.axisDiffs`, `stateComparison`, `axisTokenFingerprints`, `axisClassification`, `sizeAxis`, `stateAxis`, `dimensionAxes`
-- [ ] `slotHostGeometry.swapResults.{slotName}.{componentId}.{prefDims, slotDims}`
-- [ ] `ownershipHints[]` with `rootVariant|rootBoolean|rootInstanceSwap|rootSlot|childOverride|textNode|variableMode`
-- [ ] `_childComposition.children[]` with `classification`, `classificationReason`, `classificationEvidence[]`, `origin` (`top-level` | `slot-preferred` | `slot-default-child`), `slotName` (set whenever origin !== top-level), and `componentProperties` (typed `Record<propName, {type, value}>` snapshot of the placed instance, or `null` for non-INSTANCE / slot-preferred entries)
+- [ ] `slotHostGeometry.swapResultsByVariant.{variantName}.{slotName}.{componentId}.{prefDims, slotDims}` plus legacy default `swapResults`
+- [ ] `ownershipHints[]` with variant provenance on child/text observations
+- [ ] `_childComposition.children[]` is the cross-variant union and includes `presentInVariants`, `defaultVariantPresent`, and `placementsByVariant`
 - [ ] `subComponentVariantWalks` (from Phase I): constitutive + COMPONENT_SET → one `variants[*]` per axis-combo OR `skipped: true` with `skippedReason`; constitutive + plain COMPONENT → single `(default)` walk with `axes: {}`; referenced + plain COMPONENT → single `(default)` walk; referenced + COMPONENT_SET → absent (covered by Phase A interface summary). Every walk record carries `classification`. Every INSTANCE node inside `treeHierarchical` carries an `instanceConfig` with `mainComponentName`, `parentSetName`, `variantProperties`, `booleanOverrides`, `instanceSwapOverrides`, `textOverrides`.
 
 **Mutation safety.** Walk every `createInstance` in the plugin source and confirm a matching `.remove()` on all code paths (including error).
