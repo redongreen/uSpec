@@ -4,10 +4,12 @@
   "private": true,
   "description": "Figma plugin that walks a selected component + its sub-components and emits the complete _base.json the create-component-md skill chain consumes.",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "build:watch": "node scripts/build.mjs --watch",
+    "build": "node scripts/build.mjs --edition=external",
+    "build:external": "node scripts/build.mjs --edition=external",
+    "build:internal": "node scripts/build.mjs --edition=internal",
+    "build:watch": "node scripts/build.mjs --watch --edition=external",
     "validate": "node scripts/validate-base.mjs",
-    "test": "node scripts/test-sanitize.mjs && node scripts/test-figma-url.mjs && node scripts/test-child-composition.mjs",
+    "test": "node scripts/test-sanitize.mjs && node scripts/test-figma-url.mjs && node scripts/test-child-composition.mjs && node scripts/test-editions.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

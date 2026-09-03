@@ -1,12 +1,16 @@
 {
-  "name": "uSpec Extract",
+  "name": "Base uSpec Extract",
   "id": "1635184425006534227",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/ui.html",
-  "editorType": ["figma"],
+  "editorType": [
+    "figma"
+  ],
   "networkAccess": {
-    "allowedDomains": ["none"]
+    "allowedDomains": [
+      "none"
+    ]
   },
   "documentAccess": "dynamic-page",
   "capabilities": []

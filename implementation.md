@@ -580,10 +580,11 @@ Each `create-*` Figma-native skill costs roughly 100k tokens per run because the
 
 A Figma Desktop plugin published on the [Figma Community](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract) (no local build required to use it). The source is open in-repo under `figma-plugin/` and is built with esbuild; it is not part of the npm package — the `npx uspec-skills` package delivers only the skills.
 
-The in-repo source is the public, link-required Community build. Its UI requires a valid Figma
-component link before extraction because a public plugin cannot rely on `figma.fileKey`; the link
-is stored as document plugin data and prefilled on subsequent runs. Internal no-link publications
-are separate builds and are not produced by this repository.
+The in-repo source builds two publications. `npm run build` (the default) is the public,
+link-required Community plugin because a public plugin cannot rely on `figma.fileKey`; the link
+is stored as document plugin data and prefilled on subsequent runs. `npm run build:internal`
+produces the organization no-link edition. That plugin id is read from gitignored
+`figma-plugin/editions.local.json` and is not part of the open-source tree.
 
 The plugin walks the selected `COMPONENT` or `COMPONENT_SET` (a selected variant is auto-promoted to its component set) through a fixed sequence of phases and emits `{componentSlug}-_base.json`. Every variant is walked — no default-variant sampling — so cross-variant diffs are computed in the sandbox rather than reconstructed by the agent.
 

@@ -151,12 +151,15 @@ You changed something under `packages/cli/src/`. Same flow as above — bump the
 
 The Figma plugin **does not ship in the npm package**. It's distributed separately on the [Figma Community](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract), where users install it directly — no local build required. The source stays open in `figma-plugin/` for contributors who want to run a modified build locally.
 
-This repository contains the **public Community build**. It requires the user to paste a Figma
-component link because public plugins cannot rely on `figma.fileKey`; after the first valid entry,
-the link is remembered in that document and prefilled on later runs. An internal no-link build may
-exist as a separate publication, but it is not built by this repository. Before publishing from
-Figma Desktop, verify that you selected the link-required Community build and plugin id
-`1635184425006534227`.
+This repository contains the **public Community build** by default (`npm run build`). It requires
+the user to paste a Figma component link because public plugins cannot rely on `figma.fileKey`;
+after the first valid entry, the link is remembered in that document and prefilled on later runs.
+
+The same source can also produce an organization-internal, no-link edition
+(`npm run build:internal`). That edition's plugin id lives in gitignored
+`figma-plugin/editions.local.json` — copy `editions.local.json.example` and do not commit it.
+Before publishing from Figma Desktop, confirm you loaded the edition you intend to ship: Community
+id `1635184425006534227` (link required), or your organization plugin (no link).
 
 If you change the plugin:
 

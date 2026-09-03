@@ -38,13 +38,7 @@
         background: var(--bg);
         flex: none;
       }
-      header h1 {
-        margin: 0;
-        font-size: 12px;
-        font-weight: 600;
-      }
       header .subtitle {
-        margin-top: 2px;
         color: var(--fg-muted);
         font-size: 11px;
       }
@@ -82,6 +76,7 @@
       }
       .file-link::placeholder { color: var(--fg-muted); }
       .file-link.invalid { border-color: var(--danger); }
+      body.edition-internal .file-link-row { display: none; }
 
       .meta-footer {
         padding: 6px 16px 8px;
@@ -229,10 +224,9 @@
       .flex-grow { flex: 1; }
     </style>
   </head>
-  <body>
+  <body class="edition-__EDITION__">
     <header>
-      <h1>uSpec Extract</h1>
-      <div class="subtitle" id="subtitle">Provide a link and select component to extract.</div>
+      <div class="subtitle" id="subtitle">Select a component to extract.</div>
     </header>
 
     <main id="main">
@@ -242,7 +236,7 @@
     </main>
 
     <footer>
-      <div class="footer-row">
+      <div class="footer-row file-link-row">
         <input
           id="fileLinkInput"
           class="file-link"
@@ -260,7 +254,7 @@
     </footer>
 
     <div class="meta-footer">
-      <span><a href="https://uspec.design/" target="_blank" rel="noopener noreferrer">uSpec.design</a> · extractor v2.7.0 · Last updated Sep 2, 2026</span>
+      <span><a href="https://uspec.design/" target="_blank" rel="noopener noreferrer">uSpec.design</a> · extractor v2.7.0 · Last updated Sep 3, 2026</span>
       <span>by <a href="https://www.linkedin.com/in/iguisard/" target="_blank" rel="noopener noreferrer">Ian Guisard</a></span>
     </div>
 

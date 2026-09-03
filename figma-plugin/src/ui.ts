@@ -2,6 +2,7 @@
 // and handles download / copy-to-clipboard.
 
 import type { MsgFromSandbox, MsgFromUi, Preview, PreviewChild, UserClassification } from './types';
+import { REQUIRE_FILE_LINK } from './edition';
 import { safeStringify } from './sanitize';
 import { parseFigmaFileKey } from './figmaUrl';
 
@@ -41,19 +42,19 @@ fileLinkInput.addEventListener('input', () => {
   updateButtons();
 });
 
-// A valid file link is required before extraction can run.
 function fileKeyValid(): boolean {
+  if (!REQUIRE_FILE_LINK) return true;
   return parseFigmaFileKey(state.fileLink) !== null;
 }
 
-// Single source of truth for the Copy/Extract enabled state. Disabled unless there's
-// a preview, we're not mid-extract, and the pasted link resolves to a file key.
 function updateButtons(): void {
   const valid = fileKeyValid();
   const ready = !!state.preview && !state.extracting && valid;
   downloadBtn.disabled = !ready;
-  fileLinkInput.classList.toggle('invalid', state.fileLink.trim().length > 0 && !valid);
-  if (state.preview && !state.extracting && !valid) {
+  if (REQUIRE_FILE_LINK) {
+    fileLinkInput.classList.toggle('invalid', state.fileLink.trim().length > 0 && !valid);
+  }
+  if (REQUIRE_FILE_LINK && state.preview && !state.extracting && !valid) {
     subtitle.textContent = state.fileLink.trim()
       ? "That doesn't look like a Figma link — paste the component's link to extract."
       : 'Provide a link and select component to extract.';
@@ -337,7 +338,9 @@ function renderEmpty(msg: string): void {
   el.className = 'empty';
   el.textContent = msg;
   main.appendChild(el);
-  subtitle.textContent = 'Provide a link and select component to extract.';
+  subtitle.textContent = REQUIRE_FILE_LINK
+    ? 'Provide a link and select component to extract.'
+    : 'Select a component or component set on the canvas.';
 }
 
 function renderProgress(phase: string, detail?: string): void {

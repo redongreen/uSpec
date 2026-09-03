@@ -49,3 +49,6 @@ component-example/
 # maintainer's own design system. Not part of the open-source distribution —
 # consumer projects DO track their own components/ folder.
 components/
+
+# Organization-only Figma plugin ids (internal Uber publication).
+figma-plugin/editions.local.json

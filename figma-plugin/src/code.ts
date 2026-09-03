@@ -28,6 +28,7 @@ import {
 import { resolvePreferredComponent } from './resolveKey';
 import { sanitizeText } from './sanitize';
 import { parseFigmaFileKey, buildFigmaUrl } from './figmaUrl';
+import { REQUIRE_FILE_LINK } from './edition';
 
 // Document-scoped pluginData key under which the user's last Figma file link is
 // remembered, so the required link field can be prefilled on later runs.
@@ -585,13 +586,21 @@ async function extract(
     return;
   }
 
-  // Resolve the file key: a public plugin can't read figma.fileKey, so the user's
-  // pasted link is the authoritative source. Remember it on the document for next time.
+  // Public Community plugins cannot read figma.fileKey; the pasted link is required.
+  // Organization-internal builds can use figma.fileKey and skip the link field.
   const linkKey = parseFigmaFileKey(fileLink);
+  if (REQUIRE_FILE_LINK && !linkKey) {
+    figma.ui.postMessage({
+      type: 'extract-error',
+      message: "Paste a valid Figma component link to extract.",
+    });
+    return;
+  }
   if (linkKey && fileLink) {
     figma.root.setPluginData(FILE_LINK_PLUGIN_DATA_KEY, fileLink);
   }
-  const resolvedFileKey = linkKey || figma.fileKey || 'unknown-file';
+  const resolvedFileKey =
+    (REQUIRE_FILE_LINK ? linkKey : figma.fileKey || linkKey) || 'unknown-file';
 
   const warnings: string[] = [];
 

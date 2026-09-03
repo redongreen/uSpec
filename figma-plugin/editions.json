@@ -1,0 +1,11 @@
+{
+  "internal": {
+    "name": "Base uSpec Extract [Internal]",
+    "requireFileLink": false
+  },
+  "external": {
+    "id": "1635184425006534227",
+    "name": "Base uSpec Extract",
+    "requireFileLink": true
+  }
+}

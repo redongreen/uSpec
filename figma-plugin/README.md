@@ -5,10 +5,21 @@ feeds the `create-component-md` skill chain.
 
 One extraction, one JSON, delivered to your clipboard or `~/Downloads/`.
 
-This repository contains the **public Figma Community build**. It requires a Figma component
-link because public plugins cannot rely on `figma.fileKey`. The first valid link is remembered
-on that document and prefilled on later runs. Internal no-link publications are separate builds
-and are not produced from this repository.
+This repository builds **two publications from the same source**:
+
+| Edition | Name | File link |
+|---|---|---|
+| `external` (default) | Base uSpec Extract | Required. Public Community plugins cannot read `figma.fileKey`. |
+| `internal` | Base uSpec Extract [Internal] | Not required. Organization plugins can use `figma.fileKey`. |
+
+```bash
+npm run build            # Community / public
+npm run build:internal   # organization, no link field
+```
+
+The public Community plugin id lives in committed `editions.json` because it is already the [Figma Community listing](https://www.figma.com/community/plugin/1635184425006534227/uspec-extract). Organization plugin ids do **not** belong in git. Copy `editions.local.json.example` to `editions.local.json` (gitignored) and set the internal id before `npm run build:internal`.
+
+`scripts/build.mjs --edition=…` writes `manifest.json` and compiles `__REQUIRE_FILE_LINK__` into the bundle.
 
 ## How it works
 
@@ -53,7 +64,8 @@ Highlights:
 ```bash
 cd figma-plugin
 npm install
-npm run build
+npm run build            # Community edition
+# npm run build:internal  # requires figma-plugin/editions.local.json
 ```
 
 Then in Figma Desktop: **Plugins → Development → Import plugin from manifest…** and pick
@@ -70,8 +82,8 @@ npm run build:watch
 1. In Figma, select a single `COMPONENT` or `COMPONENT_SET` (or a variant, which is auto-
    promoted to its component set).
 2. Run **Plugins → Development → uSpec Extract**.
-3. Paste the selected component's Figma link into the footer. Extraction remains disabled until
-   the link is valid.
+3. If you built the Community edition, paste the selected component's Figma link into the footer.
+   Extraction remains disabled until the link is valid. The internal edition skips this field.
 4. Review the sub-component checklist: the plugin pre-guesses whether each child instance is
    **constitutive** (owned by this component) or **referenced** (an instance of a widely-
    reused component). Flip any guess you disagree with. Non-instance children (vectors,
