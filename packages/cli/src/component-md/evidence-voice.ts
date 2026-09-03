@@ -1,5 +1,6 @@
 import type { BaseJson, EvidenceEnvelope } from './types.js';
 import { findDefaultVariant } from './stage.js';
+import { buildVoiceObligations } from './obligations.js';
 
 const A11Y_AXIS_PATTERN = /state|mode|interaction/i;
 
@@ -9,6 +10,7 @@ export function buildVoiceEvidence(
   preparedAt: string,
 ): EvidenceEnvelope<Record<string, unknown>> {
   const defaultVariant = findDefaultVariant(base);
+  const defaultVariantIndex = base.variants.findIndex((variant) => variant.id === defaultVariant.id);
 
   const booleanDefs: Record<string, boolean> = {};
   for (const b of base.propertyDefinitions.booleans) {
@@ -25,15 +27,28 @@ export function buildVoiceEvidence(
     }
   }
 
-  const focusStopCandidates = (defaultVariant.treeFlat ?? [])
-    .filter((el) => el.visible && ['INSTANCE', 'TEXT', 'FRAME'].includes(el.nodeType))
-    .map((el) => ({
-      index: el.index,
-      name: el.name,
-      nodeType: el.nodeType,
-      candidateLayerName: el.name,
-      slotIndex: el.slotIndex ?? null,
-    }));
+  const variantElements = base.variants.map((variant) => ({
+    variantId: variant.id,
+    variantName: variant.name,
+    variantProperties: variant.variantProperties,
+    elements: variant.treeFlat ?? [],
+  }));
+  const focusStopCandidates = variantElements.flatMap((variant) =>
+    variant.elements
+      .filter((element) =>
+        element.visible && ['INSTANCE', 'TEXT', 'FRAME'].includes(element.nodeType)
+      )
+      .map((element) => ({
+        variantId: variant.variantId,
+        variantName: variant.variantName,
+        variantProperties: variant.variantProperties,
+        index: element.index,
+        name: element.name,
+        nodeType: element.nodeType,
+        candidateLayerName: element.name,
+        slotIndex: element.slotIndex ?? null,
+      })),
+  );
 
   return {
     _meta: {
@@ -49,6 +64,7 @@ export function buildVoiceEvidence(
       componentName: base.component.componentName,
       compSetNodeId: base.component.compSetNodeId,
       elements: defaultVariant.treeFlat ?? [],
+      variantElements,
       variantAxes: base.variantAxes,
       booleanDefs,
       slotDefs: base.propertyDefinitions.slots,
@@ -58,6 +74,7 @@ export function buildVoiceEvidence(
         .map((axis) => axis.name),
       textNodeHints: base.ownershipHints.filter((h) => h.evidenceType === 'textNode'),
       focusStopCandidates,
+      obligations: buildVoiceObligations(base, defaultVariantIndex),
     },
   };
 }

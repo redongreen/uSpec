@@ -1,5 +1,6 @@
 import type { BaseJson, EvidenceEnvelope, TreeNode } from './types.js';
 import { findDefaultVariant } from './stage.js';
+import { buildApiObligations } from './obligations.js';
 
 export function buildApiEvidence(
   base: BaseJson,
@@ -7,22 +8,41 @@ export function buildApiEvidence(
   preparedAt: string,
 ): EvidenceEnvelope<Record<string, unknown>> {
   const defaultVariant = findDefaultVariant(base);
-  const topLevelInstances = (defaultVariant.treeHierarchical.children ?? []).filter(
-    (c) => c.type === 'INSTANCE',
-  );
+  const defaultVariantIndex = base.variants.findIndex((variant) => variant.id === defaultVariant.id);
+  const nodeById = new Map<string, TreeNode>();
+  const indexTree = (node: TreeNode): void => {
+    if (node.id) nodeById.set(node.id, node);
+    for (const child of node.children ?? []) indexTree(child);
+  };
+  for (const variant of base.variants) indexTree(variant.treeHierarchical);
 
-  const composableChildren = topLevelInstances.map((node) => {
-    const parentSetName = node.parentSetName ?? null;
-    const mainComponentName = node.mainComponentName ?? node.name;
-    const componentName = parentSetName && parentSetName.length > 0 ? parentSetName : mainComponentName;
+  const composableChildren = base._childComposition.children
+    .filter((child) => child.nodeType === 'INSTANCE' && child.classification !== 'decorative')
+    .map((child) => {
+    const parentSetName = child.parentSetName ?? null;
+    const mainComponentName = child.mainComponentName ?? child.name;
+    const componentName =
+      parentSetName && parentSetName.length > 0 ? parentSetName : mainComponentName;
+    const dimensionsByVariant = Object.fromEntries(
+      Object.entries(child.placementsByVariant ?? {}).flatMap(([variantName, placement]) => {
+        const node = placement.nodeIds.map((nodeId) => nodeById.get(nodeId)).find(Boolean);
+        return node ? [[variantName, node.dimensions ?? {}]] : [];
+      }),
+    );
     return {
-      name: node.name,
+      name: child.name,
       componentName,
       mainComponentName,
       parentSetName,
-      subCompSetId: node.subCompSetId ?? null,
-      dimensions: node.dimensions ?? {},
-      booleanOverrides: {},
+      subCompSetId: child.subCompSetId ?? null,
+      classification: child.classification,
+      origin: child.origin ?? 'top-level',
+      slotName: child.slotName ?? null,
+      presentInVariants: child.presentInVariants ?? [],
+      defaultVariantPresent: child.defaultVariantPresent ?? false,
+      dimensionsByVariant,
+      booleanOverrides: child.booleanOverrides ?? {},
+      componentProperties: child.componentProperties ?? null,
     };
   });
 
@@ -56,6 +76,9 @@ export function buildApiEvidence(
       parentSetName: c.parentSetName ?? null,
       mainComponentName: c.mainComponentName ?? null,
       subCompSetId: c.subCompSetId ?? null,
+      presentInVariants: c.presentInVariants ?? [],
+      defaultVariantPresent: c.defaultVariantPresent ?? false,
+      placementsByVariant: c.placementsByVariant ?? {},
     }));
 
   return {
@@ -83,6 +106,7 @@ export function buildApiEvidence(
       boolGatedFillers: (base.slotHostGeometry as { boolGatedFillers?: unknown[] } | null)
         ?.boolGatedFillers ?? [],
       referencedChildren,
+      obligations: buildApiObligations(base, defaultVariantIndex),
     },
   };
 }

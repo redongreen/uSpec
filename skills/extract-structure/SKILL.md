@@ -18,8 +18,8 @@ The orchestrator calls this skill with these inputs (already resolved — do NOT
 - `componentSlug` — filename-safe slug
 - `cachePath` — cache directory, typically `.uspec-cache/{componentSlug}/`
 - `optionalContext` — free-form string from the user (may be `"none"`)
-- `mcpProvider` — `figma-console` or `figma-mcp` (only needed if a Step 3-delta escape hatch fires AND a live Figma link was provided to the orchestrator)
-- `deltaAvailable` — boolean. When the orchestrator received only a `baseJsonPath` (no `figmaLink`), this is `false` and the Step 3-delta escape hatch must not fire; log the gap in `data._deltaExtractions[]` with `unavailable: "no-figma-link"` and continue with best-effort output.
+- `mcpProvider` — `figma-console` or `figma-mcp` (only used if a Step 3-delta escape hatch fires)
+- `deltaAvailable` — boolean derived from `_base.json._meta.fileKey` + `nodeId`. Plugin exports normally make this `true`; a separately-passed `figmaLink` is not required.
 - `apiDictionaryPath` — absolute or workspace-relative path to `{cachePath}/{componentSlug}-api-dictionary.json`. Optional. When present, this file is the canonical vocabulary for axis/value/sub-component/state naming (see Step 2.5). When absent, the skill continues with `_dictionaryUnavailable: true` in its output envelope and the renderer treats the produced cache as lower-confidence.
 - `evidencePath` — optional. Path to `{cachePath}/{componentSlug}-evidence-structure.json` from CLI prepare. When present and hash-valid, use `data` as the Step 3 working evidence set.
 
@@ -125,7 +125,7 @@ When your evidence (from `_base.json`) contradicts the dictionary — for exampl
 }
 ```
 
-**`value-extra` guard — top-level booleans and decomposed states are NOT mismatches.** Before emitting a `value-extra`, resolve the observed item against the **full** dictionary, not just `axes[]`: check `axes[]`, `booleanProps[]`, `states[]` (by `figmaValue` or `apiAssignments` key), `subComponents[]`, and `slots[]`. A Disabled / Loading (etc.) section, column, or state that resolves to a `booleanProps[]` or `states[]` entry is part of the API surface — it is a **match**, so do NOT emit a `_dictionaryMismatch` for it. Only emit `value-extra` when the observed item resolves to NOTHING anywhere in the dictionary. (Booleans are deliberately excluded from `axes[]`; `booleanProps[]` is their canonical home — flagging an API boolean as `value-extra` was the systemic false-positive this guard removes.)
+**`value-extra` guard — only vocabulary-controlled fields can mismatch.** Resolve an observed axis/value/component identity against the full dictionary: `axes[]`, `booleanProps[]`, `states[]`, `subComponents[]`, `referencedComponents[]`, and `slots[]`. Measurements, layer names, dimensions, tokens, and topology are specialist evidence and MUST NOT produce dictionary mismatches. A runtime substate such as “disclosure (expanded)” is also not an extra when it is explicitly linked to its parent dictionary value (for example `type=disclosure`); document the parent API assignment on the section. Emit `value-extra` only for an API-facing name/value that resolves nowhere.
 
 Aggregate every mismatch into `data._extractionArtifacts.dictionaryMismatches[]`. The orchestrator's Step 8.5 reconciliation pass consumes this list and decides whether to auto-rewrite vocabulary, re-dispatch a specialist, or surface a semantic conflict.
 
@@ -146,8 +146,8 @@ Populate the structure-side evidence structure by reading **only** from `_base.j
 | `propertyDefs` | `propertyDefinitions.rawDefs` |
 | `booleanDefs` | map of `propertyDefinitions.booleans[*].rawKey → defaultValue` |
 | `variants[]` | `_base.json.variants[*]` — each has `name`, `dimensions`, `layoutTree`, and `treeHierarchical` (used as the "children" tree) |
-| `enrichedTree` | `variants[<default>].revealedTree` (from Phase G of the plugin) |
-| `subComponents[]` | Derived by walking `variants[<default>].treeHierarchical`: every top-level INSTANCE entry with a `subCompSetId` becomes a sub-component entry. Fields: `name`, `mainComponentName`, `subCompSetId`, `subCompVariantAxes`, `booleanOverrides`, `dimensions`, `children`, `typography`. |
+| `enrichedTrees[]` | Every sampled `variants[*].revealedTree` with `variantId`, `variantName`, `variantProperties`, and `structuralRepresentative`. Phase G samples every distinct structural topology. |
+| `subComponents[]` | Derived from the full cross-variant `_childComposition` union. Every non-decorative INSTANCE carries `presentInVariants`, `defaultVariantPresent`, and `dimensionsByVariant`; never derive this list from the default tree alone. |
 | `slotContents[]` | `propertyDefinitions.slots[*]` (includes `defaultChildren` with `contextualOverrides`), joined with `slotHostGeometry.swapResults[slotName]` for per-preferred swap measurements |
 | `rootDimensions` | For each variant on `sizeAxis` (or the fallback axis), `variants[v].dimensions` keyed by size label |
 | `subComponentDimensions` | For each sub-component name and each size, the sub-component's node as found in `variants[v].revealedTree` (already has booleans enabled). Walk the revealed tree for the matching INSTANCE by name. Read its `dimensions` for `self` and walk its `children` for per-child dims. |
@@ -178,6 +178,10 @@ Rules:
   }
   ```
   An empty array (zero delta calls) is the expected default. Multiple entries signal pressure to widen the `_base.json` schema in the plugin.
+
+  When a needed delta cannot run, emit the complete unavailable shape:
+  `{ purpose, script: null, byteCount: 0, timestamp, unavailable: "mcp-unavailable" }`.
+  Use `"no-figma-target"` only when `_meta.fileKey` or `_meta.nodeId` is genuinely absent.
 
 If a structural axis (Rule 1c below) needs cross-variant dimensions that `axisDiffs` did not capture, **prefer** the delta escape over abandoning the reasoning — but keep the delta to one tiny measurement script per structural configuration.
 
@@ -234,7 +238,7 @@ This is the core quality step. You have complete, structured data in the evidenc
 
 4. **State axis with new properties → state-conditional section.** Compare `stateComparison` entries: if any state introduces a property not present in the default state (especially `strokeWeight` appearing or changing), create a state-conditional section.
 
-5. **Layout tree for container hierarchy.** Use `layoutTree` from the default variant to identify structurally significant containers. Pass-through wrappers (no padding, no spacing, single child) can be omitted.
+5. **Layout tree for container hierarchy.** Use the union of `variants[*].layoutTree`, preserving each node's source variant identity. Pass-through wrappers can be omitted.
 
 6. **Slot preferred content → `slotContent` sections.** For each entry in `slotContents` that has `preferredComponents`, create one section per preferred component **only when the preferred instance is still classified as `slotContent` after Rules 2a-2c**. Name pattern: `"{slotName} — {componentName}"`. Columns match the parent's size axis. Data source: `slotContentDimensions.{slotName}.{componentName}`. Description: `"Dimensional properties when {componentName} is placed in the {slotName} slot. See {componentName} spec for component internals."` Place after sub-component sections but before state-conditional sections. **Rows are limited to hosting context and slot-imposed deltas** — do not emit the preferred component's own internal structure from `self`. Prefer container rows (`Container`, contextual padding, contextual widthMode/heightMode) and a reference row like `Text button instance` / `Checkbox instance`.
 
@@ -346,8 +350,8 @@ Strict shape:
 **Walk rules (apply exactly — same for every component):**
 
 **R1. ROOTS.** Walk the union of:
-- `_base.json.variants[<default>].treeHierarchical`
-- every `_base.json.variants[*].revealedByVariantName[*]`
+- every `_base.json.variants[*].treeHierarchical`
+- every populated `_base.json.variants[*].revealedTree`
 
 Recurse depth-first through `children` (or `__children` in revealed trees).
 
@@ -406,8 +410,8 @@ Entries with zero non-zero properties (pure visual/wrapper FRAMEs) still appear 
 
 **R6. STAMP LAYER IDENTITY ONTO GROUP HEADERS AND SECTION ANCHORS.** Reuse the same `{ nodeId, name, nodePath }` index built during R1-R5 to populate two fields that downstream tooling consumes as mechanical pass-through:
 
-- For every row in `data.sections[*].rows[*]` where `isSubProperty !== true` AND `spec` is a zone/group descriptor (not a property family from R5's accepted-names set), stamp `row._layerName` + `row._layerId` per the rules in `agent-structure-instruction.md` § **Stamping layer identity on group-header rows**. The lookup uses the same FRAME you read dimensions from in Step 4 — typically the FRAME whose `coverageMatrix.entries[]` `owningSection` matches this section's name and whose `nonZeroProps` overlap the group's emitted rows. When the group corresponds to a layer absent from the default variant's `layoutTree` (present only in `revealedByVariantName[*]`), still stamp `_layerName` with the literal name and emit `_layerId: null`.
-- For every section in `data.sections[]`, stamp `section._anchor` per the rules in `agent-structure-instruction.md` § **Section anchor**. The four anchor cases (composition root, sub-component INSTANCE, slot host, zone) are deterministic from `_base.json` alone — no Figma calls needed.
+- For every row in `data.sections[*].rows[*]` where `isSubProperty !== true` AND `spec` is a zone/group descriptor, stamp `row._layerName`, `row._layerId`, `_targetVariantId`, `_targetVariantName`, and `_targetVariantProperties`. Resolve the ID in the exact parent variant that supplied the row evidence, or in the exact sub-component variant walk for sub-component sections. Never null a valid non-default-variant ID merely because it is absent from the default tree.
+- For every section in `data.sections[]`, stamp `section._anchor` with `{ layerName, layerId, variantId, variantName, variantProperties }` per the instruction file. The anchor's variant is the parent variant whose anatomy the section describes.
 
 This pass runs once after R1-R5 complete and before the coverage matrix is finalized. It cannot fail the run (no `complete: false` consequence) — when an anchor or group cannot be resolved, the corresponding `_layerId` is `null` and the renderer surfaces a `medium` Known-gaps entry. The fields are mechanical pass-through; do NOT rewrite display names (`spec` / `sectionName`) to match the layer names.
 
@@ -430,7 +434,7 @@ This pass runs once after R1-R5 complete and before the coverage matrix is final
 Rules:
 
 - One row per distinct text element (not per distinct text style). Two elements sharing the same style both appear.
-- Pull the typography composite from the revealed default variant (or the first variant where the element renders, when it's state-gated). Do not synthesize from inline fallbacks when a `styleId` resolves.
+- Pull each typography composite from the exact variant where the element renders. Deduplicate identical typography only after retaining `presentInVariants`.
 - Skip the whole artifact (omit the field or emit an empty array) when the component has ≤1 distinct text element.
 
 **E. Completeness judgment (hard provenance gate).**
@@ -440,7 +444,7 @@ Every row you emit **must** carry a `provenance` field with exactly one of these
 1. **`"measured"`** — the numeric or token-and-number display string came **verbatim** from `_base.json`. Acceptable sources:
    - `variants[v].treeHierarchical` (dimensions, typography)
    - `variants[v].revealedTree` (post-boolean-enable geometry)
-   - `revealedByVariantName[*]` (per-variant revealed tree from Phase G)
+   - `variants[v].revealedTree` (sampled structural representative from Phase G)
    - `crossVariant.axisDiffs[axis][value].root` / `.children` / `.childrenDeep`
    - `slotHostGeometry.swapResults[slot][compId].prefDims` / `.slotDims`
    - `styles.resolvedStyles[sid]` with a non-`_unresolved` entry
@@ -481,12 +485,12 @@ Follow the schema in the instruction file:
   - `sectionName`: string
   - `sectionDescription`: string (optional)
   - `columns`: string[] (first is "Spec" or "Composition", last is "Notes")
-  - `_anchor`: `{ layerName: string; layerId: string | null }` — Figma layer this section is anchored to (see R6 / instruction file)
-  - `rows`: array, each with `spec`, `values[]` (length `columns.length - 2`), `notes`, optional `isSubProperty`, `isLastInGroup`. Group-header rows (`isSubProperty !== true` AND `spec` is a zone descriptor) additionally carry `_layerName: string` and `_layerId: string | null` (see R6 / instruction file).
+  - `_anchor`: `{ layerName: string; layerId: string | null; variantId: string; variantName: string; variantProperties: object }` — exact parent-variant layer this section is anchored to
+  - `rows`: array, each with `spec`, `values[]` (length `columns.length - 2`), `notes`, optional `isSubProperty`, `isLastInGroup`. Group-header rows additionally carry `_layerName`, `_layerId`, `_targetVariantId`, `_targetVariantName`, and `_targetVariantProperties`.
 
 **Populating rows from dimensional data.** Look up `dataSource` and read measurements at each column key. Use the `display` field directly as the cell value. Collapsed padding: single value → one `padding` row; `{vertical, horizontal}` → `verticalPadding` + `horizontalPadding`; per-side → individual rows. Collapsed cornerRadius: uniform → one row; per-corner → `cornerRadiusTopStart`, etc. Typography: `{styleName}` → one `textStyle` row; inline props → `fontSize`, `fontWeight`, `lineHeight` rows.
 
-**Border rows are emitted as a pair.** Whenever a `borderWidth` row is queued (gate: `strokePaintToken != null` — see the structure instruction file's "Stroke weight" guidance), also queue a sibling `borderAlign` row populated from `dimensions.strokeAlign.display` (`inside` / `outside` / `center`). The two rows share the same gate: emit both, or emit neither. The renderer treats `borderAlign` as the immediately-following sibling row to `borderWidth` for reading order.
+**Border rows are emitted as a pair.** Gate on `variants[v].strokeSemantics.painted`, not merely on a configured `strokeWeight`. When painted, emit `borderWidth` plus `borderAlign`; when configured but unpainted, render border width as `none` and do not claim a visible border. Legacy extractions may derive the same fact from root `colorWalk` stroke presence.
 
 **Source-of-truth note.** `strokeAlign` is captured by `extractDims()` (Phase E + Phase I), so it lives on `variants[].dimensions`, `variants[].treeHierarchical[*].dimensions`, and `subComponentVariantWalks.*.variants[*].dimensions[+treeHierarchical[*]]`. It is **not** on `variants[].revealedTree[*].dimensions` — Phase G uses a minimal `dim()` extractor focused on topology, and dimensional ground truth always comes from the baseline `treeHierarchical` (which walks `visible: false` children too). If a row's primary `dataSource` is `revealedTree`, fall back to the matching node in the baseline `treeHierarchical` (same `id` or same path) to read `strokeAlign`.
 
@@ -509,11 +513,11 @@ Structure audit:
 - [ ] Every row with provenance="inferred" cites the token in notes
 - [ ] Every row with provenance="measured" has a display string that came from _base.json verbatim
 - [ ] Not-measured row count is ≤ 20% of total rows (otherwise: Step 3-delta was fired)
-- [ ] Every auto-layout container present in variants[*].treeHierarchical or revealedByVariantName[*] has at least one documented row
+- [ ] Every auto-layout container present in `variants[*].treeHierarchical` or `variants[*].revealedTree` has at least one documented row
 - [ ] **Per-property coverage:** for every auto-layout FRAME under R1–R3, every non-zero layout property family from R4 (padding / itemSpacing / cornerRadius / borderWidth / borderAlign) is matched by a row whose `spec` is in the accepted-names set from §coverageMatrix R5. Symmetric padding `{ vertical, horizontal }` emits BOTH `verticalPadding` and `horizontalPadding` rows, including when one side is `0`. Missing ≠ zero. `borderAlign` is gated identically to `borderWidth`: emit both rows when the FRAME paints a stroke, neither when it does not.
 - [ ] `data._extractionArtifacts.coverageMatrix.complete === true`. The matrix was populated by walking the five rules in §coverageMatrix; every entry whose `missing[]` is non-empty MUST block the return. If coverage cannot be reached for a legitimate reason (e.g., a FRAME is a documented pass-through wrapper), still emit the entry with `complete: false` and a `pendingReason` on each missing family — do not silently set `complete: true`.
 - [ ] `coverageMatrix.totals.framesWalked` matches an independent recount from `_base.json` using rules R1–R3 — the orchestrator's Step 9.5 gate re-runs this recount and will block on mismatch.
-- [ ] **Layer-identity stamping (R6).** Every group-header row (`isSubProperty !== true` AND `spec` is a zone descriptor, not a property family from R5) carries both `_layerName` (string, possibly `"__root__"`) and `_layerId` (string or `null`). Every `data.sections[]` entry carries `_anchor: { layerName, layerId }`. `_layerId` / `_anchor.layerId` is `null` only when the layer is legitimately absent from the default variant's `layoutTree` (revealed-only) or cannot be pinned to a single Figma node — in either case the row's `notes` (or the section's `sectionDescription`) explains the gap. Property-family rows (`padding`, `itemSpacing`, etc.) MUST NOT carry these fields.
+- [ ] **Layer-identity stamping (R6).** Every group-header row carries `_layerName`, `_layerId`, and exact target-variant identity. Every section anchor carries layer plus variant identity. A target is unresolved only when it cannot be pinned in its declared variant tree; a valid non-default-variant ID is never nulled for default-tree absence.
 - [ ] **Sub-component variant walks consumed.** For every section whose columns correspond to a constitutive sub-component's OWN variant axis, every column is filled from `_base.json.subComponentVariantWalks[subCompSetId].variants[*]` with `provenance: "measured"`. `"—"` cells on those columns are permitted ONLY when the entry is `skipped: true` (cite `skippedReason` in row notes) or when a specific `variants[*]` combo is genuinely absent (cite the missing `variantKey` in row notes). A `_deltaExtractions[*]` entry for the sub-component axis is emitted ONLY when `subComponentVariantWalks` is missing from `_base.json` (legacy fixture) or when the matching block is `skipped` — never when Phase I walked the axis successfully.
 - [ ] No typography prose in notes — every TEXT node emits textStyle OR inline-prop rows OR a not-measured row
 - [ ] Every sub-component classified as subComponent has its own section
@@ -549,10 +553,9 @@ Write the finalized `StructureSpecData` object as pretty-printed JSON to `{cache
     "componentName": "<name>",
     "generalNotes": "<string>",
     "sections": [
-      /* StructureSpecData.sections — each entry carries `_anchor: { layerName, layerId }`
-         pinning the section to a Figma layer in the default variant. Group-header rows
-         (isSubProperty !== true AND spec is a zone descriptor) carry `_layerName` and
-         `_layerId`. Both fields are populated by R6 in Step 4.D.2. See agent-structure-
+      /* StructureSpecData.sections — each entry carries an `_anchor` with layer and exact
+         parent-variant identity. Group-header rows carry layer and target-variant identity.
+         These fields are populated by R6 in Step 4.D.2. See agent-structure-
          instruction.md § Stamping layer identity on group-header rows + § Section anchor. */
     ],
     "_deltaExtractions": [ /* 0+ entries */ ],

@@ -1,5 +1,6 @@
 import type { BaseJson, ColorWalkEntry, EvidenceEnvelope } from './types.js';
 import { findDefaultVariant } from './stage.js';
+import { buildColorObligations } from './obligations.js';
 
 function resolveToken(
   base: BaseJson,
@@ -135,6 +136,7 @@ export function buildColorEvidence(
           ? 'stateAxis present in crossVariant'
           : 'no stateAxis; per-variant tables likely',
       },
+      obligations: buildColorObligations(base, variantColorData),
     },
   };
 }

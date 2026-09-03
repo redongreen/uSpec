@@ -124,8 +124,8 @@ The extraction script returns dimensions in a collapsed/expanded format. Use the
 - Per-corner `cornerRadius: { topStart, topEnd, bottomStart, bottomEnd }` → emit individual rows
 
 **Stroke weight:**
-- Uniform `strokeWeight: { value, token, display }` → emit one `borderWidth` row **only when `value > 0`**. The extractor emits `{ value: 0 }` for nodes that have a `strokeWeight` property set but `strokes: []` (no paint applied) — no border is painted, so no row.
-- Per-side `strokeWeight: { top, bottom, start, end }` → emit individual rows for sides whose value is `> 0`; skip sides with value `0`.
+- First read `variant.strokeSemantics.painted`. A configured positive weight with `painted: false` is not a visible border; render `none`.
+- When `painted: true`, emit the configured uniform or per-side weight. Legacy extractions derive `painted` from root `colorWalk` stroke entries.
 
 ### Logical Direction Normalization
 
@@ -676,7 +676,7 @@ Add anomaly notes to the relevant row's `notes` field or to `generalNotes` for c
 ### Completeness Judgment
 
 Before proceeding to rendering, verify:
-- **Per-property coverage (per-FRAME):** For every auto-layout FRAME present in `variants[<default>].treeHierarchical` or any `variants[*].revealedByVariantName[*]`, every NON-ZERO layout property must be represented by at least one row in the owning section. The property families and acceptable row `spec` names:
+- **Per-property coverage (per-FRAME):** For every auto-layout FRAME present in any `variants[*].treeHierarchical` or populated `variants[*].revealedTree`, every NON-ZERO layout property must be represented by at least one row in the owning section.
   - padding         → `padding`, `verticalPadding`, `horizontalPadding`, `paddingTop`, `paddingBottom`, `paddingStart`, `paddingEnd`
   - itemSpacing     → `itemSpacing`, `contentSpacing`, `gapBetween`
   - cornerRadius    → `cornerRadius`, `cornerRadiusTopStart`, `cornerRadiusTopEnd`, `cornerRadiusBottomStart`, `cornerRadiusBottomEnd`
@@ -705,20 +705,20 @@ Organize the data you gather into the following logical structure before renderi
   - **sectionDescription** (optional) — explanatory text or "See X spec" references
   - **preview** — a brief description of which component variant instances to place in the section's `#Preview` frame; typically one labeled instance per value column, varying the section's axis while keeping other axes at defaults
   - **columns** — ordered list of column headers; first is always "Spec" (or "Composition"), last is always "Notes", middle columns are variant names
-  - **_anchor** (required) — the Figma layer this section is anchored to in the default variant. Shape: `{ layerName: string; layerId: string | null }`. See **Section anchor** below for population rules. The renderer's `create-component-md` orchestrator consumes this directly to populate render-meta `sectionTargets` without re-walking the layout tree.
+  - **_anchor** (required) — the Figma layer and exact parent variant this section is anchored to. Shape: `{ layerName, layerId, variantId, variantName, variantProperties }`.
   - **rows** — one or more rows, each with:
     - **spec** — property name in camelCase (e.g., "minHeight", "horizontalPadding")
     - **values** — one value per middle column (length must equal columns count minus 2)
     - **notes** — brief implementation note (use "–" if none needed)
     - **provenance** (required) — one of `"measured"`, `"inferred"`, or `"not-measured"`:
-      - `"measured"` — value came directly from `_base.json` (e.g., from `variants[*].treeHierarchical`, `revealedByVariantName[*]`, or `crossVariant.axisDiffs`). The row value must equal the extracted value verbatim.
+      - `"measured"` — value came directly from `_base.json` (e.g., from `variants[*].treeHierarchical`, `variants[*].revealedTree`, or `crossVariant.axisDiffs`).
       - `"inferred"` — value was computed from a documented design token (e.g., `spacing.md` resolves to 8). The `notes` field must cite the token used.
       - `"not-measured"` — the extraction did not capture this value and no token-based inference was possible. The row value must be `"—"`. Numerical invention is forbidden.
       - Group-header rows (`spec: "Container"` etc. with all-`"–"` values) also take `provenance: "measured"` when the container node itself was extracted, or `"not-measured"` when it was not.
     - **isSubProperty** (optional) — true if the row belongs to a parent group
     - **isLastInGroup** (optional) — true if this is the final row of a group
-    - **_layerName** (required on group-header rows; absent otherwise) — the literal Figma layer name from `_base.json.variants[<defaultVariantName>].layoutTree` that this group represents. Use the literal `"__root__"` only for a host-container sentinel row that anchors to the variant root. See **Stamping layer identity on group-header rows** below.
-    - **_layerId** (required on group-header rows; absent otherwise) — the resolved Figma node id for the layer above, or `null` when the group represents a layer that is absent from the default variant's `layoutTree` (e.g., a layer parked under a non-default state for design preview only). A `null` here pairs with a `medium` Known-gaps entry surfaced by the `create-component-md` renderer.
+    - **_layerName** / **_layerId** (required on group-header rows) — literal layer identity from the exact variant that supplied the row evidence.
+    - **_targetVariantId** / **_targetVariantName** / **_targetVariantProperties** (required on group-header rows) — exact parent variant containing `_layerId`; for sub-component sections these identify the exact sub-component walk variant.
 
 ---
 
@@ -740,8 +740,8 @@ Organize the data you gather into the following logical structure before renderi
 | `provenance` | **Required.** `"measured"` for values extracted verbatim from `_base.json`. `"inferred"` for values derived from a documented design token (cite the token in `notes`). `"not-measured"` for values the extraction did not capture (the cell must be `"—"`; numerical invention is forbidden). |
 | `isSubProperty` | Set `true` for rows belonging to a group (shows "within-group" hierarchy indicator) |
 | `isLastInGroup` | Set `true` on the final row of a group (shows "end of group" indicator instead of "within-group") |
-| `_layerName` | **Required on group-header rows** (rows where `isSubProperty` is unset or `false` AND `spec` is a descriptive name, not a property family). Literal Figma layer name from the default variant's `layoutTree`, or `"__root__"` for a host-container sentinel row. Absent on sub-property rows. See **Stamping layer identity on group-header rows** below. |
-| `_layerId` | **Required on group-header rows**, parallel to `_layerName`. Resolved Figma node id, or `null` when the layer is absent from the default variant's `layoutTree`. Absent on sub-property rows. |
+| `_layerName` / `_layerId` | **Required on group-header rows.** Literal Figma layer and node ID from the exact source variant. |
+| `_targetVariantId` / `_targetVariantName` / `_targetVariantProperties` | **Required on group-header rows.** Exact source-variant identity used for deterministic validation. |
 
 ### Group Header Rows
 
@@ -772,15 +772,15 @@ Container          –      –      –     Tap target
 
 ### Stamping layer identity on group-header rows
 
-Every group-header row (rows where `isSubProperty !== true` AND `spec` is a descriptive zone name like `"Container"`, `"Icon area"`, `"Leading slot"`, not a property family like `"padding"`) MUST carry `_layerName` + `_layerId` linking it to the Figma layer it represents. The values are read directly from `_base.json.variants[<defaultVariantName>].layoutTree` during Step 4's walk and serve as a mechanical pass-through for the `create-component-md` orchestrator's render-meta builder — without them, the renderer falls back to fuzzy name-matching against display strings and most `groupTargets[*]` entries resolve to `null`.
+Every group-header row MUST carry layer identity plus exact target-variant identity. Read both from the same variant tree used to measure the row. The renderer validates `_layerId` only against that declared tree.
 
 **Population rules:**
 
-1. **Sentinel host-container row.** When the first row of a composition section is a host-container sentinel that anchors to the variant root (per the existing host-container rule), emit `_layerName: "__root__"`, `_layerId: <variants[<defaultVariantName>].id>`. This preserves the renderer's `"__root__"` convention.
-2. **Normal group row.** Walk `_base.json.variants[<defaultVariantName>].layoutTree` once during section planning and build a `{ id, name, path }` index keyed by literal layer name. For each group-header row, look up the row's underlying Figma layer (the same node you read dimensions from in Step 4) and stamp:
+1. **Sentinel host-container row.** Emit `_layerName: "__root__"` and `_layerId: <source variant id>`, plus that variant's identity fields.
+2. **Normal group row.** Walk the exact source variant's `layoutTree`, look up the same node used for measurements, and stamp:
    - `_layerName` = the literal `node.name` from `layoutTree` (e.g., `"leadingContent"`, `"icon"`, `"clear button"`).
    - `_layerId` = the corresponding `node.id` (e.g., `"10225:15388"`).
-3. **Layer absent from default variant.** When a group's underlying layer is present in `_base.json.variants[*].revealedByVariantName[*]` but NOT in the default variant's `layoutTree` (e.g., the `clear button` layer parked under `state=active` for design preview only), emit the literal layer name and `_layerId: null`. The row's `notes` field must already explain the runtime-driven visibility — the `null` here is mechanical, not editorial.
+3. **Variant-only layer.** Use the real ID from the non-default variant and declare that variant. Do not emit `null` merely because the layer is absent from the default tree.
 
 **Naming source of truth.** The `_layerName` is always the literal Figma layer name, never the prose display string in `spec`. `spec` is for the engineer reading the table; `_layerName` is for downstream tooling. They are allowed to differ — most components have `spec: "Leading content"` ↔ `_layerName: "leadingContent"` mismatches, which is fine.
 
@@ -788,14 +788,14 @@ Every group-header row (rows where `isSubProperty !== true` AND `spec` is a desc
 
 ### Section anchor (`_anchor`)
 
-Every section MUST carry a `_anchor: { layerName, layerId }` field that pins the section to a Figma node in the default variant. The orchestrator's render-meta builder reads this directly into `sectionTargets[<sectionName>]`.
+Every section MUST carry `_anchor: { layerName, layerId, variantId, variantName, variantProperties }`, pinning it to one exact parent variant tree.
 
 **Population rules per section type:**
 
-1. **Composition section.** Anchor to the variant root: `{ layerName: "__root__", layerId: <variants[<defaultVariantName>].id> }`.
-2. **Sub-component section** (`sectionName` of the form `"<X> — <ChildName>"`, e.g. `"Leading content — Action button"`). Anchor to the **in-context INSTANCE node** of the sub-component as placed inside the parent's default variant — NOT the canonical `subCompSetId`. Source: `_base.json._childComposition.children[]` joined by name with the matching entry's `topLevelInstanceId`. Example for `search-floating`: the `"Leading content — Action button"` section anchors to `{ layerName: "action button", layerId: "10225:15390" }`. The canonical `subCompSetId` cross-link is already covered by render-meta `subComponents[]`; duplicating it on the anchor would bloat the schema.
-3. **Slot content section** (`sectionName` of the form `"<slotName> — <componentName>"`). Anchor to the slot's host frame in the default variant's `layoutTree` (the same node walked for `slotHostGeometry`). When the slot is empty in the default variant, anchor to the slot host frame nonetheless — slot host geometry is still present on a hidden slot.
-4. **State-conditional section.** Anchor to the same root layer as the composition section, since these sections describe additive deltas on the same anatomy: `{ layerName: "__root__", layerId: <variants[<defaultVariantName>].id> }`.
+1. **Composition section.** Anchor to the root of the parent variant whose anatomy the section describes.
+2. **Sub-component section.** Anchor to the in-context INSTANCE placement in the parent variant where that child appears, not to the canonical `subCompSetId`. Use `_childComposition.children[].placementsByVariant` to select the real placement ID.
+3. **Slot content section.** Anchor to the slot host frame in the parent structural variant used for its measurements. When empty, use the hidden slot host from that same variant.
+4. **State-conditional section.** Anchor to the state variant that supplied the additive anatomy, not automatically to the default.
 5. **Zone-specific section** (any other section whose `sectionName` matches a single layer in the layoutTree). Anchor to that layer using the same lookup rule as group rows above.
 
 **When the anchor cannot be resolved.** Emit `_anchor: { layerName: <best-effort name>, layerId: null }`. The orchestrator surfaces this as a `medium` Known-gaps entry. Never omit the field — downstream tooling distinguishes "absent" from "explicitly null".
@@ -868,7 +868,7 @@ Both the extraction and cross-variant data provide pre-formatted `display` strin
 ## Do NOT
 
 - Use placeholder values like `<value>` or `[TBD]` — extract real measurements
-- Emit a `borderWidth` row when extraction `strokeWeight.value` is `0` — a node can have a stroke weight set without any paint applied; that is not a border
+- Treat configured `strokeWeight` as proof of a visible border when `strokeSemantics.painted` is false
 - Mix different variant axes in one section (don't combine size and density columns)
 - Create sections for variants that only differ by numeric values (use columns instead)
 - Put detailed component internals in sub-component sections (reference the component's own spec)

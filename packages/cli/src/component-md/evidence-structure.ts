@@ -1,6 +1,7 @@
 import type { BaseJson, EvidenceEnvelope, TreeNode } from './types.js';
 import { findDefaultVariant } from './stage.js';
 import { walkTextNodes } from './evidence-api.js';
+import { buildStructureObligations } from './obligations.js';
 
 function variantAxesMap(base: BaseJson): Record<string, string[]> {
   const out: Record<string, string[]> = {};
@@ -18,24 +19,33 @@ function booleanDefsMap(base: BaseJson): Record<string, boolean> {
   return out;
 }
 
-function discoverSubComponents(base: BaseJson, defaultVariant: BaseJson['variants'][0]) {
-  const compositionByName = new Map(
-    base._childComposition.children.map((c) => [c.name, c]),
-  );
-  return (defaultVariant.treeHierarchical.children ?? [])
-    .filter((c) => c.type === 'INSTANCE' && c.subCompSetId)
-    .map((node) => {
-      const comp = compositionByName.get(node.name);
-      return {
-        name: node.name,
-        mainComponentName: node.mainComponentName ?? node.name,
-        parentSetName: node.parentSetName ?? null,
-        subCompSetId: node.subCompSetId ?? null,
-        classification: comp?.classification ?? null,
-        booleanOverrides: {},
-        dimensions: node.dimensions ?? {},
-      };
-    });
+function discoverSubComponents(base: BaseJson) {
+  const nodeById = new Map<string, TreeNode>();
+  const indexTree = (node: TreeNode): void => {
+    if (node.id) nodeById.set(node.id, node);
+    for (const child of node.children ?? []) indexTree(child);
+  };
+  for (const variant of base.variants) indexTree(variant.treeHierarchical);
+
+  return base._childComposition.children
+    .filter((child) => child.nodeType === 'INSTANCE' && child.classification !== 'decorative')
+    .map((child) => ({
+      name: child.name,
+      mainComponentName: child.mainComponentName ?? child.name,
+      parentSetName: child.parentSetName ?? null,
+      subCompSetId: child.subCompSetId ?? null,
+      classification: child.classification ?? null,
+      booleanOverrides: child.booleanOverrides ?? {},
+      componentProperties: child.componentProperties ?? null,
+      presentInVariants: child.presentInVariants ?? [],
+      defaultVariantPresent: child.defaultVariantPresent ?? false,
+      dimensionsByVariant: Object.fromEntries(
+        Object.entries(child.placementsByVariant ?? {}).flatMap(([variantName, placement]) => {
+          const node = placement.nodeIds.map((nodeId) => nodeById.get(nodeId)).find(Boolean);
+          return node ? [[variantName, node.dimensions ?? {}]] : [];
+        }),
+      ),
+    }));
 }
 
 function rootDimensionsBySize(base: BaseJson): Record<string, Record<string, unknown>> {
@@ -105,6 +115,7 @@ function axisStructuralHints(base: BaseJson): Record<string, boolean> {
     const childNames = new Set<string>();
     let structural = false;
     for (const entry of Object.values(values)) {
+      if (!entry || typeof entry !== 'object') continue;
       const children = entry.children as Record<string, unknown> | undefined;
       if (!children) continue;
       const names = Object.keys(children).sort().join('|');
@@ -125,6 +136,7 @@ export function buildStructureEvidence(
   preparedAt: string,
 ): EvidenceEnvelope<Record<string, unknown>> {
   const defaultVariant = findDefaultVariant(base);
+  const defaultVariantIndex = base.variants.findIndex((variant) => variant.id === defaultVariant.id);
   const cross = (base.crossVariant ?? {}) as Record<string, unknown>;
 
   return {
@@ -144,20 +156,63 @@ export function buildStructureEvidence(
       booleanDefs: booleanDefsMap(base),
       defaultVariantDimensions: defaultVariant.dimensions,
       rootDimensions: rootDimensionsBySize(base),
-      subComponents: discoverSubComponents(base, defaultVariant),
+      rootDimensionsByVariant: base.variants.map((variant) => ({
+        variantId: variant.id,
+        variantName: variant.name,
+        variantProperties: variant.variantProperties,
+        dimensions: variant.dimensions,
+        strokeSemantics: variant.strokeSemantics ?? null,
+      })),
+      subComponents: discoverSubComponents(base),
       slotContents: base.propertyDefinitions.slots,
       slotHostGeometry: base.slotHostGeometry ?? null,
       subComponentVariantWalks: base.subComponentVariantWalks ?? null,
       enrichedTree: defaultVariant.revealedTree ?? null,
+      enrichedTrees: base.variants
+        .filter((variant) => variant.revealedTree)
+        .map((variant) => ({
+          variantId: variant.id,
+          variantName: variant.name,
+          variantProperties: variant.variantProperties,
+          structuralRepresentative: variant.revealedTreeRepresentative ?? variant.name,
+          tree: variant.revealedTree,
+        })),
+      structuralRepresentativeByVariant: Object.fromEntries(
+        base.variants.map((variant) => [
+          variant.name,
+          variant.revealedTreeRepresentative ?? variant.name,
+        ]),
+      ),
       axisDiffs: cross.axisDiffs ?? null,
       stateComparison: cross.stateComparison ?? null,
       sizeAxis: (cross.sizeAxis as string | null) ?? null,
       stateAxis: (cross.stateAxis as string | null) ?? null,
       dimensionAxes: (cross.dimensionAxes as string[]) ?? [],
       variableModeCollections: variableModeCollections(base),
-      typographyCandidates: walkTextNodes(defaultVariant.treeHierarchical),
-      layoutTreeIndex: flattenLayoutTree(defaultVariant.layoutTree),
+      typographyCandidates: base.variants.flatMap((variant) =>
+        walkTextNodes(variant.treeHierarchical).map((candidate) => ({
+          ...candidate,
+          variantId: variant.id,
+          variantName: variant.name,
+          variantProperties: variant.variantProperties,
+        })),
+      ),
+      layoutTreeIndex: base.variants.flatMap((variant) =>
+        flattenLayoutTree(variant.layoutTree).map((entry) => ({
+          ...entry,
+          variantId: variant.id,
+          variantName: variant.name,
+          variantProperties: variant.variantProperties,
+        })),
+      ),
+      variantTrees: base.variants.map((variant) => ({
+        variantId: variant.id,
+        variantName: variant.name,
+        variantProperties: variant.variantProperties,
+        treeHierarchical: variant.treeHierarchical,
+      })),
       axisStructuralHints: axisStructuralHints(base),
+      obligations: buildStructureObligations(base, defaultVariantIndex),
     },
   };
 }

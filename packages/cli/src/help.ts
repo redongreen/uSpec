@@ -29,6 +29,10 @@ commands:
   component-md prepare    Validate and stage a plugin _base.json, emit
                           compact evidence slices for create-component-md.
                           Run: component-md prepare --base <path> [--json]
+  component-md validate   Normalize and validate specialist cache contracts.
+  component-md contract   Compile validated caches into canonical component JSON.
+  component-md render     Render concise or audit Markdown from the canonical
+                          contract plus a small AI-authored render plan.
 
 options:
   -h, --help              Show this help.

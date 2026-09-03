@@ -702,13 +702,14 @@ Before returning the JSON, verify:
 
 ## `ApiDictionary` artifact (consumed by `create-component-md` orchestrator)
 
-When running under the `extract-api` skill inside the `create-component-md` pipeline, the final step projects a **dictionary** artifact alongside `{slug}-api.json`. The dictionary is the canonical vocabulary the downstream specialists (`extract-structure`, `extract-color`, `extract-voice`) use to name axes, values, sub-components, and states. It is a **pure projection** of the data already captured by this instruction file — never new reasoning.
+When running under the `extract-api` skill inside the `create-component-md` pipeline, the final step projects a **dictionary** artifact alongside `{slug}-api.json`. The dictionary is the canonical vocabulary the downstream specialists (`extract-structure`, `extract-color`, `extract-voice`) use to name axes, values, sub-components, referenced components, and states. It is a **mechanical projection** of API data plus prepared cross-variant composition evidence — never new reasoning.
 
 Every field below has a 1:1 source already defined above:
 
 - `axes` — one entry per row in `ApiOverviewData.mainTable.properties[]` whose `values` is an enum (i.e. not `"true, false"`, not `"string"`, not `"number"`, not `"(instance)" / "(slot)"`). The `name` is the API property name (camelCase). The `values[].name` is the canonical engineer-facing value (comma-split, trimmed). When the axis was decomposed (an entry exists in `_extractionArtifacts.stateAxisMapping[]` whose `apiAssignments` mentions this axis), enrich each value with `runtimeCondition` and `figmaValue` from the corresponding `stateAxisMapping[]` row, and set `decomposedFrom` to `stateAxisMapping[i].figmaAxis`. `classification` is `"state"` when decomposed, `"variable-mode"` when the row's `notes` field cites a variable collection mode, otherwise `"variant"`.
 - `booleanProps` — one entry per row in `ApiOverviewData.mainTable.properties[]` whose `values` is exactly `"true, false"` (a top-level boolean such as `isDisabled`, `isLoading`, `isSelected`). Shape: `{ name, default }` where `name` is the camelCase API property name and `default` is the row's `default` value. This list exists **because** `axes[]` deliberately excludes booleans — without it the downstream specialists have no canonical name to match a Disabled/Loading section or state against, and would emit a perpetual `value-extra` mismatch for a property that is genuinely part of the API. A boolean that was decomposed from a Figma state axis (its `name` appears as an `apiAssignments` key in `stateAxisMapping[]`, e.g. `isLoading`) is still emitted here AND remains traceable through `states[]` — emit it in both. This is the canonical fix for the "dictionary cannot represent top-level booleans" gap.
 - `subComponents` — one entry per `ApiOverviewData.subComponentTables[]`. `name` is the table's `name` (prefer `parentSetName` — see the Override Promotion Pass audit). `_identityResolved` is copied verbatim. `role` is the slot role (from `boolGatedFillers[].slotRole` or a slot name in `propertyDefinitions.slots[]`) when the sub-component is slot-bound; otherwise `null`.
+- `referencedComponents` — one entry per prepared API evidence `referencedChildren[]`, deduplicated by `subCompSetId` (then canonical name). This list includes referenced components that appear only in non-default variants. It names icon sets, peer components, and swap fills without turning them into parent-owned API tables.
 - `booleanRelationships` — a verbatim copy of `_extractionArtifacts.booleanRelationshipAnalysis[]`, reshaped to keep only `{ subComponentName, booleansConsidered, relationship, apiDecision, apiShape }`. Evidence chains are intentionally dropped — consumers only need the conclusion.
 - `states` — a verbatim copy of `_extractionArtifacts.stateAxisMapping[]` when present. Empty array when no decomposition happened.
 - `slots` — a verbatim copy of `_extractionArtifacts.slotResolverStrategy[]` when present, reshaped to keep only `{ slotName, shape, enumProp, behavioralProps, priorityOrder }` (rationale is dropped — consumers only need the resolved shape).
@@ -743,6 +744,15 @@ interface ApiDictionary {
     role?: string | null;                // slot role ("trailingIcon") or null
   }>;
 
+  referencedComponents: Array<{
+    name: string;
+    parentSetName?: string | null;
+    mainComponentName?: string | null;
+    subCompSetId?: string | null;
+    presentInVariants: string[];
+    defaultVariantPresent: boolean;
+  }>;
+
   booleanRelationships: Array<{
     subComponentName: string;
     booleansConsidered: string[];
@@ -773,7 +783,7 @@ interface ApiDictionary {
 - relabel state columns with `runtimeCondition` instead of the raw Figma axis option;
 - detect coverage gaps (dictionary names a value the specialist did not observe) and flag them with `_dictionaryMismatch`.
 
-When a specialist documents a state, section, or column that resolves to a `booleanProps[]` entry (by camelCase name) or to a `states[]` entry (by `figmaValue` or `apiAssignments` key), that is a **match, not a mismatch** — do NOT emit a `value-extra` for it. The `booleanProps[]` list is precisely what lets a Disabled/Loading section or state reconcile against the API surface instead of being flagged forever.
+When a specialist documents a state, section, column, or component identity that resolves to `booleanProps[]`, `states[]`, `subComponents[]`, or `referencedComponents[]`, that is a **match, not a mismatch**. A referenced icon name is vocabulary-controlled only when its component identity is absent from both component lists.
 
 The dictionary **never** carries measurements (dimensions, tokens, announcements). Measurement is owned by the specialists. The dictionary only names things.
 

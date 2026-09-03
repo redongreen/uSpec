@@ -18,8 +18,8 @@ The orchestrator calls this skill with these inputs (already resolved — do NOT
 - `componentSlug` — filename-safe slug
 - `cachePath` — cache directory, typically `.uspec-cache/{componentSlug}/`
 - `optionalContext` — free-form string from the user (may be `"none"`)
-- `mcpProvider` — `figma-console` or `figma-mcp` (only needed if a Step 3-delta escape hatch fires AND a live Figma link was provided to the orchestrator)
-- `deltaAvailable` — boolean. When the orchestrator received only a `baseJsonPath` (no `figmaLink`), this is `false` and the Step 3-delta escape hatch must not fire; log the gap in `data._deltaExtractions[]` with `unavailable: "no-figma-link"` and continue with best-effort output.
+- `mcpProvider` — `figma-console` or `figma-mcp` (only used if a Step 3-delta escape hatch fires)
+- `deltaAvailable` — boolean derived from `_base.json._meta.fileKey` + `nodeId`. Plugin exports normally make this `true`; a separately-passed `figmaLink` is not required.
 - `apiDictionaryPath` — absolute or workspace-relative path to `{cachePath}/{componentSlug}-api-dictionary.json`. Optional. When present, the file is the canonical vocabulary for axis/value/sub-component/state naming (see Step 2.5). When absent, the skill continues with `_dictionaryUnavailable: true` in its output envelope.
 - `evidencePath` — optional. Path to `{cachePath}/{componentSlug}-evidence-color.json` from CLI prepare. When present and hash-valid, use `data` as the Step 3 working evidence set.
 
@@ -91,7 +91,7 @@ Top-level keys this skill consumes:
 - `variables.localCollections` + `resolvedVariables` (for mode detection and token name resolution)
 - `styles.resolvedStyles` (for style-name resolution)
 - `variants[*].colorWalk` — path-qualified fill/stroke/effect entries with style IDs, bound variable IDs, and (when fills have 2+ visible layers) an extra `fill-composite` entry with `layers[]`.
-- `variants[<default>].revealedColorWalk` — Phase G produces this by colorWalking the default variant after setting all booleans to `true`. Used to derive `booleanDelta` (elements only visible when a boolean flips on).
+- `variants[*].revealedColorWalk` — Phase G produces this for one representative of every distinct structural topology after setting all booleans to `true`. Use the matching variant's baseline `colorWalk` to derive boolean deltas.
 - `variants[*].variantProperties`
 - `crossVariant.axisTokenFingerprints` and `crossVariant.axisClassification` (already pre-computed, including `isState` and `colorRelevant` per axis)
 - `ownershipHints[]` where `evidenceType === "variableMode"` (for mode collection discovery)
@@ -129,7 +129,7 @@ When your evidence (from `_base.json`'s color walk) contradicts the dictionary �
 }
 ```
 
-**`value-extra` guard — top-level booleans and decomposed states are NOT mismatches.** Before emitting a `value-extra`, resolve the observed item against the **full** dictionary, not just `axes[]`: check `axes[]`, `booleanProps[]`, `states[]` (by `figmaValue` or `apiAssignments` key), `subComponents[]`, and `slots[]`. A Disabled / Loading (etc.) section, column, or state that resolves to a `booleanProps[]` or `states[]` entry is part of the API surface — it is a **match**, so do NOT emit a `_dictionaryMismatch` for it. Only emit `value-extra` when the observed item resolves to NOTHING anywhere in the dictionary. (Booleans are deliberately excluded from `axes[]`; `booleanProps[]` is their canonical home — flagging an API boolean as `value-extra` was the systemic false-positive this guard removes.)
+**`value-extra` guard — only vocabulary-controlled fields can mismatch.** Resolve API-facing axes, values, states, and component identities against `axes[]`, `booleanProps[]`, `states[]`, `subComponents[]`, `referencedComponents[]`, and `slots[]`. Color element/layer names, tokens, paints, and effects are not dictionary vocabulary and MUST NOT produce mismatches. A variant-only icon is a match when its component identity exists in `referencedComponents[]`. Emit `value-extra` only for an API-facing value that resolves nowhere.
 
 Aggregate every mismatch into `data._extractionArtifacts.dictionaryMismatches[]`. The orchestrator's Step 8.5 reconciliation pass consumes this list to decide whether to auto-rewrite vocabulary, re-dispatch this skill with an expanded scope, or surface a semantic conflict.
 
@@ -176,7 +176,7 @@ compositeDetail = {
 }
 ```
 
-**Boolean delta.** `booleanDelta` is derivable from `variants[<default>].revealedColorWalk` (populated by Phase G of the plugin). Subtract baseline entries (from `variants[<default>].colorWalk`) from `revealedColorWalk` by key `element|property|(token || hex)`. Any extra entries that only appear in `revealedColorWalk` become `booleanDelta.delta[]`. If you don't need a separate delta block (typical for Strategy A), skip this step.
+**Boolean delta.** Build deltas per sampled structural variant. For each populated `variants[v].revealedColorWalk`, subtract that same variant's baseline `variants[v].colorWalk` by key `element|property|(token || hex)`. Preserve `variantId`, `variantName`, and `variantProperties` on the delta.
 
 If `revealedColorWalk` is absent, fall back to a Step 3-delta read-only script scoped to the specific boolean-gated elements you need.
 
@@ -231,6 +231,10 @@ Rules:
   ```
 
   An empty array (zero delta calls) is the expected default. Multiple entries signal pressure to widen the `_base.json` schema in the plugin.
+
+  When a needed delta cannot run, emit the complete unavailable shape:
+  `{ purpose, script: null, byteCount: 0, timestamp, unavailable: "mcp-unavailable" }`.
+  Use `"no-figma-target"` only when `_meta.fileKey` or `_meta.nodeId` is genuinely absent.
 
 ### Step 4: Interpret
 
